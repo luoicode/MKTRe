@@ -5,10 +5,25 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { fmtVnd, fmtPct, fmtNum } from "@/lib/reports";
+import { fmtVndDong, fmtPctValue, fmtInt, formatDateVN } from "@/lib/reports";
 import { Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/employee/history")({ component: History });
+
+const HEAD = [
+  "Ngày", "Khung giờ", "Nhân viên",
+  "Chi Phí Ads", "MESS", "Chi phí ADS/MESS",
+  "Data", "Chi phí ADS/Data",
+  "Đơn chốt DATA trong ngày", "Tỉ lệ chốt Data trong ngày",
+  "DOANH SỐ DATA trong ngày", "TB Đơn", "Chi phí ADS/Doanh Số Trong Ngày",
+  "Tổng Đơn Chốt", "Tổng Doanh Số", "Chi phí ADS/Tổng Doanh Số",
+  "Doanh số chốt lại", "Status", "Ghi chú",
+];
+
+function statusLabel(s: string) {
+  const map: Record<string, string> = { draft: "Nháp", submitted: "Đã gửi", approved: "Đã duyệt", rejected: "Từ chối", locked: "Khóa" };
+  return map[s] ?? s;
+}
 
 function History() {
   const { profile } = useAuth();
@@ -40,35 +55,39 @@ function History() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Ngày</TableHead>
-                    <TableHead>Khung</TableHead>
-                    <TableHead className="text-right">Ads</TableHead>
-                    <TableHead className="text-right">Mess</TableHead>
-                    <TableHead className="text-right">Data</TableHead>
-                    <TableHead className="text-right">Đơn chốt</TableHead>
-                    <TableHead className="text-right">Tỉ lệ</TableHead>
-                    <TableHead className="text-right">Tổng DS</TableHead>
-                    <TableHead className="text-right">ROAS</TableHead>
-                    <TableHead>Trạng thái</TableHead>
+                    {HEAD.map((h) => <TableHead key={h} className="whitespace-nowrap">{h}</TableHead>)}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(data ?? []).slice(0, 30).map((r) => (
-                    <TableRow key={r.id}>
-                      <TableCell>{r.report_date}</TableCell>
-                      <TableCell>{(r.report_slots as { slot_name: string } | null)?.slot_name}</TableCell>
-                      <TableCell className="text-right">{fmtVnd(r.ads_cost)}</TableCell>
-                      <TableCell className="text-right">{r.mess_count}</TableCell>
-                      <TableCell className="text-right">{r.data_count}</TableCell>
-                      <TableCell className="text-right">{r.closed_orders}</TableCell>
-                      <TableCell className="text-right">{fmtPct(r.conversion_rate)}</TableCell>
-                      <TableCell className="text-right">{fmtVnd(r.total_revenue)}</TableCell>
-                      <TableCell className="text-right">{fmtNum(r.roas, 2)}</TableCell>
-                      <TableCell><Badge variant="outline">{r.status}</Badge></TableCell>
-                    </TableRow>
-                  ))}
+                  {(data ?? []).slice(0, 30).map((r) => {
+                    const slot = (r.report_slots as { slot_name: string } | null)?.slot_name ?? "—";
+                    const recovered = Number(r.total_revenue || 0) - Number(r.daily_data_revenue || 0);
+                    return (
+                      <TableRow key={r.id}>
+                        <TableCell className="whitespace-nowrap">{formatDateVN(r.report_date)}</TableCell>
+                        <TableCell className="whitespace-nowrap">{slot}</TableCell>
+                        <TableCell className="whitespace-nowrap">{profile?.full_name}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{fmtVndDong(r.ads_cost)}</TableCell>
+                        <TableCell className="text-right">{fmtInt(r.mess_count)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{fmtVndDong(r.cp_mess)}</TableCell>
+                        <TableCell className="text-right">{fmtInt(r.data_count)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{fmtVndDong(r.cp_data)}</TableCell>
+                        <TableCell className="text-right">{fmtInt(r.closed_orders)}</TableCell>
+                        <TableCell className="text-right">{fmtPctValue(r.conversion_rate == null ? null : Number(r.conversion_rate) * 100)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{fmtVndDong(r.daily_data_revenue)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{fmtVndDong(r.average_order_value)}</TableCell>
+                        <TableCell className="text-right">{r.cp_daily_revenue == null ? "—" : Number(r.cp_daily_revenue).toFixed(3)}</TableCell>
+                        <TableCell className="text-right">{fmtInt(r.total_orders)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{fmtVndDong(r.total_revenue)}</TableCell>
+                        <TableCell className="text-right">{r.cp_total_revenue == null ? "—" : Number(r.cp_total_revenue).toFixed(3)}</TableCell>
+                        <TableCell className={`whitespace-nowrap text-right ${recovered < 0 ? "text-red-600 font-semibold" : ""}`}>{fmtVndDong(recovered)}</TableCell>
+                        <TableCell><Badge variant="outline">{statusLabel(r.status as string)}</Badge></TableCell>
+                        <TableCell className="max-w-[240px] truncate" title={r.note ?? ""}>{r.note ?? "—"}</TableCell>
+                      </TableRow>
+                    );
+                  })}
                   {data && data.length === 0 && (
-                    <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-6">Chưa có báo cáo</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={HEAD.length} className="text-center text-muted-foreground py-6">Chưa có báo cáo</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>

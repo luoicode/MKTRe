@@ -2,15 +2,31 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useSlots, todayStr, fmtVnd, fmtPct, fmtNum } from "@/lib/reports";
+import { useSlots, todayStr, fmtVndDong, fmtPctValue, fmtInt, formatDateVN } from "@/lib/reports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin/reports")({ component: AdminReports });
+
+const HEAD = [
+  "Ngày", "Khung giờ", "Nhân viên",
+  "Chi Phí Ads", "MESS", "Chi phí ADS/MESS",
+  "Data", "Chi phí ADS/Data",
+  "Đơn chốt DATA trong ngày", "Tỉ lệ chốt Data trong ngày",
+  "DOANH SỐ DATA trong ngày", "TB Đơn", "Chi phí ADS/Doanh Số Trong Ngày",
+  "Tổng Đơn Chốt", "Tổng Doanh Số", "Chi phí ADS/Tổng Doanh Số",
+  "Doanh số chốt lại", "Status", "Ghi chú",
+];
+
+function statusLabel(s: string) {
+  const map: Record<string, string> = { draft: "Nháp", submitted: "Đã gửi", approved: "Đã duyệt", rejected: "Từ chối", locked: "Khóa" };
+  return map[s] ?? s;
+}
 
 function AdminReports() {
   const [date, setDate] = useState(todayStr());
@@ -38,19 +54,11 @@ function AdminReports() {
     },
   });
 
-  const totals = (rows ?? []).reduce((acc, r) => ({
-    ads: acc.ads + Number(r.ads_cost || 0),
-    mess: acc.mess + Number(r.mess_count || 0),
-    data: acc.data + Number(r.data_count || 0),
-    closed: acc.closed + Number(r.closed_orders || 0),
-    rev: acc.rev + Number(r.total_revenue || 0),
-  }), { ads: 0, mess: 0, data: 0, closed: 0, rev: 0 });
-
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Báo cáo tổng hợp</h1>
-        <p className="text-sm text-muted-foreground">Lọc theo ngày, khung giờ, team — phù hợp cap màn hình</p>
+        <p className="text-sm text-muted-foreground">Lọc theo ngày, khung giờ, team</p>
       </div>
 
       <Card>
@@ -80,63 +88,45 @@ function AdminReports() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Báo cáo {date}</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Báo cáo {formatDateVN(date)}</CardTitle></CardHeader>
         <CardContent>
           {isLoading ? <Loader2 className="mx-auto h-6 w-6 animate-spin" /> : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Nhân viên</TableHead>
-                    <TableHead>Team</TableHead>
-                    <TableHead>Khung</TableHead>
-                    <TableHead className="text-right">Ads</TableHead>
-                    <TableHead className="text-right">Mess</TableHead>
-                    <TableHead className="text-right">Data</TableHead>
-                    <TableHead className="text-right">Đơn</TableHead>
-                    <TableHead className="text-right">CP/Data</TableHead>
-                    <TableHead className="text-right">Tỉ lệ</TableHead>
-                    <TableHead className="text-right">DS data</TableHead>
-                    <TableHead className="text-right">Tổng DS</TableHead>
-                    <TableHead className="text-right">ROAS</TableHead>
-                  </TableRow>
+                  <TableRow>{HEAD.map((h) => <TableHead key={h} className="whitespace-nowrap">{h}</TableHead>)}</TableRow>
                 </TableHeader>
                 <TableBody>
                   {(rows ?? []).map((r) => {
-                    const p = r.profiles as { full_name: string; username: string } | null;
-                    const t = r.teams as { name: string } | null;
-                    const s = r.report_slots as { slot_name: string } | null;
+                    const p = r.profiles as { full_name: string } | null;
+                    const slot = (r.report_slots as { slot_name: string } | null)?.slot_name ?? "—";
+                    const recovered = Number(r.total_revenue || 0) - Number(r.daily_data_revenue || 0);
                     return (
                       <TableRow key={r.id}>
-                        <TableCell className="font-medium">{p?.full_name}</TableCell>
-                        <TableCell>{t?.name ?? "—"}</TableCell>
-                        <TableCell>{s?.slot_name}</TableCell>
-                        <TableCell className="text-right">{fmtVnd(r.ads_cost)}</TableCell>
-                        <TableCell className="text-right">{r.mess_count}</TableCell>
-                        <TableCell className="text-right">{r.data_count}</TableCell>
-                        <TableCell className="text-right">{r.closed_orders}</TableCell>
-                        <TableCell className="text-right">{fmtVnd(r.cp_data)}</TableCell>
-                        <TableCell className="text-right">{fmtPct(r.conversion_rate)}</TableCell>
-                        <TableCell className="text-right">{fmtVnd(r.daily_data_revenue)}</TableCell>
-                        <TableCell className="text-right">{fmtVnd(r.total_revenue)}</TableCell>
-                        <TableCell className="text-right">{fmtNum(r.roas, 2)}</TableCell>
+                        <TableCell className="whitespace-nowrap">{formatDateVN(r.report_date)}</TableCell>
+                        <TableCell className="whitespace-nowrap">{slot}</TableCell>
+                        <TableCell className="whitespace-nowrap font-medium">{p?.full_name}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{fmtVndDong(r.ads_cost)}</TableCell>
+                        <TableCell className="text-right">{fmtInt(r.mess_count)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{fmtVndDong(r.cp_mess)}</TableCell>
+                        <TableCell className="text-right">{fmtInt(r.data_count)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{fmtVndDong(r.cp_data)}</TableCell>
+                        <TableCell className="text-right">{fmtInt(r.closed_orders)}</TableCell>
+                        <TableCell className="text-right">{fmtPctValue(r.conversion_rate == null ? null : Number(r.conversion_rate) * 100)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{fmtVndDong(r.daily_data_revenue)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{fmtVndDong(r.average_order_value)}</TableCell>
+                        <TableCell className="text-right">{r.cp_daily_revenue == null ? "—" : Number(r.cp_daily_revenue).toFixed(3)}</TableCell>
+                        <TableCell className="text-right">{fmtInt(r.total_orders)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{fmtVndDong(r.total_revenue)}</TableCell>
+                        <TableCell className="text-right">{r.cp_total_revenue == null ? "—" : Number(r.cp_total_revenue).toFixed(3)}</TableCell>
+                        <TableCell className={`whitespace-nowrap text-right ${recovered < 0 ? "text-red-600 font-semibold" : ""}`}>{fmtVndDong(recovered)}</TableCell>
+                        <TableCell><Badge variant="outline">{statusLabel(r.status as string)}</Badge></TableCell>
+                        <TableCell className="max-w-[240px] truncate" title={r.note ?? ""}>{r.note ?? "—"}</TableCell>
                       </TableRow>
                     );
                   })}
-                  {rows && rows.length > 0 && (
-                    <TableRow className="bg-muted/40 font-semibold">
-                      <TableCell colSpan={3}>Tổng</TableCell>
-                      <TableCell className="text-right">{fmtVnd(totals.ads)}</TableCell>
-                      <TableCell className="text-right">{totals.mess}</TableCell>
-                      <TableCell className="text-right">{totals.data}</TableCell>
-                      <TableCell className="text-right">{totals.closed}</TableCell>
-                      <TableCell colSpan={3} />
-                      <TableCell className="text-right">{fmtVnd(totals.rev)}</TableCell>
-                      <TableCell className="text-right">{totals.ads > 0 ? fmtNum(totals.rev / totals.ads, 2) : "—"}</TableCell>
-                    </TableRow>
-                  )}
                   {rows && rows.length === 0 && (
-                    <TableRow><TableCell colSpan={12} className="text-center text-muted-foreground py-6">Chưa có báo cáo</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={HEAD.length} className="text-center text-muted-foreground py-6">Chưa có báo cáo</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
