@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedManagerDashboardRouteImport } from './routes/_authenticated/manager/dashboard'
 import { Route as AuthenticatedLeaderReportsRouteImport } from './routes/_authenticated/leader/reports'
 import { Route as AuthenticatedLeaderDashboardRouteImport } from './routes/_authenticated/leader/dashboard'
 import { Route as AuthenticatedEmployeeReportRouteImport } from './routes/_authenticated/employee/report'
@@ -19,6 +20,7 @@ import { Route as AuthenticatedEmployeeHistoryRouteImport } from './routes/_auth
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminTeamsRouteImport } from './routes/_authenticated/admin/teams'
 import { Route as AuthenticatedAdminReportsRouteImport } from './routes/_authenticated/admin/reports'
+import { Route as AuthenticatedAdminManagerAssignmentsRouteImport } from './routes/_authenticated/admin/manager-assignments'
 import { Route as AuthenticatedAdminDashboardRouteImport } from './routes/_authenticated/admin/dashboard'
 
 const LoginRoute = LoginRouteImport.update({
@@ -35,6 +37,12 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedManagerDashboardRoute =
+  AuthenticatedManagerDashboardRouteImport.update({
+    id: '/manager/dashboard',
+    path: '/manager/dashboard',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedLeaderReportsRoute =
   AuthenticatedLeaderReportsRouteImport.update({
     id: '/leader/reports',
@@ -75,6 +83,12 @@ const AuthenticatedAdminReportsRoute =
     path: '/admin/reports',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminManagerAssignmentsRoute =
+  AuthenticatedAdminManagerAssignmentsRouteImport.update({
+    id: '/admin/manager-assignments',
+    path: '/admin/manager-assignments',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminDashboardRoute =
   AuthenticatedAdminDashboardRouteImport.update({
     id: '/admin/dashboard',
@@ -86,6 +100,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
+  '/admin/manager-assignments': typeof AuthenticatedAdminManagerAssignmentsRoute
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/admin/teams': typeof AuthenticatedAdminTeamsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -93,11 +108,13 @@ export interface FileRoutesByFullPath {
   '/employee/report': typeof AuthenticatedEmployeeReportRoute
   '/leader/dashboard': typeof AuthenticatedLeaderDashboardRoute
   '/leader/reports': typeof AuthenticatedLeaderReportsRoute
+  '/manager/dashboard': typeof AuthenticatedManagerDashboardRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
+  '/admin/manager-assignments': typeof AuthenticatedAdminManagerAssignmentsRoute
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/admin/teams': typeof AuthenticatedAdminTeamsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -105,6 +122,7 @@ export interface FileRoutesByTo {
   '/employee/report': typeof AuthenticatedEmployeeReportRoute
   '/leader/dashboard': typeof AuthenticatedLeaderDashboardRoute
   '/leader/reports': typeof AuthenticatedLeaderReportsRoute
+  '/manager/dashboard': typeof AuthenticatedManagerDashboardRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -112,6 +130,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/login': typeof LoginRoute
   '/_authenticated/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
+  '/_authenticated/admin/manager-assignments': typeof AuthenticatedAdminManagerAssignmentsRoute
   '/_authenticated/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/_authenticated/admin/teams': typeof AuthenticatedAdminTeamsRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -119,6 +138,7 @@ export interface FileRoutesById {
   '/_authenticated/employee/report': typeof AuthenticatedEmployeeReportRoute
   '/_authenticated/leader/dashboard': typeof AuthenticatedLeaderDashboardRoute
   '/_authenticated/leader/reports': typeof AuthenticatedLeaderReportsRoute
+  '/_authenticated/manager/dashboard': typeof AuthenticatedManagerDashboardRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -126,6 +146,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/admin/dashboard'
+    | '/admin/manager-assignments'
     | '/admin/reports'
     | '/admin/teams'
     | '/admin/users'
@@ -133,11 +154,13 @@ export interface FileRouteTypes {
     | '/employee/report'
     | '/leader/dashboard'
     | '/leader/reports'
+    | '/manager/dashboard'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
     | '/admin/dashboard'
+    | '/admin/manager-assignments'
     | '/admin/reports'
     | '/admin/teams'
     | '/admin/users'
@@ -145,12 +168,14 @@ export interface FileRouteTypes {
     | '/employee/report'
     | '/leader/dashboard'
     | '/leader/reports'
+    | '/manager/dashboard'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/login'
     | '/_authenticated/admin/dashboard'
+    | '/_authenticated/admin/manager-assignments'
     | '/_authenticated/admin/reports'
     | '/_authenticated/admin/teams'
     | '/_authenticated/admin/users'
@@ -158,6 +183,7 @@ export interface FileRouteTypes {
     | '/_authenticated/employee/report'
     | '/_authenticated/leader/dashboard'
     | '/_authenticated/leader/reports'
+    | '/_authenticated/manager/dashboard'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -188,6 +214,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/manager/dashboard': {
+      id: '/_authenticated/manager/dashboard'
+      path: '/manager/dashboard'
+      fullPath: '/manager/dashboard'
+      preLoaderRoute: typeof AuthenticatedManagerDashboardRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/leader/reports': {
       id: '/_authenticated/leader/reports'
@@ -238,6 +271,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminReportsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/manager-assignments': {
+      id: '/_authenticated/admin/manager-assignments'
+      path: '/admin/manager-assignments'
+      fullPath: '/admin/manager-assignments'
+      preLoaderRoute: typeof AuthenticatedAdminManagerAssignmentsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/dashboard': {
       id: '/_authenticated/admin/dashboard'
       path: '/admin/dashboard'
@@ -250,6 +290,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAdminDashboardRoute: typeof AuthenticatedAdminDashboardRoute
+  AuthenticatedAdminManagerAssignmentsRoute: typeof AuthenticatedAdminManagerAssignmentsRoute
   AuthenticatedAdminReportsRoute: typeof AuthenticatedAdminReportsRoute
   AuthenticatedAdminTeamsRoute: typeof AuthenticatedAdminTeamsRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
@@ -257,10 +298,13 @@ interface AuthenticatedRouteChildren {
   AuthenticatedEmployeeReportRoute: typeof AuthenticatedEmployeeReportRoute
   AuthenticatedLeaderDashboardRoute: typeof AuthenticatedLeaderDashboardRoute
   AuthenticatedLeaderReportsRoute: typeof AuthenticatedLeaderReportsRoute
+  AuthenticatedManagerDashboardRoute: typeof AuthenticatedManagerDashboardRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminDashboardRoute: AuthenticatedAdminDashboardRoute,
+  AuthenticatedAdminManagerAssignmentsRoute:
+    AuthenticatedAdminManagerAssignmentsRoute,
   AuthenticatedAdminReportsRoute: AuthenticatedAdminReportsRoute,
   AuthenticatedAdminTeamsRoute: AuthenticatedAdminTeamsRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
@@ -268,6 +312,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedEmployeeReportRoute: AuthenticatedEmployeeReportRoute,
   AuthenticatedLeaderDashboardRoute: AuthenticatedLeaderDashboardRoute,
   AuthenticatedLeaderReportsRoute: AuthenticatedLeaderReportsRoute,
+  AuthenticatedManagerDashboardRoute: AuthenticatedManagerDashboardRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

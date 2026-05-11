@@ -124,6 +124,39 @@ export type Database = {
           },
         ]
       }
+      manager_team_assignments: {
+        Row: {
+          assigned_at: string
+          assigned_by: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          manager_id: string
+          team_id: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          manager_id: string
+          team_id: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          manager_id?: string
+          team_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           auth_user_id: string
@@ -471,17 +504,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_manage_team_kpi: { Args: { _team_id: string }; Returns: boolean }
+      can_view_team: { Args: { _team_id: string }; Returns: boolean }
+      can_view_user: { Args: { _user_id: string }; Returns: boolean }
       get_current_profile_id: { Args: never; Returns: string }
       has_role: {
         Args: { _role: Database["public"]["Enums"]["app_role"] }
         Returns: boolean
       }
       is_active_user: { Args: never; Returns: boolean }
+      is_marketing_manager: { Args: never; Returns: boolean }
       leads_team: { Args: { _team_id: string }; Returns: boolean }
+      manager_leads_team: { Args: { _team_id: string }; Returns: boolean }
+      manager_leads_user: { Args: { _user_id: string }; Returns: boolean }
       user_in_my_team: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
-      app_role: "admin" | "leader" | "employee"
+      app_role: "admin" | "leader" | "employee" | "marketing_manager"
       kpi_period: "day" | "week" | "month"
       report_status: "draft" | "submitted" | "approved" | "rejected" | "locked"
       team_member_role: "leader" | "employee"
@@ -614,7 +653,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "leader", "employee"],
+      app_role: ["admin", "leader", "employee", "marketing_manager"],
       kpi_period: ["day", "week", "month"],
       report_status: ["draft", "submitted", "approved", "rejected", "locked"],
       team_member_role: ["leader", "employee"],

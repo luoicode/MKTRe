@@ -24,11 +24,18 @@ function AuthGuard() {
     const path = location.pathname;
     const allowed: Record<AppRole, string> = {
       admin: "/admin",
+      marketing_manager: "/manager",
       leader: "/leader",
       employee: "/employee",
     };
+    const home: Record<AppRole, string> = {
+      admin: "/admin/dashboard",
+      marketing_manager: "/manager/dashboard",
+      leader: "/leader/dashboard",
+      employee: "/employee/report",
+    };
     if (!path.startsWith(allowed[role])) {
-      navigate({ to: allowed[role] === "/admin" ? "/admin/dashboard" : allowed[role] === "/leader" ? "/leader/dashboard" : "/employee/report" });
+      navigate({ to: home[role] });
     }
   }, [loading, session, role, location.pathname, navigate]);
 
