@@ -64,6 +64,13 @@ function EmployeeReport() {
         <p className="text-sm text-muted-foreground">Ngày: {date}</p>
       </div>
 
+      <div className="rounded-md border border-blue-300 bg-blue-50 p-3 text-sm text-blue-900">
+        <p className="font-semibold">Lưu ý: Số liệu nhập là LŨY KẾ trong ngày, không phải số phát sinh riêng của khung giờ.</p>
+        <p className="mt-1 text-xs">
+          Ví dụ: nếu bạn đã tắt Ads từ 11h55 và chi phí không tăng thêm, các khung giờ sau vẫn nhập lại cùng mức Chi Phí Ads (không cộng dồn).
+        </p>
+      </div>
+
       {!slots ? (
         <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin" /></div>
       ) : (
