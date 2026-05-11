@@ -129,3 +129,13 @@
 .shadow-elegant {
   box-shadow: 0 10px 30px -12px color-mix(in oklab, var(--primary) 35%, transparent);
 }
+
+/* Screenshot mode: hide app chrome to produce clean reports for Zalo */
+body.screenshot-mode aside,
+body.screenshot-mode header,
+body.screenshot-mode .screenshot-hide {
+  display: none !important;
+}
+body.screenshot-mode main {
+  padding: 1rem !important;
+}
