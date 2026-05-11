@@ -35,9 +35,12 @@ const NAV: NavItem[] = [
 
   // Marketing Manager
   { to: "/manager/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["marketing_manager"] },
+  { to: "/manager/today-teams", label: "Báo cáo team hôm nay", icon: TrendingUp, roles: ["marketing_manager"] },
 
   // Leader
   { to: "/leader/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["leader"] },
+  { to: "/leader/daily-report", label: "Báo cáo tổng ngày", icon: Camera, roles: ["leader"] },
+  { to: "/leader/slot-report", label: "Báo cáo theo khung giờ", icon: Target, roles: ["leader"] },
   { to: "/leader/reports", label: "Báo cáo team", icon: FileText, roles: ["leader"] },
 
   // Employee

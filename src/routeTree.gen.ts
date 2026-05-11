@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedManagerTodayTeamsRouteImport } from './routes/_authenticated/manager/today-teams'
 import { Route as AuthenticatedManagerDashboardRouteImport } from './routes/_authenticated/manager/dashboard'
 import { Route as AuthenticatedLeaderSlotReportRouteImport } from './routes/_authenticated/leader/slot-report'
 import { Route as AuthenticatedLeaderReportsRouteImport } from './routes/_authenticated/leader/reports'
@@ -39,6 +40,12 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedManagerTodayTeamsRoute =
+  AuthenticatedManagerTodayTeamsRouteImport.update({
+    id: '/manager/today-teams',
+    path: '/manager/today-teams',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedManagerDashboardRoute =
   AuthenticatedManagerDashboardRouteImport.update({
     id: '/manager/dashboard',
@@ -125,6 +132,7 @@ export interface FileRoutesByFullPath {
   '/leader/reports': typeof AuthenticatedLeaderReportsRoute
   '/leader/slot-report': typeof AuthenticatedLeaderSlotReportRoute
   '/manager/dashboard': typeof AuthenticatedManagerDashboardRoute
+  '/manager/today-teams': typeof AuthenticatedManagerTodayTeamsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -141,6 +149,7 @@ export interface FileRoutesByTo {
   '/leader/reports': typeof AuthenticatedLeaderReportsRoute
   '/leader/slot-report': typeof AuthenticatedLeaderSlotReportRoute
   '/manager/dashboard': typeof AuthenticatedManagerDashboardRoute
+  '/manager/today-teams': typeof AuthenticatedManagerTodayTeamsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -159,6 +168,7 @@ export interface FileRoutesById {
   '/_authenticated/leader/reports': typeof AuthenticatedLeaderReportsRoute
   '/_authenticated/leader/slot-report': typeof AuthenticatedLeaderSlotReportRoute
   '/_authenticated/manager/dashboard': typeof AuthenticatedManagerDashboardRoute
+  '/_authenticated/manager/today-teams': typeof AuthenticatedManagerTodayTeamsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -177,6 +187,7 @@ export interface FileRouteTypes {
     | '/leader/reports'
     | '/leader/slot-report'
     | '/manager/dashboard'
+    | '/manager/today-teams'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -193,6 +204,7 @@ export interface FileRouteTypes {
     | '/leader/reports'
     | '/leader/slot-report'
     | '/manager/dashboard'
+    | '/manager/today-teams'
   id:
     | '__root__'
     | '/'
@@ -210,6 +222,7 @@ export interface FileRouteTypes {
     | '/_authenticated/leader/reports'
     | '/_authenticated/leader/slot-report'
     | '/_authenticated/manager/dashboard'
+    | '/_authenticated/manager/today-teams'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -240,6 +253,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/manager/today-teams': {
+      id: '/_authenticated/manager/today-teams'
+      path: '/manager/today-teams'
+      fullPath: '/manager/today-teams'
+      preLoaderRoute: typeof AuthenticatedManagerTodayTeamsRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/manager/dashboard': {
       id: '/_authenticated/manager/dashboard'
@@ -341,6 +361,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedLeaderReportsRoute: typeof AuthenticatedLeaderReportsRoute
   AuthenticatedLeaderSlotReportRoute: typeof AuthenticatedLeaderSlotReportRoute
   AuthenticatedManagerDashboardRoute: typeof AuthenticatedManagerDashboardRoute
+  AuthenticatedManagerTodayTeamsRoute: typeof AuthenticatedManagerTodayTeamsRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -357,6 +378,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedLeaderReportsRoute: AuthenticatedLeaderReportsRoute,
   AuthenticatedLeaderSlotReportRoute: AuthenticatedLeaderSlotReportRoute,
   AuthenticatedManagerDashboardRoute: AuthenticatedManagerDashboardRoute,
+  AuthenticatedManagerTodayTeamsRoute: AuthenticatedManagerTodayTeamsRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
