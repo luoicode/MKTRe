@@ -22,7 +22,9 @@ function LeaderSlotReport() {
   const [date, setDate] = useState(todayStr());
   const [slotId, setSlotId] = useState<string>("");
 
-  if (slots && slots.length && !slotId) setSlotId(slots[0].id);
+  useEffect(() => {
+    if (slots && slots.length && !slotId) setSlotId(slots[0].id);
+  }, [slots, slotId]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["leader-slot", profile?.id, date, slotId],
