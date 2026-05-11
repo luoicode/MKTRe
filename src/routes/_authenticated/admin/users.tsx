@@ -148,8 +148,9 @@ function CreateUserDialog({ onClose }: { onClose: () => void }) {
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="admin">Admin</SelectItem>
-              <SelectItem value="leader">Leader</SelectItem>
-              <SelectItem value="employee">Employee</SelectItem>
+              <SelectItem value="marketing_manager">Trưởng Phòng Marketing</SelectItem>
+              <SelectItem value="leader">Leader Team</SelectItem>
+              <SelectItem value="employee">Nhân viên</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -206,8 +207,9 @@ function EditUserDialog({ user, onClose }: { user: UserRow; onClose: () => void 
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="admin">Admin</SelectItem>
-              <SelectItem value="leader">Leader</SelectItem>
-              <SelectItem value="employee">Employee</SelectItem>
+              <SelectItem value="marketing_manager">Trưởng Phòng Marketing</SelectItem>
+              <SelectItem value="leader">Leader Team</SelectItem>
+              <SelectItem value="employee">Nhân viên</SelectItem>
             </SelectContent>
           </Select>
         </div>

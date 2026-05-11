@@ -1,5 +1,5 @@
 import { Link, useNavigate, useLocation } from "@tanstack/react-router";
-import { useAuth, type AppRole } from "@/lib/auth";
+import { useAuth, ROLE_LABELS, type AppRole } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
   BarChart3,
@@ -10,6 +10,10 @@ import {
   LogOut,
   LayoutDashboard,
   Menu,
+  Camera,
+  Briefcase,
+  Target,
+  TrendingUp,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -22,15 +26,27 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
+  // Admin
   { to: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin"] },
   { to: "/admin/users", label: "Quản lý User", icon: Users, roles: ["admin"] },
   { to: "/admin/teams", label: "Quản lý Team", icon: UsersRound, roles: ["admin"] },
+  { to: "/admin/manager-assignments", label: "Phân công TP Marketing", icon: Briefcase, roles: ["admin"] },
   { to: "/admin/reports", label: "Báo cáo tổng hợp", icon: FileText, roles: ["admin"] },
+
+  // Marketing Manager
+  { to: "/manager/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["marketing_manager"] },
+
+  // Leader
   { to: "/leader/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["leader"] },
   { to: "/leader/reports", label: "Báo cáo team", icon: FileText, roles: ["leader"] },
+
+  // Employee
   { to: "/employee/report", label: "Nhập báo cáo", icon: FileText, roles: ["employee"] },
   { to: "/employee/history", label: "Lịch sử", icon: History, roles: ["employee"] },
 ];
+
+// Suppress unused-import warnings for icons reserved for upcoming phases
+void Camera; void Target; void TrendingUp;
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const { profile, role, signOut } = useAuth();
@@ -80,7 +96,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <div className="border-t border-sidebar-border px-4 py-4">
         <div className="mb-3">
           <p className="truncate text-sm font-medium text-sidebar-foreground">{profile?.full_name}</p>
-          <p className="truncate text-xs text-sidebar-foreground/60">@{profile?.username} · {role}</p>
+          <p className="truncate text-xs text-sidebar-foreground/60">
+            @{profile?.username} · {role ? ROLE_LABELS[role] : ""}
+          </p>
         </div>
         <Button variant="secondary" size="sm" className="w-full" onClick={handleSignOut}>
           <LogOut className="mr-2 h-4 w-4" /> Đăng xuất

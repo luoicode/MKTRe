@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
       full_name: string;
       username: string;
       password: string;
-      role: "admin" | "leader" | "employee";
+      role: "admin" | "marketing_manager" | "leader" | "employee";
       status?: "active" | "inactive";
     };
 
