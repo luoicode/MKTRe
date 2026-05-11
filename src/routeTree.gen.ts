@@ -9,38 +9,179 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedLeaderReportsRouteImport } from './routes/_authenticated/leader/reports'
+import { Route as AuthenticatedLeaderDashboardRouteImport } from './routes/_authenticated/leader/dashboard'
+import { Route as AuthenticatedEmployeeReportRouteImport } from './routes/_authenticated/employee/report'
+import { Route as AuthenticatedEmployeeHistoryRouteImport } from './routes/_authenticated/employee/history'
+import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
+import { Route as AuthenticatedAdminTeamsRouteImport } from './routes/_authenticated/admin/teams'
+import { Route as AuthenticatedAdminReportsRouteImport } from './routes/_authenticated/admin/reports'
+import { Route as AuthenticatedAdminDashboardRouteImport } from './routes/_authenticated/admin/dashboard'
 
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedRoute = AuthenticatedRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedLeaderReportsRoute =
+  AuthenticatedLeaderReportsRouteImport.update({
+    id: '/leader/reports',
+    path: '/leader/reports',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedLeaderDashboardRoute =
+  AuthenticatedLeaderDashboardRouteImport.update({
+    id: '/leader/dashboard',
+    path: '/leader/dashboard',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedEmployeeReportRoute =
+  AuthenticatedEmployeeReportRouteImport.update({
+    id: '/employee/report',
+    path: '/employee/report',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedEmployeeHistoryRoute =
+  AuthenticatedEmployeeHistoryRouteImport.update({
+    id: '/employee/history',
+    path: '/employee/history',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
+  id: '/admin/users',
+  path: '/admin/users',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedAdminTeamsRoute = AuthenticatedAdminTeamsRouteImport.update({
+  id: '/admin/teams',
+  path: '/admin/teams',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedAdminReportsRoute =
+  AuthenticatedAdminReportsRouteImport.update({
+    id: '/admin/reports',
+    path: '/admin/reports',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminDashboardRoute =
+  AuthenticatedAdminDashboardRouteImport.update({
+    id: '/admin/dashboard',
+    path: '/admin/dashboard',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
+  '/admin/reports': typeof AuthenticatedAdminReportsRoute
+  '/admin/teams': typeof AuthenticatedAdminTeamsRoute
+  '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/employee/history': typeof AuthenticatedEmployeeHistoryRoute
+  '/employee/report': typeof AuthenticatedEmployeeReportRoute
+  '/leader/dashboard': typeof AuthenticatedLeaderDashboardRoute
+  '/leader/reports': typeof AuthenticatedLeaderReportsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
+  '/admin/reports': typeof AuthenticatedAdminReportsRoute
+  '/admin/teams': typeof AuthenticatedAdminTeamsRoute
+  '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/employee/history': typeof AuthenticatedEmployeeHistoryRoute
+  '/employee/report': typeof AuthenticatedEmployeeReportRoute
+  '/leader/dashboard': typeof AuthenticatedLeaderDashboardRoute
+  '/leader/reports': typeof AuthenticatedLeaderReportsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteWithChildren
+  '/login': typeof LoginRoute
+  '/_authenticated/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
+  '/_authenticated/admin/reports': typeof AuthenticatedAdminReportsRoute
+  '/_authenticated/admin/teams': typeof AuthenticatedAdminTeamsRoute
+  '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/_authenticated/employee/history': typeof AuthenticatedEmployeeHistoryRoute
+  '/_authenticated/employee/report': typeof AuthenticatedEmployeeReportRoute
+  '/_authenticated/leader/dashboard': typeof AuthenticatedLeaderDashboardRoute
+  '/_authenticated/leader/reports': typeof AuthenticatedLeaderReportsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/admin/dashboard'
+    | '/admin/reports'
+    | '/admin/teams'
+    | '/admin/users'
+    | '/employee/history'
+    | '/employee/report'
+    | '/leader/dashboard'
+    | '/leader/reports'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/login'
+    | '/admin/dashboard'
+    | '/admin/reports'
+    | '/admin/teams'
+    | '/admin/users'
+    | '/employee/history'
+    | '/employee/report'
+    | '/leader/dashboard'
+    | '/leader/reports'
+  id:
+    | '__root__'
+    | '/'
+    | '/_authenticated'
+    | '/login'
+    | '/_authenticated/admin/dashboard'
+    | '/_authenticated/admin/reports'
+    | '/_authenticated/admin/teams'
+    | '/_authenticated/admin/users'
+    | '/_authenticated/employee/history'
+    | '/_authenticated/employee/report'
+    | '/_authenticated/leader/dashboard'
+    | '/_authenticated/leader/reports'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
+  LoginRoute: typeof LoginRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,11 +189,95 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/leader/reports': {
+      id: '/_authenticated/leader/reports'
+      path: '/leader/reports'
+      fullPath: '/leader/reports'
+      preLoaderRoute: typeof AuthenticatedLeaderReportsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/leader/dashboard': {
+      id: '/_authenticated/leader/dashboard'
+      path: '/leader/dashboard'
+      fullPath: '/leader/dashboard'
+      preLoaderRoute: typeof AuthenticatedLeaderDashboardRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/employee/report': {
+      id: '/_authenticated/employee/report'
+      path: '/employee/report'
+      fullPath: '/employee/report'
+      preLoaderRoute: typeof AuthenticatedEmployeeReportRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/employee/history': {
+      id: '/_authenticated/employee/history'
+      path: '/employee/history'
+      fullPath: '/employee/history'
+      preLoaderRoute: typeof AuthenticatedEmployeeHistoryRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/users': {
+      id: '/_authenticated/admin/users'
+      path: '/admin/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/teams': {
+      id: '/_authenticated/admin/teams'
+      path: '/admin/teams'
+      fullPath: '/admin/teams'
+      preLoaderRoute: typeof AuthenticatedAdminTeamsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/reports': {
+      id: '/_authenticated/admin/reports'
+      path: '/admin/reports'
+      fullPath: '/admin/reports'
+      preLoaderRoute: typeof AuthenticatedAdminReportsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/dashboard': {
+      id: '/_authenticated/admin/dashboard'
+      path: '/admin/dashboard'
+      fullPath: '/admin/dashboard'
+      preLoaderRoute: typeof AuthenticatedAdminDashboardRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
 
+interface AuthenticatedRouteChildren {
+  AuthenticatedAdminDashboardRoute: typeof AuthenticatedAdminDashboardRoute
+  AuthenticatedAdminReportsRoute: typeof AuthenticatedAdminReportsRoute
+  AuthenticatedAdminTeamsRoute: typeof AuthenticatedAdminTeamsRoute
+  AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
+  AuthenticatedEmployeeHistoryRoute: typeof AuthenticatedEmployeeHistoryRoute
+  AuthenticatedEmployeeReportRoute: typeof AuthenticatedEmployeeReportRoute
+  AuthenticatedLeaderDashboardRoute: typeof AuthenticatedLeaderDashboardRoute
+  AuthenticatedLeaderReportsRoute: typeof AuthenticatedLeaderReportsRoute
+}
+
+const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedAdminDashboardRoute: AuthenticatedAdminDashboardRoute,
+  AuthenticatedAdminReportsRoute: AuthenticatedAdminReportsRoute,
+  AuthenticatedAdminTeamsRoute: AuthenticatedAdminTeamsRoute,
+  AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
+  AuthenticatedEmployeeHistoryRoute: AuthenticatedEmployeeHistoryRoute,
+  AuthenticatedEmployeeReportRoute: AuthenticatedEmployeeReportRoute,
+  AuthenticatedLeaderDashboardRoute: AuthenticatedLeaderDashboardRoute,
+  AuthenticatedLeaderReportsRoute: AuthenticatedLeaderReportsRoute,
+}
+
+const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
+  AuthenticatedRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthenticatedRoute: AuthenticatedRouteWithChildren,
+  LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
