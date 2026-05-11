@@ -49,7 +49,7 @@ const NAV: NavItem[] = [
 ];
 
 // Suppress unused-import warnings for icons reserved for upcoming phases
-void Camera; void Target; void TrendingUp;
+void TrendingUp; void Camera; void Target;
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const { profile, role, signOut } = useAuth();
