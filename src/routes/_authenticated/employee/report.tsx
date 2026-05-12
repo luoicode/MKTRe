@@ -130,11 +130,8 @@ function NumberInput({
       disabled={disabled}
       onFocus={(e) => e.currentTarget.select()}
       onChange={(e) => {
-        // Allow only digits and one decimal point, no negatives
-        const raw = e.target.value.replace(/[^\d.]/g, "");
-        const parts = raw.split(".");
-        const cleaned = parts.length > 1 ? parts[0] + "." + parts.slice(1).join("") : raw;
-        onChange(cleaned);
+        const digits = e.target.value.replace(/[^\d]/g, "");
+        onChange(digits);
       }}
     />
   );
