@@ -22,14 +22,16 @@ export interface SubmittedReportData {
 }
 
 function calc(d: SubmittedReportData) {
-  const cp_mess = d.mess_count > 0 ? d.ads_cost / d.mess_count : null;
-  const cp_data = d.data_count > 0 ? d.ads_cost / d.data_count : null;
-  const conv = d.data_count > 0 ? (d.closed_orders / d.data_count) * 100 : null;
-  const tb_don = d.closed_orders > 0 ? d.daily_data_revenue / d.closed_orders : null;
-  const cp_daily = d.daily_data_revenue > 0 ? d.ads_cost / d.daily_data_revenue : null;
-  const cp_total = d.total_revenue > 0 ? d.ads_cost / d.total_revenue : null;
-  const recovered = d.total_revenue - d.daily_data_revenue;
-  return { cp_mess, cp_data, conv, tb_don, cp_daily, cp_total, recovered };
+  const m = calculateReportMetrics({
+    ads_cost: d.ads_cost,
+    mess_count: d.mess_count,
+    data_count: d.data_count,
+    closed_orders: d.closed_orders,
+    daily_data_revenue: d.daily_data_revenue,
+    total_orders: d.total_orders,
+    total_revenue: d.total_revenue,
+  });
+  return m;
 }
 
 export function SubmittedReportCard({ data }: { data: SubmittedReportData }) {
