@@ -3,7 +3,7 @@ import { useAuth } from "@/lib/auth";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useSlots, todayStr, fmtVndDong, fmtPctValue, fmtInt, formatDateVN } from "@/lib/reports";
+import { useSlots, todayStr, formatVnd, formatVndSigned, formatPercent, fmtInt, formatDateVN, calculateReportMetrics } from "@/lib/reports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
