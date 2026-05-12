@@ -269,15 +269,25 @@ function SlotForm({ profileId, fullName, slotId, slotName, date, onSaved, onSubm
     return <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   }
 
+  const VND_FIELDS = new Set<keyof FormState>(["ads_cost", "daily_data_revenue", "total_revenue"]);
   const numField = (k: keyof Omit<FormState, "note">, label: string) => (
     <div className="space-y-1">
       <Label htmlFor={k}>{label}</Label>
-      <NumberInput
-        id={k}
-        value={form[k]}
-        onChange={(v) => setForm((f) => ({ ...f, [k]: v }))}
-        disabled={!!locked}
-      />
+      {VND_FIELDS.has(k) ? (
+        <VndInput
+          id={k}
+          value={form[k]}
+          onChange={(v) => setForm((f) => ({ ...f, [k]: v }))}
+          disabled={!!locked}
+        />
+      ) : (
+        <NumberInput
+          id={k}
+          value={form[k]}
+          onChange={(v) => setForm((f) => ({ ...f, [k]: v }))}
+          disabled={!!locked}
+        />
+      )}
     </div>
   );
 
