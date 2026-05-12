@@ -180,21 +180,24 @@ function SlotForm({ profileId, fullName, slotId, slotName, date, onSaved, onSubm
     }
   }, [existing]);
 
-  const n = (s: string) => Number(s) || 0;
   const nums = {
-    ads: n(form.ads_cost), mess: n(form.mess_count), data: n(form.data_count),
-    closed: n(form.closed_orders), dailyRev: n(form.daily_data_revenue),
-    totalOrders: n(form.total_orders), totalRev: n(form.total_revenue),
+    ads: parseVndInput(form.ads_cost),
+    mess: Number(form.mess_count) || 0,
+    data: Number(form.data_count) || 0,
+    closed: Number(form.closed_orders) || 0,
+    dailyRev: parseVndInput(form.daily_data_revenue),
+    totalOrders: Number(form.total_orders) || 0,
+    totalRev: parseVndInput(form.total_revenue),
   };
 
-  const computed = useMemo(() => ({
-    cp_mess: nums.mess > 0 ? nums.ads / nums.mess : null,
-    cp_data: nums.data > 0 ? nums.ads / nums.data : null,
-    conv: nums.data > 0 ? (nums.closed / nums.data) * 100 : null,
-    avg_order: nums.closed > 0 ? nums.dailyRev / nums.closed : null,
-    cp_daily_rev: nums.dailyRev > 0 ? nums.ads / nums.dailyRev : null,
-    cp_total_rev: nums.totalRev > 0 ? nums.ads / nums.totalRev : null,
-    recovered: nums.totalRev - nums.dailyRev,
+  const computed = useMemo(() => calculateReportMetrics({
+    ads_cost: nums.ads,
+    mess_count: nums.mess,
+    data_count: nums.data,
+    closed_orders: nums.closed,
+    daily_data_revenue: nums.dailyRev,
+    total_orders: nums.totalOrders,
+    total_revenue: nums.totalRev,
   }), [nums.ads, nums.mess, nums.data, nums.closed, nums.dailyRev, nums.totalRev]);
 
   const warnings = useMemo(() => {
