@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useSlots, todayStr, fmtVndDong, fmtPctValue, fmtInt, formatDateVN } from "@/lib/reports";
+import { useSlots, todayStr, formatVnd, formatVndSigned, formatPercent, fmtInt, formatDateVN, calculateReportMetrics } from "@/lib/reports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -100,26 +100,34 @@ function AdminReports() {
                   {(rows ?? []).map((r) => {
                     const p = r.profiles as { full_name: string } | null;
                     const slot = (r.report_slots as { slot_name: string } | null)?.slot_name ?? "—";
-                    const recovered = Number(r.total_revenue || 0) - Number(r.daily_data_revenue || 0);
+                    const m = calculateReportMetrics({
+                      ads_cost: Number(r.ads_cost) || 0,
+                      mess_count: Number(r.mess_count) || 0,
+                      data_count: Number(r.data_count) || 0,
+                      closed_orders: Number(r.closed_orders) || 0,
+                      daily_data_revenue: Number(r.daily_data_revenue) || 0,
+                      total_orders: Number(r.total_orders) || 0,
+                      total_revenue: Number(r.total_revenue) || 0,
+                    });
                     return (
                       <TableRow key={r.id}>
                         <TableCell className="whitespace-nowrap">{formatDateVN(r.report_date)}</TableCell>
                         <TableCell className="whitespace-nowrap">{slot}</TableCell>
                         <TableCell className="whitespace-nowrap font-medium">{p?.full_name}</TableCell>
-                        <TableCell className="whitespace-nowrap text-right">{fmtVndDong(r.ads_cost)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{formatVnd(r.ads_cost)}</TableCell>
                         <TableCell className="text-right">{fmtInt(r.mess_count)}</TableCell>
-                        <TableCell className="whitespace-nowrap text-right">{fmtVndDong(r.cp_mess)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{formatVnd(m.cp_mess)}</TableCell>
                         <TableCell className="text-right">{fmtInt(r.data_count)}</TableCell>
-                        <TableCell className="whitespace-nowrap text-right">{fmtVndDong(r.cp_data)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{formatVnd(m.cp_data)}</TableCell>
                         <TableCell className="text-right">{fmtInt(r.closed_orders)}</TableCell>
-                        <TableCell className="text-right">{fmtPctValue(r.conversion_rate == null ? null : Number(r.conversion_rate) * 100)}</TableCell>
-                        <TableCell className="whitespace-nowrap text-right">{fmtVndDong(r.daily_data_revenue)}</TableCell>
-                        <TableCell className="whitespace-nowrap text-right">{fmtVndDong(r.average_order_value)}</TableCell>
-                        <TableCell className="text-right">{r.cp_daily_revenue == null ? "—" : Number(r.cp_daily_revenue).toFixed(3)}</TableCell>
+                        <TableCell className="text-right">{formatPercent(m.conv_rate)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{formatVnd(r.daily_data_revenue)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{formatVnd(m.avg_order)}</TableCell>
+                        <TableCell className="text-right">{formatPercent(m.cp_daily_pct)}</TableCell>
                         <TableCell className="text-right">{fmtInt(r.total_orders)}</TableCell>
-                        <TableCell className="whitespace-nowrap text-right">{fmtVndDong(r.total_revenue)}</TableCell>
-                        <TableCell className="text-right">{r.cp_total_revenue == null ? "—" : Number(r.cp_total_revenue).toFixed(3)}</TableCell>
-                        <TableCell className={`whitespace-nowrap text-right ${recovered < 0 ? "text-red-600 font-semibold" : ""}`}>{fmtVndDong(recovered)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right">{formatVnd(r.total_revenue)}</TableCell>
+                        <TableCell className="text-right">{formatPercent(m.cp_total_pct)}</TableCell>
+                        <TableCell className={`whitespace-nowrap text-right ${m.recovered < 0 ? "text-red-600 font-semibold" : ""}`}>{formatVndSigned(m.recovered)}</TableCell>
                         <TableCell><Badge variant="outline">{statusLabel(r.status as string)}</Badge></TableCell>
                         <TableCell className="max-w-[240px] truncate" title={r.note ?? ""}>{r.note ?? "—"}</TableCell>
                       </TableRow>

@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
-import { useSlots, todayStr, fmtVndDong, fmtPctValue, fmtInt } from "@/lib/reports";
+import { useSlots, todayStr, formatVnd, formatVndSigned, formatPercent, fmtInt, parseVndInput, calculateReportMetrics } from "@/lib/reports";
+import { VndInput } from "@/components/VndInput";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -129,11 +130,8 @@ function NumberInput({
       disabled={disabled}
       onFocus={(e) => e.currentTarget.select()}
       onChange={(e) => {
-        // Allow only digits and one decimal point, no negatives
-        const raw = e.target.value.replace(/[^\d.]/g, "");
-        const parts = raw.split(".");
-        const cleaned = parts.length > 1 ? parts[0] + "." + parts.slice(1).join("") : raw;
-        onChange(cleaned);
+        const digits = e.target.value.replace(/[^\d]/g, "");
+        onChange(digits);
       }}
     />
   );
@@ -179,21 +177,24 @@ function SlotForm({ profileId, fullName, slotId, slotName, date, onSaved, onSubm
     }
   }, [existing]);
 
-  const n = (s: string) => Number(s) || 0;
   const nums = {
-    ads: n(form.ads_cost), mess: n(form.mess_count), data: n(form.data_count),
-    closed: n(form.closed_orders), dailyRev: n(form.daily_data_revenue),
-    totalOrders: n(form.total_orders), totalRev: n(form.total_revenue),
+    ads: parseVndInput(form.ads_cost),
+    mess: Number(form.mess_count) || 0,
+    data: Number(form.data_count) || 0,
+    closed: Number(form.closed_orders) || 0,
+    dailyRev: parseVndInput(form.daily_data_revenue),
+    totalOrders: Number(form.total_orders) || 0,
+    totalRev: parseVndInput(form.total_revenue),
   };
 
-  const computed = useMemo(() => ({
-    cp_mess: nums.mess > 0 ? nums.ads / nums.mess : null,
-    cp_data: nums.data > 0 ? nums.ads / nums.data : null,
-    conv: nums.data > 0 ? (nums.closed / nums.data) * 100 : null,
-    avg_order: nums.closed > 0 ? nums.dailyRev / nums.closed : null,
-    cp_daily_rev: nums.dailyRev > 0 ? nums.ads / nums.dailyRev : null,
-    cp_total_rev: nums.totalRev > 0 ? nums.ads / nums.totalRev : null,
-    recovered: nums.totalRev - nums.dailyRev,
+  const computed = useMemo(() => calculateReportMetrics({
+    ads_cost: nums.ads,
+    mess_count: nums.mess,
+    data_count: nums.data,
+    closed_orders: nums.closed,
+    daily_data_revenue: nums.dailyRev,
+    total_orders: nums.totalOrders,
+    total_revenue: nums.totalRev,
   }), [nums.ads, nums.mess, nums.data, nums.closed, nums.dailyRev, nums.totalRev]);
 
   const warnings = useMemo(() => {
@@ -265,15 +266,25 @@ function SlotForm({ profileId, fullName, slotId, slotName, date, onSaved, onSubm
     return <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   }
 
+  const VND_FIELDS = new Set<keyof FormState>(["ads_cost", "daily_data_revenue", "total_revenue"]);
   const numField = (k: keyof Omit<FormState, "note">, label: string) => (
     <div className="space-y-1">
       <Label htmlFor={k}>{label}</Label>
-      <NumberInput
-        id={k}
-        value={form[k]}
-        onChange={(v) => setForm((f) => ({ ...f, [k]: v }))}
-        disabled={!!locked}
-      />
+      {VND_FIELDS.has(k) ? (
+        <VndInput
+          id={k}
+          value={form[k]}
+          onChange={(v) => setForm((f) => ({ ...f, [k]: v }))}
+          disabled={!!locked}
+        />
+      ) : (
+        <NumberInput
+          id={k}
+          value={form[k]}
+          onChange={(v) => setForm((f) => ({ ...f, [k]: v }))}
+          disabled={!!locked}
+        />
+      )}
     </div>
   );
 
@@ -346,13 +357,13 @@ function SlotForm({ profileId, fullName, slotId, slotName, date, onSaved, onSubm
         </CardHeader>
         <CardContent>
           <dl className="grid grid-cols-2 gap-3 text-sm">
-            <Metric label="Chi phí ADS/MESS" value={computed.cp_mess == null ? "—" : fmtVndDong(computed.cp_mess)} />
-            <Metric label="Chi phí ADS/Data" value={computed.cp_data == null ? "—" : fmtVndDong(computed.cp_data)} />
-            <Metric label="Tỉ lệ chốt Data trong ngày" value={fmtPctValue(computed.conv)} />
-            <Metric label="TB Đơn" value={computed.avg_order == null ? "—" : fmtVndDong(computed.avg_order)} />
-            <Metric label="Chi phí ADS/Doanh Số Trong Ngày" value={computed.cp_daily_rev == null ? "—" : computed.cp_daily_rev.toFixed(3)} />
-            <Metric label="Chi phí ADS/Tổng Doanh Số" value={computed.cp_total_rev == null ? "—" : computed.cp_total_rev.toFixed(3)} />
-            <Metric label="Doanh số chốt lại" value={fmtVndDong(computed.recovered)} danger={recoveredNeg} />
+            <Metric label="Chi phí ADS/MESS" value={formatVnd(computed.cp_mess)} />
+            <Metric label="Chi phí ADS/Data" value={formatVnd(computed.cp_data)} />
+            <Metric label="Tỉ lệ chốt Data trong ngày" value={formatPercent(computed.conv_rate)} />
+            <Metric label="TB Đơn" value={formatVnd(computed.avg_order)} />
+            <Metric label="Chi phí ADS/Doanh Số Trong Ngày" value={formatPercent(computed.cp_daily_pct)} />
+            <Metric label="Chi phí ADS/Tổng Doanh Số" value={formatPercent(computed.cp_total_pct)} />
+            <Metric label="Doanh số chốt lại" value={formatVndSigned(computed.recovered)} danger={recoveredNeg} />
             <Metric label="Tổng Đơn Chốt" value={fmtInt(nums.totalOrders)} />
           </dl>
           {recoveredNeg && (

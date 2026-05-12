@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Camera, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
-import { fmtVndDong, fmtPctValue, fmtInt, formatDateVN, formatDateTimeVN, slugify } from "@/lib/reports";
+import { formatVnd, formatVndSigned, formatPercent, fmtInt, formatDateVN, formatDateTimeVN, slugify, calculateReportMetrics } from "@/lib/reports";
 
 export interface SubmittedReportData {
   fullName: string;
@@ -22,14 +22,16 @@ export interface SubmittedReportData {
 }
 
 function calc(d: SubmittedReportData) {
-  const cp_mess = d.mess_count > 0 ? d.ads_cost / d.mess_count : null;
-  const cp_data = d.data_count > 0 ? d.ads_cost / d.data_count : null;
-  const conv = d.data_count > 0 ? (d.closed_orders / d.data_count) * 100 : null;
-  const tb_don = d.closed_orders > 0 ? d.daily_data_revenue / d.closed_orders : null;
-  const cp_daily = d.daily_data_revenue > 0 ? d.ads_cost / d.daily_data_revenue : null;
-  const cp_total = d.total_revenue > 0 ? d.ads_cost / d.total_revenue : null;
-  const recovered = d.total_revenue - d.daily_data_revenue;
-  return { cp_mess, cp_data, conv, tb_don, cp_daily, cp_total, recovered };
+  const m = calculateReportMetrics({
+    ads_cost: d.ads_cost,
+    mess_count: d.mess_count,
+    data_count: d.data_count,
+    closed_orders: d.closed_orders,
+    daily_data_revenue: d.daily_data_revenue,
+    total_orders: d.total_orders,
+    total_revenue: d.total_revenue,
+  });
+  return m;
 }
 
 export function SubmittedReportCard({ data }: { data: SubmittedReportData }) {
@@ -68,20 +70,20 @@ export function SubmittedReportCard({ data }: { data: SubmittedReportData }) {
       `Khung giờ báo cáo: ${data.slotName}`,
       `Thời gian gửi: ${formatDateTimeVN(data.submittedAt)}`,
       "",
-      `Chi Phí Ads: ${fmtVndDong(data.ads_cost)}`,
+      `Chi Phí Ads: ${formatVnd(data.ads_cost)}`,
       `MESS: ${fmtInt(data.mess_count)}`,
-      `Chi phí ADS/MESS: ${c.cp_mess == null ? "—" : fmtVndDong(c.cp_mess)}`,
+      `Chi phí ADS/MESS: ${formatVnd(c.cp_mess)}`,
       `Data: ${fmtInt(data.data_count)}`,
-      `Chi phí ADS/Data: ${c.cp_data == null ? "—" : fmtVndDong(c.cp_data)}`,
+      `Chi phí ADS/Data: ${formatVnd(c.cp_data)}`,
       `Đơn chốt DATA trong ngày: ${fmtInt(data.closed_orders)}`,
-      `Tỉ lệ chốt Data trong ngày: ${fmtPctValue(c.conv)}`,
-      `DOANH SỐ DATA trong ngày: ${fmtVndDong(data.daily_data_revenue)}`,
-      `TB Đơn: ${c.tb_don == null ? "—" : fmtVndDong(c.tb_don)}`,
-      `Chi phí ADS/Doanh Số Trong Ngày: ${c.cp_daily == null ? "—" : c.cp_daily.toFixed(3)}`,
+      `Tỉ lệ chốt Data trong ngày: ${formatPercent(c.conv_rate)}`,
+      `DOANH SỐ DATA trong ngày: ${formatVnd(data.daily_data_revenue)}`,
+      `TB Đơn: ${formatVnd(c.avg_order)}`,
+      `Chi phí ADS/Doanh Số Trong Ngày: ${formatPercent(c.cp_daily_pct)}`,
       `Tổng Đơn Chốt: ${fmtInt(data.total_orders)}`,
-      `Tổng Doanh Số: ${fmtVndDong(data.total_revenue)}`,
-      `Chi phí ADS/Tổng Doanh Số: ${c.cp_total == null ? "—" : c.cp_total.toFixed(3)}`,
-      `Doanh số chốt lại: ${fmtVndDong(c.recovered)}`,
+      `Tổng Doanh Số: ${formatVnd(data.total_revenue)}`,
+      `Chi phí ADS/Tổng Doanh Số: ${formatPercent(c.cp_total_pct)}`,
+      `Doanh số chốt lại: ${formatVndSigned(c.recovered)}`,
       `Ghi chú: ${data.note?.trim() || "—"}`,
     ];
     return lines.join("\n");
@@ -130,20 +132,20 @@ export function SubmittedReportCard({ data }: { data: SubmittedReportData }) {
             </div>
           </div>
           <CardContent className="p-0 pt-3">
-            <Row label="Chi Phí Ads" value={fmtVndDong(data.ads_cost)} />
+            <Row label="Chi Phí Ads" value={formatVnd(data.ads_cost)} />
             <Row label="MESS" value={fmtInt(data.mess_count)} />
-            <Row label="Chi phí ADS/MESS" value={c.cp_mess == null ? "—" : fmtVndDong(c.cp_mess)} />
+            <Row label="Chi phí ADS/MESS" value={formatVnd(c.cp_mess)} />
             <Row label="Data" value={fmtInt(data.data_count)} />
-            <Row label="Chi phí ADS/Data" value={c.cp_data == null ? "—" : fmtVndDong(c.cp_data)} />
+            <Row label="Chi phí ADS/Data" value={formatVnd(c.cp_data)} />
             <Row label="Đơn chốt DATA trong ngày" value={fmtInt(data.closed_orders)} />
-            <Row label="Tỉ lệ chốt Data trong ngày" value={fmtPctValue(c.conv)} />
-            <Row label="DOANH SỐ DATA trong ngày" value={fmtVndDong(data.daily_data_revenue)} />
-            <Row label="TB Đơn" value={c.tb_don == null ? "—" : fmtVndDong(c.tb_don)} />
-            <Row label="Chi phí ADS/Doanh Số Trong Ngày" value={c.cp_daily == null ? "—" : c.cp_daily.toFixed(3)} />
+            <Row label="Tỉ lệ chốt Data trong ngày" value={formatPercent(c.conv_rate)} />
+            <Row label="DOANH SỐ DATA trong ngày" value={formatVnd(data.daily_data_revenue)} />
+            <Row label="TB Đơn" value={formatVnd(c.avg_order)} />
+            <Row label="Chi phí ADS/Doanh Số Trong Ngày" value={formatPercent(c.cp_daily_pct)} />
             <Row label="Tổng Đơn Chốt" value={fmtInt(data.total_orders)} />
-            <Row label="Tổng Doanh Số" value={fmtVndDong(data.total_revenue)} />
-            <Row label="Chi phí ADS/Tổng Doanh Số" value={c.cp_total == null ? "—" : c.cp_total.toFixed(3)} />
-            <Row label="Doanh số chốt lại" value={fmtVndDong(c.recovered)} danger={recoveredNeg} />
+            <Row label="Tổng Doanh Số" value={formatVnd(data.total_revenue)} />
+            <Row label="Chi phí ADS/Tổng Doanh Số" value={formatPercent(c.cp_total_pct)} />
+            <Row label="Doanh số chốt lại" value={formatVndSigned(c.recovered)} danger={recoveredNeg} />
             <div className="mt-2 text-[13px]">
               <div className="text-slate-600">Ghi chú:</div>
               <div className="mt-1 whitespace-pre-wrap font-medium text-slate-900">{data.note?.trim() || "—"}</div>

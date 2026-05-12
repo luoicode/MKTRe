@@ -72,6 +72,68 @@ export function formatDateTimeVN(d: string | Date) {
   return `${HH}:${MM}:${SS} ${formatDateVN(dt)}`;
 }
 
+/**
+ * Parse a VND money input. Treats dots/commas/spaces as thousand separators
+ * (NEVER as decimal separators). Strips everything except digits.
+ *  parseVndInput("6.098.261") = 6098261
+ *  parseVndInput("6,098,261") = 6098261
+ *  parseVndInput("6098261")   = 6098261
+ *  parseVndInput("")          = 0
+ */
+export function parseVndInput(value: string | number | null | undefined): number {
+  if (value == null) return 0;
+  const s = String(value).replace(/[^\d]/g, "");
+  if (!s) return 0;
+  const n = parseInt(s, 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Format a positive integer VND amount with Vietnamese grouping + đ suffix. */
+export const formatVnd = (v: number | null | undefined) =>
+  v == null ? "—" : `${vnd.format(Math.max(0, Math.round(Number(v))))}đ`;
+
+/** Format a money value that could be 0 or negative (no clamp). */
+export const formatVndSigned = (v: number | null | undefined) =>
+  v == null ? "—" : `${vnd.format(Math.round(Number(v)))}đ`;
+
+/** Format a percent VALUE (e.g. 212.78 -> "212.78%"). */
+export const formatPercent = (v: number | null | undefined, digits = 2) =>
+  v == null || !Number.isFinite(Number(v)) ? "—" : `${Number(v).toFixed(digits)}%`;
+
+/** Returns null if denominator is 0/negative/null. */
+export function safeDivide(num: number | null | undefined, den: number | null | undefined): number | null {
+  const n = Number(num), d = Number(den);
+  if (!Number.isFinite(n) || !Number.isFinite(d) || d <= 0) return null;
+  return n / d;
+}
+
+export interface RawReportNumbers {
+  ads_cost: number;
+  mess_count: number;
+  data_count: number;
+  closed_orders: number;
+  daily_data_revenue: number;
+  total_orders: number;
+  total_revenue: number;
+}
+
+/**
+ * Single source of truth for derived metrics across the system.
+ *  cp_mess, cp_data, avg_order, recovered: VND amount (or null)
+ *  conv_rate, cp_daily_pct, cp_total_pct: percent VALUE (e.g. 212.78), or null
+ */
+export function calculateReportMetrics(r: RawReportNumbers) {
+  return {
+    cp_mess: safeDivide(r.ads_cost, r.mess_count),
+    cp_data: safeDivide(r.ads_cost, r.data_count),
+    conv_rate: r.data_count > 0 ? (r.closed_orders / r.data_count) * 100 : null,
+    avg_order: safeDivide(r.daily_data_revenue, r.closed_orders),
+    cp_daily_pct: r.daily_data_revenue > 0 ? (r.ads_cost / r.daily_data_revenue) * 100 : null,
+    cp_total_pct: r.total_revenue > 0 ? (r.ads_cost / r.total_revenue) * 100 : null,
+    recovered: Number(r.total_revenue || 0) - Number(r.daily_data_revenue || 0),
+  };
+}
+
 export function slugify(s: string) {
   return s
     .normalize("NFD")
