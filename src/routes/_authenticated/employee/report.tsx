@@ -360,13 +360,13 @@ function SlotForm({ profileId, fullName, slotId, slotName, date, onSaved, onSubm
         </CardHeader>
         <CardContent>
           <dl className="grid grid-cols-2 gap-3 text-sm">
-            <Metric label="Chi phí ADS/MESS" value={computed.cp_mess == null ? "—" : fmtVndDong(computed.cp_mess)} />
-            <Metric label="Chi phí ADS/Data" value={computed.cp_data == null ? "—" : fmtVndDong(computed.cp_data)} />
-            <Metric label="Tỉ lệ chốt Data trong ngày" value={fmtPctValue(computed.conv)} />
-            <Metric label="TB Đơn" value={computed.avg_order == null ? "—" : fmtVndDong(computed.avg_order)} />
-            <Metric label="Chi phí ADS/Doanh Số Trong Ngày" value={computed.cp_daily_rev == null ? "—" : computed.cp_daily_rev.toFixed(3)} />
-            <Metric label="Chi phí ADS/Tổng Doanh Số" value={computed.cp_total_rev == null ? "—" : computed.cp_total_rev.toFixed(3)} />
-            <Metric label="Doanh số chốt lại" value={fmtVndDong(computed.recovered)} danger={recoveredNeg} />
+            <Metric label="Chi phí ADS/MESS" value={formatVnd(computed.cp_mess)} />
+            <Metric label="Chi phí ADS/Data" value={formatVnd(computed.cp_data)} />
+            <Metric label="Tỉ lệ chốt Data trong ngày" value={formatPercent(computed.conv_rate)} />
+            <Metric label="TB Đơn" value={formatVnd(computed.avg_order)} />
+            <Metric label="Chi phí ADS/Doanh Số Trong Ngày" value={formatPercent(computed.cp_daily_pct)} />
+            <Metric label="Chi phí ADS/Tổng Doanh Số" value={formatPercent(computed.cp_total_pct)} />
+            <Metric label="Doanh số chốt lại" value={formatVndSigned(computed.recovered)} danger={recoveredNeg} />
             <Metric label="Tổng Đơn Chốt" value={fmtInt(nums.totalOrders)} />
           </dl>
           {recoveredNeg && (
