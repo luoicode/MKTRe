@@ -132,20 +132,20 @@ export function SubmittedReportCard({ data }: { data: SubmittedReportData }) {
             </div>
           </div>
           <CardContent className="p-0 pt-3">
-            <Row label="Chi Phí Ads" value={fmtVndDong(data.ads_cost)} />
+            <Row label="Chi Phí Ads" value={formatVnd(data.ads_cost)} />
             <Row label="MESS" value={fmtInt(data.mess_count)} />
-            <Row label="Chi phí ADS/MESS" value={c.cp_mess == null ? "—" : fmtVndDong(c.cp_mess)} />
+            <Row label="Chi phí ADS/MESS" value={formatVnd(c.cp_mess)} />
             <Row label="Data" value={fmtInt(data.data_count)} />
-            <Row label="Chi phí ADS/Data" value={c.cp_data == null ? "—" : fmtVndDong(c.cp_data)} />
+            <Row label="Chi phí ADS/Data" value={formatVnd(c.cp_data)} />
             <Row label="Đơn chốt DATA trong ngày" value={fmtInt(data.closed_orders)} />
-            <Row label="Tỉ lệ chốt Data trong ngày" value={fmtPctValue(c.conv)} />
-            <Row label="DOANH SỐ DATA trong ngày" value={fmtVndDong(data.daily_data_revenue)} />
-            <Row label="TB Đơn" value={c.tb_don == null ? "—" : fmtVndDong(c.tb_don)} />
-            <Row label="Chi phí ADS/Doanh Số Trong Ngày" value={c.cp_daily == null ? "—" : c.cp_daily.toFixed(3)} />
+            <Row label="Tỉ lệ chốt Data trong ngày" value={formatPercent(c.conv_rate)} />
+            <Row label="DOANH SỐ DATA trong ngày" value={formatVnd(data.daily_data_revenue)} />
+            <Row label="TB Đơn" value={formatVnd(c.avg_order)} />
+            <Row label="Chi phí ADS/Doanh Số Trong Ngày" value={formatPercent(c.cp_daily_pct)} />
             <Row label="Tổng Đơn Chốt" value={fmtInt(data.total_orders)} />
-            <Row label="Tổng Doanh Số" value={fmtVndDong(data.total_revenue)} />
-            <Row label="Chi phí ADS/Tổng Doanh Số" value={c.cp_total == null ? "—" : c.cp_total.toFixed(3)} />
-            <Row label="Doanh số chốt lại" value={fmtVndDong(c.recovered)} danger={recoveredNeg} />
+            <Row label="Tổng Doanh Số" value={formatVnd(data.total_revenue)} />
+            <Row label="Chi phí ADS/Tổng Doanh Số" value={formatPercent(c.cp_total_pct)} />
+            <Row label="Doanh số chốt lại" value={formatVndSigned(c.recovered)} danger={recoveredNeg} />
             <div className="mt-2 text-[13px]">
               <div className="text-slate-600">Ghi chú:</div>
               <div className="mt-1 whitespace-pre-wrap font-medium text-slate-900">{data.note?.trim() || "—"}</div>
