@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Camera, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
-import { fmtVndDong, fmtPctValue, fmtInt, formatDateVN, formatDateTimeVN, slugify } from "@/lib/reports";
+import { formatVnd, formatVndSigned, formatPercent, fmtInt, formatDateVN, formatDateTimeVN, slugify, calculateReportMetrics } from "@/lib/reports";
 
 export interface SubmittedReportData {
   fullName: string;
