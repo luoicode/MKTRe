@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { fmtVndDong, fmtPctValue, fmtInt, formatDateVN } from "@/lib/reports";
+import { formatVnd, formatVndSigned, formatPercent, fmtInt, formatDateVN, calculateReportMetrics } from "@/lib/reports";
 import { Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/employee/history")({ component: History });
