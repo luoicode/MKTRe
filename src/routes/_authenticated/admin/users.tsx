@@ -118,7 +118,8 @@ function AdminUsers() {
 }
 
 function CreateUserDialog({ onClose }: { onClose: () => void }) {
-  const [form, setForm] = useState({ full_name: "", username: "", password: "", role: "employee", status: "active" });
+  const initial = { full_name: "", username: "", password: "", role: "employee", status: "active" };
+  const [form, setForm] = useState(initial);
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
@@ -129,6 +130,7 @@ function CreateUserDialog({ onClose }: { onClose: () => void }) {
     try {
       await callFn("admin-create-user", form);
       toast.success("Tạo user thành công");
+      setForm(initial);
       onClose();
     } catch (e) {
       toast.error((e as Error).message);
