@@ -56,6 +56,14 @@ function AdminUsers() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
+  const [search, setSearch] = useState("");
+  const filtered = (data ?? []).filter((u) => {
+    const s = search.trim().toLowerCase();
+    if (!s) return true;
+    return u.full_name.toLowerCase().includes(s)
+      || u.username.toLowerCase().includes(s)
+      || (u.role ?? "").toLowerCase().includes(s);
+  });
 
   return (
     <div className="space-y-6">
@@ -71,7 +79,15 @@ function AdminUsers() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Danh sách</CardTitle></CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <CardTitle>Danh sách</CardTitle>
+          <Input
+            placeholder="Tìm theo tên, username, vai trò..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="max-w-xs"
+          />
+        </CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin" /></div>
