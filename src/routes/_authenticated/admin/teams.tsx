@@ -31,15 +31,23 @@ function AdminTeams() {
   });
 
   const { data: profiles } = useQuery({
-    queryKey: ["all-profiles"],
+    queryKey: ["all-profiles-with-role"],
     queryFn: async () => {
-      const { data } = await supabase.from("profiles").select("id, full_name, username").eq("status", "active");
-      return data ?? [];
+      const { data: ps } = await supabase.from("profiles").select("id, full_name, username").eq("status", "active");
+      const ids = (ps ?? []).map((p) => p.id);
+      const { data: roles } = ids.length
+        ? await supabase.from("user_roles").select("user_id, role").in("user_id", ids)
+        : { data: [] as { user_id: string; role: string }[] };
+      const rmap = new Map((roles ?? []).map((r) => [r.user_id, r.role as string]));
+      return (ps ?? []).map((p) => ({ ...p, role: rmap.get(p.id) ?? "employee" }));
     },
   });
 
   const [open, setOpen] = useState(false);
   const [memberOf, setMemberOf] = useState<string | null>(null);
+
+  const leaders = (profiles ?? []).filter((p) => p.role === "leader");
+  const employees = (profiles ?? []).filter((p) => p.role === "employee");
 
   return (
     <div className="space-y-6">
@@ -50,7 +58,7 @@ function AdminTeams() {
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4" /> Tạo team</Button></DialogTrigger>
-          <CreateTeamDialog profiles={profiles ?? []} onClose={() => { setOpen(false); qc.invalidateQueries({ queryKey: ["teams-full"] }); }} />
+          <CreateTeamDialog leaders={leaders} onClose={() => { setOpen(false); qc.invalidateQueries({ queryKey: ["teams-full"] }); }} />
         </Dialog>
       </div>
 
@@ -90,7 +98,7 @@ function AdminTeams() {
       </Card>
 
       <Dialog open={!!memberOf} onOpenChange={(o) => !o && setMemberOf(null)}>
-        {memberOf && <MembersDialog teamId={memberOf} profiles={profiles ?? []} onClose={() => setMemberOf(null)} />}
+        {memberOf && <MembersDialog teamId={memberOf} employees={employees} onClose={() => setMemberOf(null)} />}
       </Dialog>
     </div>
   );
