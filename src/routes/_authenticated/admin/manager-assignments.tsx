@@ -33,24 +33,27 @@ function ManagerAssignments() {
   const qc = useQueryClient();
   const { profile } = useAuth();
   const [managerId, setManagerId] = useState<string>("");
-  const [teamId, setTeamId] = useState<string>("");
+  const [teamIds, setTeamIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState("");
 
+  // Allow assignments for both leader and marketing_manager roles
   const { data: managers } = useQuery({
-    queryKey: ["managers"],
+    queryKey: ["managers-leaders"],
     queryFn: async () => {
       const { data: roles } = await supabase
         .from("user_roles")
-        .select("user_id")
-        .eq("role", "marketing_manager");
+        .select("user_id, role")
+        .in("role", ["marketing_manager", "leader"]);
       const ids = (roles ?? []).map((r) => r.user_id);
-      if (ids.length === 0) return [] as Manager[];
+      if (ids.length === 0) return [] as (Manager & { role: string })[];
       const { data } = await supabase
         .from("profiles")
         .select("id, full_name, username")
         .in("id", ids)
         .order("full_name");
-      return (data ?? []) as Manager[];
+      const rmap = new Map((roles ?? []).map((r) => [r.user_id, r.role as string]));
+      return ((data ?? []) as Manager[]).map((m) => ({ ...m, role: rmap.get(m.id) ?? "" }));
     },
   });
 
@@ -86,26 +89,28 @@ function ManagerAssignments() {
   });
 
   const assign = async () => {
-    if (!managerId || !teamId) {
-      toast.error("Chọn Trưởng Phòng và Team"); return;
+    if (!managerId || teamIds.length === 0) {
+      toast.error("Chọn người phụ trách và ít nhất 1 team"); return;
     }
     setBusy(true);
-    // upsert: re-activate if exists
+    const payload = teamIds.map((tid) => ({
+      manager_id: managerId,
+      team_id: tid,
+      assigned_by: profile?.id ?? null,
+      is_active: true,
+    }));
     const { error } = await supabase
       .from("manager_team_assignments")
-      .upsert(
-        { manager_id: managerId, team_id: teamId, assigned_by: profile?.id ?? null, is_active: true },
-        { onConflict: "manager_id,team_id" },
-      );
+      .upsert(payload, { onConflict: "manager_id,team_id" });
     setBusy(false);
     if (error) { toast.error(error.message); return; }
     await supabase.from("audit_logs").insert({
       actor_id: profile?.id, action: "assign_manager_team",
       entity_type: "manager_team_assignments", entity_id: null,
-      new_value: { manager_id: managerId, team_id: teamId },
+      new_value: { manager_id: managerId, team_ids: teamIds },
     });
-    toast.success("Đã gán team");
-    setTeamId("");
+    toast.success(`Đã gán ${teamIds.length} team`);
+    setTeamIds([]);
     qc.invalidateQueries({ queryKey: ["mta-list"] });
   };
 
@@ -123,6 +128,14 @@ function ManagerAssignments() {
     toast.success("Đã gỡ phân công");
     qc.invalidateQueries({ queryKey: ["mta-list"] });
   };
+
+  const filteredRows = (rows ?? []).filter((r) => {
+    const s = search.trim().toLowerCase();
+    if (!s) return true;
+    return (r.manager?.full_name ?? "").toLowerCase().includes(s)
+      || (r.manager?.username ?? "").toLowerCase().includes(s)
+      || (r.team?.name ?? "").toLowerCase().includes(s);
+  });
 
   return (
     <div className="space-y-6">
