@@ -56,6 +56,14 @@ function AdminUsers() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
+  const [search, setSearch] = useState("");
+  const filtered = (data ?? []).filter((u) => {
+    const s = search.trim().toLowerCase();
+    if (!s) return true;
+    return u.full_name.toLowerCase().includes(s)
+      || u.username.toLowerCase().includes(s)
+      || (u.role ?? "").toLowerCase().includes(s);
+  });
 
   return (
     <div className="space-y-6">
@@ -71,7 +79,15 @@ function AdminUsers() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Danh sách</CardTitle></CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <CardTitle>Danh sách</CardTitle>
+          <Input
+            placeholder="Tìm theo tên, username, vai trò..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="max-w-xs"
+          />
+        </CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin" /></div>
@@ -88,7 +104,7 @@ function AdminUsers() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(data ?? []).map((u) => (
+                  {filtered.map((u) => (
                     <TableRow key={u.id}>
                       <TableCell className="font-medium">{u.full_name}</TableCell>
                       <TableCell>@{u.username}</TableCell>
@@ -103,6 +119,9 @@ function AdminUsers() {
                       </TableCell>
                     </TableRow>
                   ))}
+                  {filtered.length === 0 && (
+                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">Không có user</TableCell></TableRow>
+                  )}
                 </TableBody>
               </Table>
             </div>
@@ -118,7 +137,8 @@ function AdminUsers() {
 }
 
 function CreateUserDialog({ onClose }: { onClose: () => void }) {
-  const [form, setForm] = useState({ full_name: "", username: "", password: "", role: "employee", status: "active" });
+  const initial = { full_name: "", username: "", password: "", role: "employee", status: "active" };
+  const [form, setForm] = useState(initial);
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
@@ -129,6 +149,7 @@ function CreateUserDialog({ onClose }: { onClose: () => void }) {
     try {
       await callFn("admin-create-user", form);
       toast.success("Tạo user thành công");
+      setForm(initial);
       onClose();
     } catch (e) {
       toast.error((e as Error).message);

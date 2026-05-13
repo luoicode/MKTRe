@@ -8,11 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Plus, UserPlus } from "lucide-react";
 import { toast } from "sonner";
+import { SearchableSelect, SearchableMultiSelect } from "@/components/SearchableSelect";
 
 export const Route = createFileRoute("/_authenticated/admin/teams")({ component: AdminTeams });
 
@@ -31,15 +31,23 @@ function AdminTeams() {
   });
 
   const { data: profiles } = useQuery({
-    queryKey: ["all-profiles"],
+    queryKey: ["all-profiles-with-role"],
     queryFn: async () => {
-      const { data } = await supabase.from("profiles").select("id, full_name, username").eq("status", "active");
-      return data ?? [];
+      const { data: ps } = await supabase.from("profiles").select("id, full_name, username").eq("status", "active");
+      const ids = (ps ?? []).map((p) => p.id);
+      const { data: roles } = ids.length
+        ? await supabase.from("user_roles").select("user_id, role").in("user_id", ids)
+        : { data: [] as { user_id: string; role: string }[] };
+      const rmap = new Map((roles ?? []).map((r) => [r.user_id, r.role as string]));
+      return (ps ?? []).map((p) => ({ ...p, role: rmap.get(p.id) ?? "employee" }));
     },
   });
 
   const [open, setOpen] = useState(false);
   const [memberOf, setMemberOf] = useState<string | null>(null);
+
+  const leaders = (profiles ?? []).filter((p) => p.role === "leader");
+  const employees = (profiles ?? []).filter((p) => p.role === "employee");
 
   return (
     <div className="space-y-6">
@@ -50,7 +58,7 @@ function AdminTeams() {
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4" /> Tạo team</Button></DialogTrigger>
-          <CreateTeamDialog profiles={profiles ?? []} onClose={() => { setOpen(false); qc.invalidateQueries({ queryKey: ["teams-full"] }); }} />
+          <CreateTeamDialog leaders={leaders} onClose={() => { setOpen(false); qc.invalidateQueries({ queryKey: ["teams-full"] }); }} />
         </Dialog>
       </div>
 
@@ -90,13 +98,15 @@ function AdminTeams() {
       </Card>
 
       <Dialog open={!!memberOf} onOpenChange={(o) => !o && setMemberOf(null)}>
-        {memberOf && <MembersDialog teamId={memberOf} profiles={profiles ?? []} onClose={() => setMemberOf(null)} />}
+        {memberOf && <MembersDialog teamId={memberOf} employees={employees} onClose={() => setMemberOf(null)} />}
       </Dialog>
     </div>
   );
 }
 
-function CreateTeamDialog({ profiles, onClose }: { profiles: { id: string; full_name: string; username: string }[]; onClose: () => void }) {
+interface SimpleProfile { id: string; full_name: string; username: string }
+
+function CreateTeamDialog({ leaders, onClose }: { leaders: SimpleProfile[]; onClose: () => void }) {
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
   const [leaderId, setLeaderId] = useState<string>("");
@@ -112,6 +122,7 @@ function CreateTeamDialog({ profiles, onClose }: { profiles: { id: string; full_
     setLoading(false);
     if (error) { toast.error(error.message); return; }
     toast.success("Tạo team thành công");
+    setName(""); setDesc(""); setLeaderId("");
     onClose();
   };
 
@@ -123,12 +134,13 @@ function CreateTeamDialog({ profiles, onClose }: { profiles: { id: string; full_
         <div><Label>Mô tả</Label><Textarea value={desc} onChange={(e) => setDesc(e.target.value)} /></div>
         <div>
           <Label>Leader</Label>
-          <Select value={leaderId} onValueChange={setLeaderId}>
-            <SelectTrigger><SelectValue placeholder="Chọn leader" /></SelectTrigger>
-            <SelectContent>
-              {profiles.map((p) => <SelectItem key={p.id} value={p.id}>{p.full_name} (@{p.username})</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={leaderId}
+            onChange={setLeaderId}
+            options={leaders.map((p) => ({ value: p.id, label: p.full_name, sub: `@${p.username}` }))}
+            placeholder="Chọn leader"
+            emptyText="Không có user role Leader"
+          />
         </div>
       </div>
       <DialogFooter><Button onClick={submit} disabled={loading}>{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Tạo</Button></DialogFooter>
@@ -136,7 +148,7 @@ function CreateTeamDialog({ profiles, onClose }: { profiles: { id: string; full_
   );
 }
 
-function MembersDialog({ teamId, profiles, onClose }: { teamId: string; profiles: { id: string; full_name: string; username: string }[]; onClose: () => void }) {
+function MembersDialog({ teamId, employees, onClose }: { teamId: string; employees: SimpleProfile[]; onClose: () => void }) {
   const qc = useQueryClient();
   const { data: members, refetch } = useQuery({
     queryKey: ["team-members", teamId],
@@ -150,14 +162,18 @@ function MembersDialog({ teamId, profiles, onClose }: { teamId: string; profiles
     },
   });
 
-  const [userId, setUserId] = useState<string>("");
+  const [userIds, setUserIds] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
 
-  const addMember = async () => {
-    if (!userId) return;
-    const { error } = await supabase.from("team_memberships").insert({ team_id: teamId, user_id: userId, role_in_team: "employee" });
+  const addMembers = async () => {
+    if (userIds.length === 0) return;
+    setBusy(true);
+    const rows = userIds.map((uid) => ({ team_id: teamId, user_id: uid, role_in_team: "employee" as const }));
+    const { error } = await supabase.from("team_memberships").insert(rows);
+    setBusy(false);
     if (error) { toast.error(error.message); return; }
-    toast.success("Đã thêm thành viên");
-    setUserId("");
+    toast.success(`Đã thêm ${userIds.length} thành viên`);
+    setUserIds([]);
     refetch();
     qc.invalidateQueries({ queryKey: ["teams-full"] });
   };
@@ -170,22 +186,28 @@ function MembersDialog({ teamId, profiles, onClose }: { teamId: string; profiles
   };
 
   const memberIds = new Set((members ?? []).map((m) => m.user_id));
-  const available = profiles.filter((p) => !memberIds.has(p.id));
+  const available = employees.filter((p) => !memberIds.has(p.id));
 
   return (
     <DialogContent className="max-w-lg">
       <DialogHeader><DialogTitle>Thành viên team</DialogTitle></DialogHeader>
       <div className="space-y-4">
         <div className="flex gap-2">
-          <Select value={userId} onValueChange={setUserId}>
-            <SelectTrigger className="flex-1"><SelectValue placeholder="Chọn user" /></SelectTrigger>
-            <SelectContent>
-              {available.map((p) => <SelectItem key={p.id} value={p.id}>{p.full_name} (@{p.username})</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Button onClick={addMember} disabled={!userId}>Thêm</Button>
+          <div className="flex-1">
+            <SearchableMultiSelect
+              values={userIds}
+              onChange={setUserIds}
+              options={available.map((p) => ({ value: p.id, label: p.full_name, sub: `@${p.username}` }))}
+              placeholder="Chọn nhân viên (chỉ employee)"
+              emptyText="Không có nhân viên khả dụng"
+            />
+          </div>
+          <Button onClick={addMembers} disabled={!userIds.length || busy}>
+            {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Thêm{userIds.length ? ` (${userIds.length})` : ""}
+          </Button>
         </div>
-        <div className="space-y-2">
+        <div className="space-y-2 max-h-64 overflow-y-auto">
           {(members ?? []).map((m) => {
             const p = m.profiles as { full_name: string; username: string } | null;
             return (

@@ -6,11 +6,12 @@ import { useAuth } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { SearchableSelect, SearchableMultiSelect } from "@/components/SearchableSelect";
 
 export const Route = createFileRoute("/_authenticated/admin/manager-assignments")({
   component: ManagerAssignments,
@@ -32,24 +33,27 @@ function ManagerAssignments() {
   const qc = useQueryClient();
   const { profile } = useAuth();
   const [managerId, setManagerId] = useState<string>("");
-  const [teamId, setTeamId] = useState<string>("");
+  const [teamIds, setTeamIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState("");
 
+  // Allow assignments for both leader and marketing_manager roles
   const { data: managers } = useQuery({
-    queryKey: ["managers"],
+    queryKey: ["managers-leaders"],
     queryFn: async () => {
       const { data: roles } = await supabase
         .from("user_roles")
-        .select("user_id")
-        .eq("role", "marketing_manager");
+        .select("user_id, role")
+        .in("role", ["marketing_manager", "leader"]);
       const ids = (roles ?? []).map((r) => r.user_id);
-      if (ids.length === 0) return [] as Manager[];
+      if (ids.length === 0) return [] as (Manager & { role: string })[];
       const { data } = await supabase
         .from("profiles")
         .select("id, full_name, username")
         .in("id", ids)
         .order("full_name");
-      return (data ?? []) as Manager[];
+      const rmap = new Map((roles ?? []).map((r) => [r.user_id, r.role as string]));
+      return ((data ?? []) as Manager[]).map((m) => ({ ...m, role: rmap.get(m.id) ?? "" }));
     },
   });
 
@@ -85,26 +89,28 @@ function ManagerAssignments() {
   });
 
   const assign = async () => {
-    if (!managerId || !teamId) {
-      toast.error("Chọn Trưởng Phòng và Team"); return;
+    if (!managerId || teamIds.length === 0) {
+      toast.error("Chọn người phụ trách và ít nhất 1 team"); return;
     }
     setBusy(true);
-    // upsert: re-activate if exists
+    const payload = teamIds.map((tid) => ({
+      manager_id: managerId,
+      team_id: tid,
+      assigned_by: profile?.id ?? null,
+      is_active: true,
+    }));
     const { error } = await supabase
       .from("manager_team_assignments")
-      .upsert(
-        { manager_id: managerId, team_id: teamId, assigned_by: profile?.id ?? null, is_active: true },
-        { onConflict: "manager_id,team_id" },
-      );
+      .upsert(payload, { onConflict: "manager_id,team_id" });
     setBusy(false);
     if (error) { toast.error(error.message); return; }
     await supabase.from("audit_logs").insert({
       actor_id: profile?.id, action: "assign_manager_team",
       entity_type: "manager_team_assignments", entity_id: null,
-      new_value: { manager_id: managerId, team_id: teamId },
+      new_value: { manager_id: managerId, team_ids: teamIds },
     });
-    toast.success("Đã gán team");
-    setTeamId("");
+    toast.success(`Đã gán ${teamIds.length} team`);
+    setTeamIds([]);
     qc.invalidateQueries({ queryKey: ["mta-list"] });
   };
 
@@ -123,51 +129,66 @@ function ManagerAssignments() {
     qc.invalidateQueries({ queryKey: ["mta-list"] });
   };
 
+  const filteredRows = (rows ?? []).filter((r) => {
+    const s = search.trim().toLowerCase();
+    if (!s) return true;
+    return (r.manager?.full_name ?? "").toLowerCase().includes(s)
+      || (r.manager?.username ?? "").toLowerCase().includes(s)
+      || (r.team?.name ?? "").toLowerCase().includes(s);
+  });
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Phân công Trưởng Phòng Marketing</h1>
-        <p className="text-sm text-muted-foreground">Gán Trưởng Phòng quản lý một hoặc nhiều team</p>
+        <h1 className="text-2xl font-bold tracking-tight">Phân công Trưởng Phòng / Leader</h1>
+        <p className="text-sm text-muted-foreground">Gán Trưởng Phòng Marketing hoặc Leader phụ trách nhiều team</p>
       </div>
 
       <Card>
         <CardHeader><CardTitle>Phân công mới</CardTitle></CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-          <div>
-            <Label>Trưởng Phòng Marketing</Label>
-            <Select value={managerId} onValueChange={setManagerId}>
-              <SelectTrigger><SelectValue placeholder="Chọn Trưởng Phòng" /></SelectTrigger>
-              <SelectContent>
-                {(managers ?? []).map((m) => (
-                  <SelectItem key={m.id} value={m.id}>{m.full_name} (@{m.username})</SelectItem>
-                ))}
-                {managers && managers.length === 0 && (
-                  <div className="px-3 py-2 text-sm text-muted-foreground">Chưa có user role marketing_manager</div>
-                )}
-              </SelectContent>
-            </Select>
+          <div className="min-w-0">
+            <Label>Người phụ trách (Leader / Trưởng phòng MKT)</Label>
+            <SearchableSelect
+              value={managerId}
+              onChange={setManagerId}
+              options={(managers ?? []).map((m) => ({
+                value: m.id,
+                label: `${m.full_name} (@${m.username})`,
+                sub: m.role === "marketing_manager" ? "TP Marketing" : "Leader",
+              }))}
+              placeholder="Chọn người phụ trách"
+              emptyText="Chưa có user role Leader / TP Marketing"
+            />
           </div>
-          <div>
-            <Label>Team</Label>
-            <Select value={teamId} onValueChange={setTeamId}>
-              <SelectTrigger><SelectValue placeholder="Chọn Team" /></SelectTrigger>
-              <SelectContent>
-                {(teams ?? []).map((t) => (
-                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="min-w-0">
+            <Label>Team (chọn nhiều)</Label>
+            <SearchableMultiSelect
+              values={teamIds}
+              onChange={setTeamIds}
+              options={(teams ?? []).map((t) => ({ value: t.id, label: t.name }))}
+              placeholder="Chọn team"
+            />
           </div>
           <div className="flex items-end">
             <Button onClick={assign} disabled={busy} className="w-full md:w-auto">
-              <Plus className="mr-2 h-4 w-4" /> Gán team
+              {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+              Gán {teamIds.length ? `(${teamIds.length})` : "team"}
             </Button>
           </div>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Danh sách phân công</CardTitle></CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <CardTitle>Danh sách phân công</CardTitle>
+          <Input
+            placeholder="Tìm theo tên, team..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="max-w-xs"
+          />
+        </CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin" /></div>
@@ -176,7 +197,7 @@ function ManagerAssignments() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Trưởng Phòng</TableHead>
+                    <TableHead>Người phụ trách</TableHead>
                     <TableHead>Team</TableHead>
                     <TableHead>Trạng thái</TableHead>
                     <TableHead>Thời gian</TableHead>
@@ -184,7 +205,7 @@ function ManagerAssignments() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(rows ?? []).map((r) => (
+                  {filteredRows.map((r) => (
                     <TableRow key={r.id}>
                       <TableCell className="font-medium">
                         {r.manager?.full_name ?? "—"}
@@ -208,7 +229,7 @@ function ManagerAssignments() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {rows && rows.length === 0 && (
+                  {filteredRows.length === 0 && (
                     <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">Chưa có phân công</TableCell></TableRow>
                   )}
                 </TableBody>
