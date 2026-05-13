@@ -104,7 +104,7 @@ function AdminUsers() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(data ?? []).map((u) => (
+                  {filtered.map((u) => (
                     <TableRow key={u.id}>
                       <TableCell className="font-medium">{u.full_name}</TableCell>
                       <TableCell>@{u.username}</TableCell>
@@ -119,6 +119,9 @@ function AdminUsers() {
                       </TableCell>
                     </TableRow>
                   ))}
+                  {filtered.length === 0 && (
+                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">Không có user</TableCell></TableRow>
+                  )}
                 </TableBody>
               </Table>
             </div>
