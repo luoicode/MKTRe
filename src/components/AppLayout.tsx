@@ -122,7 +122,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      <div className="flex flex-1 flex-col">
+      <div className="flex flex-1 flex-col min-w-0">
         <header className="flex h-14 items-center justify-between border-b bg-card px-4 md:hidden">
           <Button variant="ghost" size="icon" onClick={() => setOpen(true)}>
             <Menu className="h-5 w-5" />
