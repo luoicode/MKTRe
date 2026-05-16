@@ -2,7 +2,20 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
-import { useSlots, todayStr, formatVnd, formatVndSigned, formatPercent, fmtInt, parseVndInput, calculateReportMetrics } from "@/lib/reports";
+import type { TablesInsert } from "@/integrations/supabase/types";
+import {
+  useSlots,
+  todayStr,
+  formatVnd,
+  formatVndSigned,
+  formatPercent,
+  fmtInt,
+  parseVndInput,
+  calculateReportMetrics,
+  formatDateVN,
+  formatDateTimeVN,
+  type ReportSlot,
+} from "@/lib/reports";
 import { VndInput } from "@/components/VndInput";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,11 +25,22 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Save, Send, AlertTriangle, PartyPopper } from "lucide-react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  Clock3,
+  Loader2,
+  Save,
+  Send,
+} from "lucide-react";
 import { toast } from "sonner";
 import { SubmittedReportCard, type SubmittedReportData } from "@/components/SubmittedReportCard";
+import { isReconciliationSlot } from "@/lib/reportAudit";
 
-export const Route = createFileRoute("/_authenticated/employee/report")({ component: EmployeeReport });
+export const Route = createFileRoute("/_authenticated/employee/report")({
+  component: EmployeeReport,
+});
 
 interface FormState {
   ads_cost: string;
@@ -29,67 +53,426 @@ interface FormState {
   note: string;
 }
 const empty: FormState = {
-  ads_cost: "", mess_count: "", data_count: "", closed_orders: "",
-  daily_data_revenue: "", total_orders: "", total_revenue: "", note: "",
+  ads_cost: "",
+  mess_count: "",
+  data_count: "",
+  closed_orders: "",
+  daily_data_revenue: "",
+  total_orders: "",
+  total_revenue: "",
+  note: "",
 };
 
-function EmployeeReport() {
-  const { profile } = useAuth();
+interface ReportEntrySlot extends ReportSlot {
+  reportDate: string;
+  group: "today" | "previous_day";
+  groupLabel: string;
+}
+
+function addDays(date: string, days: number) {
+  const d = new Date(`${date}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
+function slotMinutes(slot: ReportSlot) {
+  const raw = slot.slot_time || slot.slot_name;
+  const [hh = "0", mm = "0"] = raw.replace("h", ":").split(":");
+  return Number(hh) * 60 + Number(mm);
+}
+
+function isPreviousDaySlot(slot: ReportSlot) {
+  return slot.slot_name.includes("13") || slot.slot_time.startsWith("13:");
+}
+
+function buildEntrySlots(slots: ReportSlot[] | undefined, baseDate: string): ReportEntrySlot[] {
+  return (slots ?? [])
+    .filter((s) => s.is_active)
+    .map((slot) => {
+      const previous = isPreviousDaySlot(slot);
+      return {
+        ...slot,
+        reportDate: previous ? addDays(baseDate, -1) : baseDate,
+        group: previous ? ("previous_day" as const) : ("today" as const),
+        groupLabel: previous ? "Hôm trước" : "Hôm nay",
+      };
+    })
+    .sort((a, b) => {
+      if (a.group !== b.group) return a.group === "today" ? -1 : 1;
+      return slotMinutes(a) - slotMinutes(b);
+    });
+}
+
+function getAutoSlot(slots: ReportEntrySlot[], now: Date) {
+  const todaySlots = slots.filter((s) => s.group === "today");
+  if (!todaySlots.length) return slots[0]?.id;
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  return (
+    todaySlots.find((s) => slotMinutes(s) > nowMinutes)?.id ?? todaySlots[todaySlots.length - 1].id
+  );
+}
+
+function shouldAutoAdvance(
+  active: ReportEntrySlot | undefined,
+  nextId: string | undefined,
+  now: Date,
+) {
+  if (!active || !nextId || active.group !== "today" || active.id === nextId) return false;
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  return nowMinutes >= slotMinutes(active);
+}
+
+type SlotTimingState = "upcoming" | "due" | "overdue";
+
+function slotDateTime(slot: ReportEntrySlot) {
+  const raw = slot.slot_time || slot.slot_name;
+  const [hh = "0", mm = "0"] = raw.replace("h", ":").split(":");
+  const [year, month, day] = slot.reportDate.split("-").map(Number);
+  return new Date(year, month - 1, day, Number(hh), Number(mm), 0, 0);
+}
+
+function slotTimingState(slot: ReportEntrySlot, now: Date): SlotTimingState {
+  const diffMinutes = (now.getTime() - slotDateTime(slot).getTime()) / 60_000;
+  if (diffMinutes < -30) return "upcoming";
+  if (diffMinutes <= 60) return "due";
+  return "overdue";
+}
+
+function slotVisual(
+  slot: ReportEntrySlot,
+  now: Date,
+  report: { status: string | null } | undefined,
+) {
+  if (report && ["submitted", "approved"].includes(String(report.status))) {
+    return {
+      label: "Đã gửi",
+      icon: CheckCircle2,
+      className:
+        "border-emerald-200 bg-emerald-50 text-emerald-700 data-[state=active]:bg-emerald-600 data-[state=active]:text-white",
+      badge: "bg-emerald-100 text-emerald-700",
+    };
+  }
+  const state = slotTimingState(slot, now);
+  if (state === "overdue") {
+    return {
+      label: "Quá giờ",
+      icon: AlertCircle,
+      className:
+        "border-red-200 bg-red-50 text-red-700 data-[state=active]:bg-red-600 data-[state=active]:text-white",
+      badge: "bg-red-100 text-red-700",
+    };
+  }
+  if (state === "due") {
+    return {
+      label: "Đến giờ",
+      icon: Clock3,
+      className:
+        "border-amber-200 bg-amber-50 text-amber-700 data-[state=active]:bg-amber-500 data-[state=active]:text-white",
+      badge: "bg-amber-100 text-amber-700",
+    };
+  }
+  return {
+    label: "Sắp tới",
+    icon: Clock3,
+    className:
+      "border-slate-200 bg-slate-50 text-slate-600 data-[state=active]:bg-slate-700 data-[state=active]:text-white",
+    badge: "bg-slate-100 text-slate-600",
+  };
+}
+
+async function ensureReportSlotNotification(
+  profileId: string,
+  item: {
+    slot: ReportEntrySlot;
+    type: "report_slot_due" | "report_slot_overdue";
+    severity: "warning" | "error";
+    title: string;
+    message: string;
+  },
+) {
+  const metadata = {
+    report_date: item.slot.reportDate,
+    slot_id: item.slot.id,
+    slot_time: item.slot.slot_time,
+  };
+  const { data: existing, error: existingError } = await supabase
+    .from("notifications")
+    .select("id")
+    .eq("target_profile_id", profileId)
+    .eq("type", item.type)
+    .contains("metadata", metadata)
+    .limit(1);
+
+  if (existingError) {
+    if (import.meta.env.DEV)
+      console.warn("[report-slot-notification] lookup failed", existingError);
+    return false;
+  }
+  if ((existing ?? []).length > 0) return true;
+
+  const payload: TablesInsert<"notifications"> = {
+    target_profile_id: profileId,
+    actor_profile_id: profileId,
+    type: item.type,
+    scope: "personal",
+    entity_type: "report",
+    entity_id: item.slot.id,
+    title: item.title,
+    message: item.message,
+    severity: item.severity,
+    metadata,
+    is_read: false,
+    user_id: profileId,
+    created_by: profileId,
+    kind: item.type,
+    team_id: null,
+    body: item.message,
+  };
+
+  const { error } = await supabase.from("notifications").insert(payload);
+  if (error) {
+    if (import.meta.env.DEV) console.warn("[report-slot-notification] insert failed", error);
+    return false;
+  }
+  return true;
+}
+
+export function EmployeeReport() {
+  const { profile, role } = useAuth();
   const { data: slots } = useSlots();
   const [date] = useState(todayStr());
+  const [now, setNow] = useState(() => new Date());
   const [activeSlot, setActiveSlot] = useState<string | undefined>();
   const [submitted, setSubmitted] = useState<SubmittedReportData | null>(null);
-  const [allDone, setAllDone] = useState(false);
+  const [reportNotificationKeys, setReportNotificationKeys] = useState<Set<string>>(new Set());
   const qc = useQueryClient();
+  const entrySlots = useMemo(() => buildEntrySlots(slots, date), [slots, date]);
+  const todaySlots = entrySlots.filter((s) => s.group === "today");
+  const previousDaySlots = entrySlots.filter((s) => s.group === "previous_day");
+  const activeEntry = entrySlots.find((s) => s.id === activeSlot);
+  const { data: slotReports } = useQuery({
+    queryKey: ["my-slot-statuses", profile?.id, date],
+    enabled: !!profile,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("slot_reports")
+        .select("slot_id, report_date, status")
+        .eq("user_id", profile!.id)
+        .in("report_date", [date, addDays(date, -1)]);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const reportBySlotDate = useMemo(
+    () =>
+      new Map(
+        (slotReports ?? []).map((report) => [`${report.report_date}:${report.slot_id}`, report]),
+      ),
+    [slotReports],
+  );
 
   useEffect(() => {
-    if (slots && slots.length && !activeSlot) setActiveSlot(slots[0].id);
-  }, [slots, activeSlot]);
+    const timer = window.setInterval(() => setNow(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!entrySlots.length) return;
+    if (!activeSlot) {
+      setActiveSlot(getAutoSlot(entrySlots, now));
+      return;
+    }
+    const next = getAutoSlot(entrySlots, now);
+    if (shouldAutoAdvance(activeEntry, next, now)) {
+      setActiveSlot(next);
+      setSubmitted(null);
+    }
+  }, [entrySlots, activeSlot, activeEntry, now]);
+
+  useEffect(() => {
+    if (!profile || (role !== "employee" && role !== "leader") || !slotReports) return;
+    let cancelled = false;
+
+    const submittedReports = reportBySlotDate;
+    const pendingSlots = entrySlots
+      .map((slot) => {
+        const report = submittedReports.get(`${slot.reportDate}:${slot.id}`);
+        if (report && ["submitted", "approved"].includes(String(report.status))) return null;
+        const timing = slotTimingState(slot, now);
+        if (timing !== "due" && timing !== "overdue") return null;
+        const type = timing === "due" ? "report_slot_due" : "report_slot_overdue";
+        return {
+          slot,
+          type,
+          severity: timing === "due" ? "warning" : "error",
+          title: timing === "due" ? "Đến giờ báo cáo" : "Quá giờ báo cáo",
+          message:
+            timing === "due"
+              ? `Đã đến giờ nhập báo cáo khung ${slot.slot_name}`
+              : `Bạn đã quá giờ báo cáo khung ${slot.slot_name}`,
+          key: `${type}:${slot.reportDate}:${slot.id}`,
+        };
+      })
+      .filter(Boolean) as Array<{
+      slot: ReportEntrySlot;
+      type: "report_slot_due" | "report_slot_overdue";
+      severity: "warning" | "error";
+      title: string;
+      message: string;
+      key: string;
+    }>;
+
+    const unseen = pendingSlots.filter((item) => !reportNotificationKeys.has(item.key));
+    if (!unseen.length) return;
+
+    void (async () => {
+      const completedKeys: string[] = [];
+      for (const item of unseen) {
+        const emitted = await ensureReportSlotNotification(profile.id, item);
+        if (emitted) completedKeys.push(item.key);
+      }
+      if (!cancelled && completedKeys.length) {
+        setReportNotificationKeys((current) => {
+          const next = new Set(current);
+          for (const key of completedKeys) next.add(key);
+          return next;
+        });
+        qc.invalidateQueries({ queryKey: ["notifications", profile.id] });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [entrySlots, now, profile, qc, reportBySlotDate, reportNotificationKeys, role, slotReports]);
 
   const handleSubmitted = (payload: SubmittedReportData) => {
     setSubmitted(payload);
-    if (!slots) return;
-    const idx = slots.findIndex((s) => s.id === activeSlot);
-    if (idx >= 0 && idx < slots.length - 1) {
-      setActiveSlot(slots[idx + 1].id);
-      setAllDone(false);
-    } else {
-      setAllDone(true);
+    const ordered = payload.reportDate === date ? todaySlots : previousDaySlots;
+    const idx = ordered.findIndex((s) => s.id === activeSlot);
+    if (idx >= 0 && idx < ordered.length - 1) {
+      setActiveSlot(ordered[idx + 1].id);
     }
   };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Báo cáo của bạn</h1>
-        <p className="text-sm text-muted-foreground">Ngày: {date}</p>
-      </div>
-
-      <div className="rounded-md border border-blue-300 bg-blue-50 p-3 text-sm text-blue-900">
-        <p className="font-semibold">Lưu ý: Số liệu nhập là LŨY KẾ trong ngày, không phải số phát sinh riêng của khung giờ.</p>
-        <p className="mt-1 text-xs">
-          Ví dụ: nếu bạn đã tắt Ads từ 11h55 và chi phí không tăng thêm, các khung giờ sau vẫn nhập lại cùng mức Chi Phí Ads (không cộng dồn).
+    <div className="mx-auto max-w-7xl space-y-3 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden">
+      <div className="shrink-0">
+        <h1 className="text-xl font-bold tracking-tight md:text-2xl">Báo cáo của bạn</h1>
+        <p className="text-sm text-muted-foreground">
+          Hôm nay: {formatDateVN(date)}
+          {activeEntry && (
+            <>
+              {" "}
+              · Đang nhập: {activeEntry.groupLabel} ({formatDateVN(activeEntry.reportDate)})
+            </>
+          )}
         </p>
       </div>
 
       {!slots ? (
-        <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin" /></div>
+        <div className="flex justify-center py-10 md:min-h-0 md:flex-1 md:items-center">
+          <Loader2 className="h-6 w-6 animate-spin" />
+        </div>
       ) : (
-        <Tabs value={activeSlot} onValueChange={(v) => { setActiveSlot(v); setSubmitted(null); setAllDone(false); }}>
-          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
-            {slots.map((s) => (
-              <TabsTrigger key={s.id} value={s.id}>{s.slot_name}</TabsTrigger>
-            ))}
-          </TabsList>
-          {slots.map((s) => (
-            <TabsContent key={s.id} value={s.id} className="mt-6">
+        <Tabs
+          value={activeSlot}
+          onValueChange={(v) => {
+            setActiveSlot(v);
+            setSubmitted(null);
+          }}
+          className="md:flex md:min-h-0 md:flex-1 md:flex-col"
+        >
+          <div className="grid shrink-0 gap-2 md:grid-cols-[1fr_200px]">
+            <Card>
+              <CardHeader className="px-3 py-2">
+                <CardTitle className="text-base">Hôm nay</CardTitle>
+                <CardDescription>11h55, 16h55, 21h00</CardDescription>
+              </CardHeader>
+              <CardContent className="px-3 pb-3 pt-0">
+                <TabsList className="grid h-auto w-full grid-cols-1 gap-1 bg-muted/50 p-1 sm:grid-cols-3">
+                  {todaySlots.map((s) => {
+                    const visual = slotVisual(
+                      s,
+                      now,
+                      reportBySlotDate.get(`${s.reportDate}:${s.id}`),
+                    );
+                    const Icon = visual.icon;
+                    return (
+                      <TabsTrigger
+                        key={s.id}
+                        value={s.id}
+                        className={`h-auto items-start justify-start gap-2 border py-1.5 text-left ${visual.className}`}
+                      >
+                        <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span className="min-w-0">
+                          <span className="block font-semibold">{s.slot_name}</span>
+                          <span
+                            className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] ${visual.badge}`}
+                          >
+                            {visual.label}
+                          </span>
+                        </span>
+                      </TabsTrigger>
+                    );
+                  })}
+                </TabsList>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="px-3 py-2">
+                <CardTitle className="text-base">Hôm trước</CardTitle>
+                <CardDescription>{formatDateVN(addDays(date, -1))}</CardDescription>
+              </CardHeader>
+              <CardContent className="px-3 pb-3 pt-0">
+                <TabsList className="grid h-auto w-full grid-cols-1 bg-muted/50 p-1">
+                  {previousDaySlots.map((s) => {
+                    const visual = slotVisual(
+                      s,
+                      now,
+                      reportBySlotDate.get(`${s.reportDate}:${s.id}`),
+                    );
+                    const Icon = visual.icon;
+                    return (
+                      <TabsTrigger
+                        key={s.id}
+                        value={s.id}
+                        className={`h-auto items-start justify-start gap-2 border py-1.5 text-left ${visual.className}`}
+                      >
+                        <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span className="min-w-0">
+                          <span className="block font-semibold">{s.slot_name}</span>
+                          <span
+                            className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] ${visual.badge}`}
+                          >
+                            {visual.label}
+                          </span>
+                        </span>
+                      </TabsTrigger>
+                    );
+                  })}
+                </TabsList>
+              </CardContent>
+            </Card>
+          </div>
+          {entrySlots.map((s) => (
+            <TabsContent
+              key={s.id}
+              value={s.id}
+              className="mt-3 md:min-h-0 md:flex-1 md:overflow-hidden data-[state=active]:md:block data-[state=inactive]:md:hidden"
+            >
               {profile && activeSlot === s.id && (
                 <SlotForm
                   profileId={profile.id}
                   fullName={profile.full_name}
                   slotId={s.id}
                   slotName={s.slot_name}
-                  date={date}
+                  date={s.reportDate}
+                  groupLabel={s.groupLabel}
                   onSaved={() => qc.invalidateQueries({ queryKey: ["my-reports"] })}
                   onSubmitted={handleSubmitted}
                 />
@@ -99,28 +482,27 @@ function EmployeeReport() {
         </Tabs>
       )}
 
-      {allDone && (
-        <Card className="border-green-300 bg-green-50">
-          <CardContent className="flex items-center gap-3 p-4 text-green-800">
-            <PartyPopper className="h-6 w-6" />
-            <div className="font-semibold">Bạn đã hoàn thành báo cáo hôm nay</div>
-          </CardContent>
-        </Card>
-      )}
-
-      {submitted && <SubmittedReportCard data={submitted} />}
+      {submitted && <SubmittedReportCard data={submitted} onClose={() => setSubmitted(null)} />}
     </div>
   );
 }
 
 function NumberInput({
-  id, value, onChange, disabled, placeholder = "0",
+  id,
+  value,
+  onChange,
+  disabled,
+  placeholder = "0",
 }: {
-  id: string; value: string; onChange: (v: string) => void;
-  disabled?: boolean; placeholder?: string;
+  id: string;
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  placeholder?: string;
 }) {
   return (
     <Input
+      className="h-8 text-sm"
       id={id}
       type="text"
       inputMode="numeric"
@@ -137,14 +519,33 @@ function NumberInput({
   );
 }
 
-function SlotForm({ profileId, fullName, slotId, slotName, date, onSaved, onSubmitted }: {
-  profileId: string; fullName: string; slotId: string; slotName: string; date: string;
-  onSaved: () => void; onSubmitted: (d: SubmittedReportData) => void;
+function SlotForm({
+  profileId,
+  fullName,
+  slotId,
+  slotName,
+  date,
+  groupLabel,
+  onSaved,
+  onSubmitted,
+}: {
+  profileId: string;
+  fullName: string;
+  slotId: string;
+  slotName: string;
+  date: string;
+  groupLabel: string;
+  onSaved: () => void;
+  onSubmitted: (d: SubmittedReportData) => void;
 }) {
   const [form, setForm] = useState<FormState>(empty);
   const [saving, setSaving] = useState(false);
 
-  const { data: existing, isLoading, refetch } = useQuery({
+  const {
+    data: existing,
+    isLoading,
+    refetch,
+  } = useQuery({
     queryKey: ["slot_report", profileId, date, slotId],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -156,6 +557,20 @@ function SlotForm({ profileId, fullName, slotId, slotName, date, onSaved, onSubm
         .maybeSingle();
       if (error) throw error;
       return data;
+    },
+  });
+  const { data: hasReconciliationAudit } = useQuery({
+    queryKey: ["report-reconciliation-audit", existing?.id],
+    enabled: !!existing?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("report_audit_logs")
+        .select("id")
+        .eq("report_id", existing!.id)
+        .eq("action_type", "reconciled")
+        .limit(1);
+      if (error) throw error;
+      return (data ?? []).length > 0;
     },
   });
 
@@ -177,25 +592,40 @@ function SlotForm({ profileId, fullName, slotId, slotName, date, onSaved, onSubm
     }
   }, [existing]);
 
-  const nums = {
-    ads: parseVndInput(form.ads_cost),
-    mess: Number(form.mess_count) || 0,
-    data: Number(form.data_count) || 0,
-    closed: Number(form.closed_orders) || 0,
-    dailyRev: parseVndInput(form.daily_data_revenue),
-    totalOrders: Number(form.total_orders) || 0,
-    totalRev: parseVndInput(form.total_revenue),
-  };
+  const nums = useMemo(
+    () => ({
+      ads: parseVndInput(form.ads_cost),
+      mess: Number(form.mess_count) || 0,
+      data: Number(form.data_count) || 0,
+      closed: Number(form.closed_orders) || 0,
+      dailyRev: parseVndInput(form.daily_data_revenue),
+      totalOrders: Number(form.total_orders) || 0,
+      totalRev: parseVndInput(form.total_revenue),
+    }),
+    [
+      form.ads_cost,
+      form.mess_count,
+      form.data_count,
+      form.closed_orders,
+      form.daily_data_revenue,
+      form.total_orders,
+      form.total_revenue,
+    ],
+  );
 
-  const computed = useMemo(() => calculateReportMetrics({
-    ads_cost: nums.ads,
-    mess_count: nums.mess,
-    data_count: nums.data,
-    closed_orders: nums.closed,
-    daily_data_revenue: nums.dailyRev,
-    total_orders: nums.totalOrders,
-    total_revenue: nums.totalRev,
-  }), [nums.ads, nums.mess, nums.data, nums.closed, nums.dailyRev, nums.totalRev]);
+  const computed = useMemo(
+    () =>
+      calculateReportMetrics({
+        ads_cost: nums.ads,
+        mess_count: nums.mess,
+        data_count: nums.data,
+        closed_orders: nums.closed,
+        daily_data_revenue: nums.dailyRev,
+        total_orders: nums.totalOrders,
+        total_revenue: nums.totalRev,
+      }),
+    [nums.ads, nums.mess, nums.data, nums.closed, nums.dailyRev, nums.totalOrders, nums.totalRev],
+  );
 
   const warnings = useMemo(() => {
     const w: string[] = [];
@@ -210,7 +640,9 @@ function SlotForm({ profileId, fullName, slotId, slotName, date, onSaved, onSubm
     return w;
   }, [nums]);
 
-  const locked = existing && !["draft", "rejected"].includes(existing.status as string);
+  const locked = existing && ["approved", "locked"].includes(existing.status as string);
+  const isReconciliation = isReconciliationSlot(slotName);
+  const wasReconciled = isReconciliation || !!hasReconciliationAudit;
 
   const save = async (status: "draft" | "submitted") => {
     setSaving(true);
@@ -239,12 +671,16 @@ function SlotForm({ profileId, fullName, slotId, slotName, date, onSaved, onSubm
       return;
     }
     if (status === "submitted") {
+      const nowIso = new Date().toISOString();
       toast.success("Đã gửi báo cáo thành công");
       onSubmitted({
         fullName,
         reportDate: date,
         slotName,
+        scopeLabel: isReconciliation ? "Chỉnh hôm trước" : "Hôm nay",
         submittedAt: submittedAt!,
+        lastUpdatedAt: nowIso,
+        wasReconciled,
         ads_cost: nums.ads,
         mess_count: nums.mess,
         data_count: nums.data,
@@ -263,7 +699,11 @@ function SlotForm({ profileId, fullName, slotId, slotName, date, onSaved, onSubm
   };
 
   if (isLoading) {
-    return <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+    return (
+      <div className="flex justify-center py-10">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
   }
 
   const VND_FIELDS = new Set<keyof FormState>(["ads_cost", "daily_data_revenue", "total_revenue"]);
@@ -291,28 +731,43 @@ function SlotForm({ profileId, fullName, slotId, slotName, date, onSaved, onSubm
   const recoveredNeg = computed.recovered < 0;
 
   return (
-    <div className="grid gap-6 md:grid-cols-2">
-      <Card>
-        <CardHeader>
+    <div className="grid gap-3 md:h-full md:min-h-0 lg:grid-cols-2">
+      <Card className="md:flex md:min-h-0 md:flex-col">
+        <CardHeader className="px-3 py-2">
           <CardTitle className="flex items-center justify-between">
             <span>Khung {slotName}</span>
-            {existing && <StatusBadge status={existing.status as string} />}
+            <span className="flex flex-wrap justify-end gap-1.5">
+              <Badge variant={isReconciliation ? "secondary" : "outline"}>
+                {isReconciliation ? "Chỉnh hôm trước" : "Hôm nay"}
+              </Badge>
+              {wasReconciled && <Badge variant="outline">Đã chỉnh sau reconciliation</Badge>}
+              {existing && <StatusBadge status={existing.status as string} />}
+            </span>
           </CardTitle>
-          <CardDescription>Nhập số liệu thô. Hệ thống sẽ tự tính các chỉ số.</CardDescription>
+          <CardDescription className="text-xs">
+            {groupLabel} · Ngày báo cáo {formatDateVN(date)}. Nhập số liệu thô, hệ thống sẽ tự tính
+            các chỉ số.
+            {existing?.updated_at && (
+              <span className="mt-1 block">
+                Cập nhật cuối: {formatDateTimeVN(existing.updated_at)}
+              </span>
+            )}
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {numField("ads_cost", "Chi Phí Ads (VNĐ)")}
+        <CardContent className="space-y-2 px-3 pb-3 md:min-h-0 md:flex-1">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {numField("ads_cost", "Chi Phí Ads")}
             {numField("mess_count", "MESS")}
             {numField("data_count", "Data")}
             {numField("closed_orders", "Đơn chốt DATA trong ngày")}
-            {numField("daily_data_revenue", "DOANH SỐ DATA trong ngày (VNĐ)")}
+            {numField("daily_data_revenue", "DOANH SỐ DATA trong ngày")}
             {numField("total_orders", "Tổng Đơn Chốt")}
-            {numField("total_revenue", "Tổng Doanh Số (VNĐ)")}
+            {numField("total_revenue", "Tổng Doanh Số")}
           </div>
           <div>
             <Label htmlFor="note">Ghi chú</Label>
             <Textarea
+              className="min-h-12 text-sm"
               id="note"
               value={form.note}
               onChange={(e) => setForm({ ...form, note: e.target.value })}
@@ -321,7 +776,7 @@ function SlotForm({ profileId, fullName, slotId, slotName, date, onSaved, onSubm
           </div>
 
           {warnings.length > 0 && (
-            <div className="space-y-1 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+            <div className="space-y-1 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
               {warnings.map((w, i) => (
                 <div key={i} className="flex items-start gap-2">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -338,32 +793,43 @@ function SlotForm({ profileId, fullName, slotId, slotName, date, onSaved, onSubm
           )}
 
           {!locked && (
-            <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" onClick={() => save("draft")} disabled={saving}>
+            <div className="flex flex-wrap justify-end gap-2 rounded-lg border bg-card/95 p-2 shadow-sm backdrop-blur">
+              <Button size="sm" variant="secondary" onClick={() => save("draft")} disabled={saving}>
                 <Save className="mr-2 h-4 w-4" /> Lưu nháp
               </Button>
-              <Button onClick={() => save("submitted")} disabled={saving}>
-                <Send className="mr-2 h-4 w-4" /> Gửi báo cáo
+              <Button size="sm" onClick={() => save("submitted")} disabled={saving}>
+                <Send className="mr-2 h-4 w-4" />{" "}
+                {existing?.status === "submitted" ? "Gửi lại báo cáo" : "Gửi báo cáo"}
               </Button>
             </div>
           )}
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Chỉ số tự tính</CardTitle>
+      <Card className="md:flex md:min-h-0 md:flex-col">
+        <CardHeader className="px-3 py-2">
+          <CardTitle className="text-base">Chỉ số tự tính</CardTitle>
           <CardDescription>Cập nhật real-time theo số liệu nhập</CardDescription>
         </CardHeader>
-        <CardContent>
-          <dl className="grid grid-cols-2 gap-3 text-sm">
+        <CardContent className="px-3 pb-3 md:min-h-0 md:flex-1">
+          <dl className="grid grid-cols-2 gap-2 text-sm">
             <Metric label="Chi phí ADS/MESS" value={formatVnd(computed.cp_mess)} />
             <Metric label="Chi phí ADS/Data" value={formatVnd(computed.cp_data)} />
-            <Metric label="Tỉ lệ chốt Data trong ngày" value={formatPercent(computed.conv_rate)} />
-            <Metric label="TB Đơn" value={formatVnd(computed.avg_order)} />
-            <Metric label="Chi phí ADS/Doanh Số Trong Ngày" value={formatPercent(computed.cp_daily_pct)} />
-            <Metric label="Chi phí ADS/Tổng Doanh Số" value={formatPercent(computed.cp_total_pct)} />
-            <Metric label="Doanh số chốt lại" value={formatVndSigned(computed.recovered)} danger={recoveredNeg} />
+            <Metric label="Tỉ lệ chốt DATA trong ngày" value={formatPercent(computed.conv_rate)} />
+            <Metric label="Trung bình đơn" value={formatVnd(computed.avg_order)} />
+            <Metric
+              label="Chi phí ADS/Doanh số ngày"
+              value={formatPercent(computed.cp_daily_pct)}
+            />
+            <Metric
+              label="Chi phí ADS/Tổng Doanh Số"
+              value={formatPercent(computed.cp_total_pct)}
+            />
+            <Metric
+              label="Doanh số chốt lại"
+              value={formatVndSigned(computed.recovered)}
+              danger={recoveredNeg}
+            />
             <Metric label="Tổng Đơn Chốt" value={fmtInt(nums.totalOrders)} />
           </dl>
           {recoveredNeg && (
@@ -379,15 +845,18 @@ function SlotForm({ profileId, fullName, slotId, slotName, date, onSaved, onSubm
 
 function Metric({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
   return (
-    <div className="rounded-lg border bg-card p-3">
+    <div className="rounded-lg border bg-card p-2.5">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className={`mt-1 text-base font-semibold ${danger ? "text-red-600" : ""}`}>{value}</dd>
+      <dd className={`mt-0.5 text-sm font-semibold ${danger ? "text-red-600" : ""}`}>{value}</dd>
     </div>
   );
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { v: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
+  const map: Record<
+    string,
+    { v: "default" | "secondary" | "destructive" | "outline"; label: string }
+  > = {
     draft: { v: "secondary", label: "Nháp" },
     submitted: { v: "default", label: "Đã gửi" },
     approved: { v: "default", label: "Đã duyệt" },

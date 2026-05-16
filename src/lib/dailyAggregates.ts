@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { getReconciledReportIds } from "@/lib/reportAudit";
 
 export interface SlotMeta {
   id: string;
@@ -32,6 +33,7 @@ export interface EmployeeLatest {
   hasReport: boolean;
   countedInTotal: boolean; // submitted or approved
   has_21h: boolean;
+  was_reconciled: boolean;
 }
 
 export interface TeamTotals {
@@ -54,10 +56,19 @@ const COUNT_STATUSES = new Set(["submitted", "approved"]);
 
 export function emptyTotals(totalEmployees = 0): TeamTotals {
   return {
-    ads_cost: 0, mess_count: 0, data_count: 0, closed_orders: 0,
-    daily_data_revenue: 0, total_orders: 0, total_revenue: 0, recovered_revenue: 0,
-    roas: null, conversion_rate: null,
-    reportedCount: 0, missingCount: totalEmployees, totalEmployees,
+    ads_cost: 0,
+    mess_count: 0,
+    data_count: 0,
+    closed_orders: 0,
+    daily_data_revenue: 0,
+    total_orders: 0,
+    total_revenue: 0,
+    recovered_revenue: 0,
+    roas: null,
+    conversion_rate: null,
+    reportedCount: 0,
+    missingCount: totalEmployees,
+    totalEmployees,
   };
 }
 
@@ -95,14 +106,23 @@ export async function getLatestDailyReportPerEmployee(params: {
   if (!teamIds.length) return { rows: [], slots: [] };
 
   const [{ data: slots }, { data: memberships }, { data: reports }] = await Promise.all([
-    supabase.from("report_slots").select("id, slot_name, sort_order").eq("is_active", true).order("sort_order"),
-    supabase.from("team_memberships").select("user_id, team_id").in("team_id", teamIds).eq("is_active", true),
+    supabase
+      .from("report_slots")
+      .select("id, slot_name, sort_order")
+      .eq("is_active", true)
+      .order("sort_order"),
+    supabase
+      .from("team_memberships")
+      .select("user_id, team_id")
+      .in("team_id", teamIds)
+      .eq("is_active", true),
     supabase.from("slot_reports").select("*").in("team_id", teamIds).eq("report_date", date),
   ]);
 
   const slotMeta = (slots ?? []) as SlotMeta[];
   const slotById = new Map(slotMeta.map((s) => [s.id, s]));
   const slot21 = slotMeta.find((s) => /21/.test(s.slot_name)) ?? slotMeta[slotMeta.length - 1];
+  const reconciledReportIds = await getReconciledReportIds((reports ?? []).map((r) => r.id));
 
   const userIds = Array.from(new Set((memberships ?? []).map((m) => m.user_id)));
   const teamByUser = new Map((memberships ?? []).map((m) => [m.user_id, m.team_id]));
@@ -133,9 +153,7 @@ export async function getLatestDailyReportPerEmployee(params: {
     const arr = reportsByUser.get(p.id) ?? [];
     const r = arr.length ? pickLatest(arr as NonNullable<typeof reports>) : null;
     const counted = !!r && COUNT_STATUSES.has(String(r.status));
-    const has21 = arr.some(
-      (x) => x.slot_id === slot21?.id && COUNT_STATUSES.has(String(x.status))
-    );
+    const has21 = arr.some((x) => x.slot_id === slot21?.id && COUNT_STATUSES.has(String(x.status)));
     return {
       user_id: p.id,
       full_name: p.full_name,
@@ -143,7 +161,7 @@ export async function getLatestDailyReportPerEmployee(params: {
       team_id: teamByUser.get(p.id) ?? "",
       report_id: r?.id ?? null,
       slot_id: r?.slot_id ?? null,
-      slot_name: r ? slotById.get(r.slot_id)?.slot_name ?? null : null,
+      slot_name: r ? (slotById.get(r.slot_id)?.slot_name ?? null) : null,
       status: r?.status ?? null,
       submitted_at: r?.submitted_at ?? null,
       updated_at: r?.updated_at ?? null,
@@ -161,6 +179,7 @@ export async function getLatestDailyReportPerEmployee(params: {
       hasReport: !!r,
       countedInTotal: counted,
       has_21h: has21,
+      was_reconciled: !!r && reconciledReportIds.has(r.id),
     };
   });
 
@@ -168,10 +187,128 @@ export async function getLatestDailyReportPerEmployee(params: {
   return { rows, slots: slotMeta };
 }
 
+export async function getLatestDailyReportPerEmployeeRange(params: {
+  teamIds: string[];
+  from: string; // YYYY-MM-DD
+  to: string; // YYYY-MM-DD
+}): Promise<{ rows: EmployeeLatest[]; slots: SlotMeta[] }> {
+  const from = params.from <= params.to ? params.from : params.to;
+  const to = params.from <= params.to ? params.to : params.from;
+  if (from === to) return getLatestDailyReportPerEmployee({ teamIds: params.teamIds, date: from });
+
+  const rowsByUser = new Map<string, EmployeeLatest>();
+  let slots: SlotMeta[] = [];
+
+  for (const date of enumerateDates(from, to)) {
+    const daily = await getLatestDailyReportPerEmployee({ teamIds: params.teamIds, date });
+    if (!slots.length) slots = daily.slots;
+
+    for (const row of daily.rows) {
+      const current = rowsByUser.get(row.user_id) ?? emptyEmployeeRangeRow(row);
+      current.hasReport = current.hasReport || row.hasReport;
+      current.countedInTotal = current.countedInTotal || row.countedInTotal;
+      current.has_21h = current.has_21h || row.has_21h;
+      current.was_reconciled = current.was_reconciled || row.was_reconciled;
+
+      if (row.countedInTotal) {
+        current.ads_cost += Number(row.ads_cost) || 0;
+        current.mess_count += Number(row.mess_count) || 0;
+        current.data_count += Number(row.data_count) || 0;
+        current.closed_orders += Number(row.closed_orders) || 0;
+        current.daily_data_revenue += Number(row.daily_data_revenue) || 0;
+        current.total_orders += Number(row.total_orders) || 0;
+        current.total_revenue += Number(row.total_revenue) || 0;
+        current.recovered_revenue += Number(row.recovered_revenue) || 0;
+      }
+
+      if (row.hasReport && reportTime(row) >= reportTime(current)) {
+        current.report_id = row.report_id;
+        current.slot_id = row.slot_id;
+        current.slot_name = row.slot_name;
+        current.status = row.status;
+        current.submitted_at = row.submitted_at;
+        current.updated_at = row.updated_at;
+        current.note = row.note;
+      }
+
+      current.roas = current.ads_cost > 0 ? current.total_revenue / current.ads_cost : null;
+      current.conversion_rate =
+        current.data_count > 0 ? (current.closed_orders / current.data_count) * 100 : null;
+      rowsByUser.set(row.user_id, current);
+    }
+  }
+
+  const rows = Array.from(rowsByUser.values()).sort((a, b) =>
+    a.full_name.localeCompare(b.full_name, "vi"),
+  );
+  return { rows, slots };
+}
+
+function emptyEmployeeRangeRow(row: EmployeeLatest): EmployeeLatest {
+  return {
+    ...row,
+    report_id: null,
+    slot_id: null,
+    slot_name: null,
+    status: null,
+    submitted_at: null,
+    updated_at: null,
+    ads_cost: 0,
+    mess_count: 0,
+    data_count: 0,
+    closed_orders: 0,
+    daily_data_revenue: 0,
+    total_orders: 0,
+    total_revenue: 0,
+    recovered_revenue: 0,
+    roas: null,
+    conversion_rate: null,
+    note: null,
+    hasReport: false,
+    countedInTotal: false,
+    has_21h: false,
+    was_reconciled: false,
+  };
+}
+
+function reportTime(row: Pick<EmployeeLatest, "submitted_at" | "updated_at">) {
+  return new Date(row.submitted_at ?? row.updated_at ?? 0).getTime();
+}
+
+function enumerateDates(from: string, to: string) {
+  const dates: string[] = [];
+  const cursor = new Date(`${from}T00:00:00`);
+  const end = new Date(`${to}T00:00:00`);
+  while (cursor <= end) {
+    dates.push(formatDate(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
+}
+
+function formatDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 /** Returns team ids led by the given leader profile id */
 export async function getLeaderTeamIds(leaderProfileId: string): Promise<string[]> {
-  const { data } = await supabase.from("teams").select("id").eq("leader_id", leaderProfileId);
-  return (data ?? []).map((t) => t.id);
+  const [{ data: membershipTeams }, { data: legacyTeams }] = await Promise.all([
+    supabase
+      .from("team_memberships")
+      .select("team_id")
+      .eq("user_id", leaderProfileId)
+      .eq("is_active", true),
+    supabase.from("teams").select("id").eq("leader_id", leaderProfileId),
+  ]);
+  return Array.from(
+    new Set([
+      ...(membershipTeams ?? []).map((t) => t.team_id),
+      ...(legacyTeams ?? []).map((t) => t.id),
+    ]),
+  );
 }
 
 /** Returns team ids assigned to a manager profile */

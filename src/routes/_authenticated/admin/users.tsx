@@ -1,31 +1,76 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Loader2, Plus, Edit } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({ component: AdminUsers });
+
+type AppRole = "admin" | "manager" | "leader" | "employee";
+type UserStatus = "active" | "inactive";
+type FixedAssetType = "hotline" | "odoo";
+type FixedAssetForm = Record<FixedAssetType, string>;
 
 interface UserRow {
   id: string;
   full_name: string;
   username: string;
   email: string;
-  status: "active" | "inactive";
-  role?: string;
+  status: UserStatus;
+  role?: AppRole | null;
+  activeTeamId?: string | null;
+  activeTeamName?: string | null;
 }
 
+interface TeamOption {
+  id: string;
+  name: string;
+}
+
+const ROLE_LABELS: Record<AppRole, string> = {
+  admin: "Admin",
+  manager: "Trưởng phòng Marketing",
+  leader: "Leader",
+  employee: "Nhân viên",
+};
+
+const NONE_TEAM = "__none__";
+const emptyFixedAssets: FixedAssetForm = { hotline: "", odoo: "" };
+
 async function callFn(name: string, body: unknown) {
-  const { data: { session } } = await supabase.auth.getSession();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
   const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`, {
     method: "POST",
     headers: {
@@ -40,29 +85,78 @@ async function callFn(name: string, body: unknown) {
   return json;
 }
 
+function roleLabel(role?: string | null) {
+  if (!role) return "—";
+  return ROLE_LABELS[role as AppRole] ?? role;
+}
+
 function AdminUsers() {
   const qc = useQueryClient();
+  const { profile } = useAuth();
   const { data, isLoading } = useQuery({
     queryKey: ["admin-users"],
     queryFn: async () => {
-      const { data: profiles, error } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
+      const [{ data: profiles, error }, { data: teams, error: teamsError }] = await Promise.all([
+        supabase.from("profiles").select("*").order("created_at", { ascending: false }),
+        supabase.from("teams").select("id, name").eq("status", "active").order("name"),
+      ]);
       if (error) throw error;
+      if (teamsError) throw teamsError;
+
       const ids = (profiles ?? []).map((p) => p.id);
-      const { data: roles } = await supabase.from("user_roles").select("user_id, role").in("user_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]);
-      const map = new Map((roles ?? []).map((r) => [r.user_id, r.role]));
-      return (profiles ?? []).map((p) => ({ ...p, role: map.get(p.id) })) as UserRow[];
+      const emptyId = "00000000-0000-0000-0000-000000000000";
+      const [{ data: roles }, { data: memberships }] = await Promise.all([
+        supabase
+          .from("user_roles")
+          .select("user_id, role")
+          .in("user_id", ids.length ? ids : [emptyId]),
+        supabase
+          .from("team_memberships")
+          .select("user_id, team_id, teams(name)")
+          .eq("is_active", true)
+          .in("user_id", ids.length ? ids : [emptyId]),
+      ]);
+
+      const roleMap = new Map((roles ?? []).map((r) => [r.user_id, r.role as AppRole]));
+      const membershipMap = new Map(
+        (memberships ?? []).map((m) => [
+          m.user_id,
+          {
+            teamId: m.team_id,
+            teamName: (m.teams as { name: string } | null)?.name ?? null,
+          },
+        ]),
+      );
+
+      return {
+        users: (profiles ?? []).map((p) => {
+          const membership = membershipMap.get(p.id);
+          return {
+            ...p,
+            role: roleMap.get(p.id) ?? null,
+            activeTeamId: membership?.teamId ?? null,
+            activeTeamName: membership?.teamName ?? null,
+          };
+        }) as UserRow[],
+        teams: (teams ?? []) as TeamOption[],
+      };
     },
   });
 
+  const users = data?.users ?? [];
+  const teams = data?.teams ?? [];
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [search, setSearch] = useState("");
-  const filtered = (data ?? []).filter((u) => {
+  const filtered = users.filter((u) => {
     const s = search.trim().toLowerCase();
     if (!s) return true;
-    return u.full_name.toLowerCase().includes(s)
-      || u.username.toLowerCase().includes(s)
-      || (u.role ?? "").toLowerCase().includes(s);
+    return (
+      u.full_name.toLowerCase().includes(s) ||
+      u.username.toLowerCase().includes(s) ||
+      roleLabel(u.role).toLowerCase().includes(s) ||
+      (u.activeTeamName ?? "").toLowerCase().includes(s)
+    );
   });
 
   return (
@@ -73,8 +167,18 @@ function AdminUsers() {
           <p className="text-sm text-muted-foreground">Tạo, cập nhật, vô hiệu hóa tài khoản</p>
         </div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild><Button><Plus className="mr-2 h-4 w-4" /> Tạo user</Button></DialogTrigger>
-          <CreateUserDialog onClose={() => { setCreateOpen(false); qc.invalidateQueries({ queryKey: ["admin-users"] }); }} />
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="mr-2 h-4 w-4" /> Tạo user
+            </Button>
+          </DialogTrigger>
+          <CreateUserDialog
+            adminProfileId={profile?.id ?? null}
+            onClose={() => {
+              setCreateOpen(false);
+              qc.invalidateQueries({ queryKey: ["admin-users"] });
+            }}
+          />
         </Dialog>
       </div>
 
@@ -90,7 +194,9 @@ function AdminUsers() {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin" /></div>
+            <div className="flex justify-center py-10">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -99,6 +205,7 @@ function AdminUsers() {
                     <TableHead>Tên</TableHead>
                     <TableHead>Username</TableHead>
                     <TableHead>Vai trò</TableHead>
+                    <TableHead>Team</TableHead>
                     <TableHead>Trạng thái</TableHead>
                     <TableHead className="w-24" />
                   </TableRow>
@@ -108,9 +215,14 @@ function AdminUsers() {
                     <TableRow key={u.id}>
                       <TableCell className="font-medium">{u.full_name}</TableCell>
                       <TableCell>@{u.username}</TableCell>
-                      <TableCell><Badge variant="outline">{u.role ?? "—"}</Badge></TableCell>
                       <TableCell>
-                        <Badge variant={u.status === "active" ? "default" : "secondary"}>{u.status}</Badge>
+                        <Badge variant="outline">{roleLabel(u.role)}</Badge>
+                      </TableCell>
+                      <TableCell>{u.activeTeamName ?? "—"}</TableCell>
+                      <TableCell>
+                        <Badge variant={u.status === "active" ? "default" : "secondary"}>
+                          {u.status}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <Button variant="ghost" size="sm" onClick={() => setEditing(u)}>
@@ -120,7 +232,11 @@ function AdminUsers() {
                     </TableRow>
                   ))}
                   {filtered.length === 0 && (
-                    <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">Không có user</TableCell></TableRow>
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground py-6">
+                        Không có user
+                      </TableCell>
+                    </TableRow>
                   )}
                 </TableBody>
               </Table>
@@ -130,46 +246,105 @@ function AdminUsers() {
       </Card>
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        {editing && <EditUserDialog user={editing} onClose={() => { setEditing(null); qc.invalidateQueries({ queryKey: ["admin-users"] }); }} />}
+        {editing && (
+          <EditUserDialog
+            user={editing}
+            teams={teams}
+            adminProfileId={profile?.id ?? null}
+            onClose={() => {
+              setEditing(null);
+              qc.invalidateQueries({ queryKey: ["admin-users"] });
+            }}
+          />
+        )}
       </Dialog>
     </div>
   );
 }
 
-function CreateUserDialog({ onClose }: { onClose: () => void }) {
-  const initial = { full_name: "", username: "", password: "", role: "employee", status: "active" };
+function CreateUserDialog({
+  adminProfileId,
+  onClose,
+}: {
+  adminProfileId: string | null;
+  onClose: () => void;
+}) {
+  const initial = {
+    full_name: "",
+    username: "",
+    password: "",
+    role: "employee",
+    status: "active",
+    fixedAssets: emptyFixedAssets,
+  };
   const [form, setForm] = useState(initial);
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
     if (!form.full_name || !form.username || !form.password) {
-      toast.error("Nhập đầy đủ thông tin"); return;
+      toast.error("Nhập đầy đủ thông tin");
+      return;
     }
     setLoading(true);
     try {
-      await callFn("admin-create-user", form);
+      const result = (await callFn("admin-create-user", {
+        full_name: form.full_name,
+        username: form.username,
+        password: form.password,
+        role: form.role,
+        status: form.status,
+      })) as { profile?: { id?: string } };
+      if (result.profile?.id) {
+        await saveFixedAssets(result.profile.id, form.fixedAssets, adminProfileId);
+      }
       toast.success("Tạo user thành công");
       setForm(initial);
       onClose();
     } catch (e) {
       toast.error((e as Error).message);
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <DialogContent>
-      <DialogHeader><DialogTitle>Tạo tài khoản mới</DialogTitle></DialogHeader>
+    <DialogContent className="max-h-[90vh] overflow-y-auto">
+      <DialogHeader>
+        <DialogTitle>Tạo tài khoản mới</DialogTitle>
+      </DialogHeader>
       <div className="space-y-3">
-        <div><Label>Họ tên</Label><Input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></div>
-        <div><Label>Username</Label><Input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="vd: nguyen.van.a" /></div>
-        <div><Label>Mật khẩu tạm thời</Label><Input type="text" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
+        <div>
+          <Label>Họ tên</Label>
+          <Input
+            value={form.full_name}
+            onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+          />
+        </div>
+        <div>
+          <Label>Username</Label>
+          <Input
+            value={form.username}
+            onChange={(e) => setForm({ ...form, username: e.target.value })}
+            placeholder="vd: nguyen.van.a"
+          />
+        </div>
+        <div>
+          <Label>Mật khẩu tạm thời</Label>
+          <Input
+            type="text"
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+          />
+        </div>
         <div>
           <Label>Vai trò</Label>
           <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="admin">Admin</SelectItem>
-              <SelectItem value="marketing_manager">Trưởng Phòng Marketing</SelectItem>
+              <SelectItem value="manager">Trưởng phòng Marketing</SelectItem>
               <SelectItem value="leader">Leader Team</SelectItem>
               <SelectItem value="employee">Nhân viên</SelectItem>
             </SelectContent>
@@ -178,13 +353,19 @@ function CreateUserDialog({ onClose }: { onClose: () => void }) {
         <div>
           <Label>Trạng thái</Label>
           <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="active">Active</SelectItem>
               <SelectItem value="inactive">Inactive</SelectItem>
             </SelectContent>
           </Select>
         </div>
+        <FixedAssetsFields
+          value={form.fixedAssets}
+          onChange={(fixedAssets) => setForm({ ...form, fixedAssets })}
+        />
       </div>
       <DialogFooter>
         <Button onClick={submit} disabled={loading}>
@@ -195,56 +376,204 @@ function CreateUserDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-function EditUserDialog({ user, onClose }: { user: UserRow; onClose: () => void }) {
-  const [form, setForm] = useState({ full_name: user.full_name, role: user.role ?? "employee", status: user.status, password: "" });
+function EditUserDialog({
+  user,
+  teams,
+  adminProfileId,
+  onClose,
+}: {
+  user: UserRow;
+  teams: TeamOption[];
+  adminProfileId: string | null;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState({
+    full_name: user.full_name,
+    username: user.username,
+    role: user.role ?? ("employee" as AppRole),
+    status: user.status,
+    team_id: user.activeTeamId ?? "",
+    fixedAssets: emptyFixedAssets,
+  });
   const [loading, setLoading] = useState(false);
+  const [assetsLoading, setAssetsLoading] = useState(true);
+  const canAssignTeam = form.role === "leader" || form.role === "employee";
+
+  useEffect(() => {
+    let mounted = true;
+    const loadAssets = async () => {
+      setAssetsLoading(true);
+      const { data, error } = await supabase
+        .from("fixed_assets")
+        .select("asset_type, asset_value")
+        .eq("user_id", user.id);
+      if (!mounted) return;
+      setAssetsLoading(false);
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      const nextAssets = { ...emptyFixedAssets };
+      for (const row of data ?? []) {
+        if (row.asset_type === "hotline" || row.asset_type === "odoo") {
+          nextAssets[row.asset_type] = row.asset_value;
+        }
+      }
+      setForm((current) => ({ ...current, fixedAssets: nextAssets }));
+    };
+    void loadAssets();
+    return () => {
+      mounted = false;
+    };
+  }, [user.id]);
 
   const submit = async () => {
+    const fullName = form.full_name.trim();
+    const username = form.username.trim();
+    if (!fullName || !username) {
+      toast.error("Nhập đầy đủ họ tên và username");
+      return;
+    }
+
     setLoading(true);
     try {
-      const payload: Record<string, unknown> = {
-        profile_id: user.id,
-        full_name: form.full_name,
-        role: form.role,
-        status: form.status,
-      };
-      if (form.password) payload.password = form.password;
-      await callFn("admin-update-user", payload);
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({ full_name: fullName, username, status: form.status })
+        .eq("id", user.id);
+      if (profileError) throw profileError;
+
+      if (form.role !== user.role) {
+        const { error: deleteRoleError } = await supabase
+          .from("user_roles")
+          .delete()
+          .eq("user_id", user.id);
+        if (deleteRoleError) throw deleteRoleError;
+        const { error: insertRoleError } = await supabase
+          .from("user_roles")
+          .insert({ user_id: user.id, role: form.role });
+        if (insertRoleError) throw insertRoleError;
+      }
+
+      const nextTeamId = canAssignTeam ? form.team_id : "";
+      if ((user.activeTeamId ?? "") !== nextTeamId) {
+        const { error: deactivateError } = await supabase
+          .from("team_memberships")
+          .update({ is_active: false, end_date: new Date().toISOString().slice(0, 10) })
+          .eq("user_id", user.id)
+          .eq("is_active", true);
+        if (deactivateError) throw deactivateError;
+
+        if (nextTeamId) {
+          const { error: membershipError } = await supabase.from("team_memberships").insert({
+            user_id: user.id,
+            team_id: nextTeamId,
+            role_in_team: form.role === "leader" ? "leader" : "employee",
+          });
+          if (membershipError) throw membershipError;
+        }
+      }
+
+      const { error: clearLeaderError } = await supabase
+        .from("teams")
+        .update({ leader_id: null })
+        .eq("leader_id", user.id);
+      if (clearLeaderError) throw clearLeaderError;
+
+      if (form.role === "leader" && nextTeamId) {
+        const { error: setLeaderError } = await supabase
+          .from("teams")
+          .update({ leader_id: user.id })
+          .eq("id", nextTeamId);
+        if (setLeaderError) throw setLeaderError;
+      }
+
+      await saveFixedAssets(user.id, form.fixedAssets, adminProfileId);
+
       toast.success("Cập nhật thành công");
       onClose();
     } catch (e) {
       toast.error((e as Error).message);
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <DialogContent>
-      <DialogHeader><DialogTitle>Chỉnh sửa: @{user.username}</DialogTitle></DialogHeader>
+    <DialogContent className="max-h-[90vh] overflow-y-auto">
+      <DialogHeader>
+        <DialogTitle>Chỉnh sửa: @{user.username}</DialogTitle>
+      </DialogHeader>
       <div className="space-y-3">
-        <div><Label>Họ tên</Label><Input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></div>
+        <div>
+          <Label>Họ tên</Label>
+          <Input
+            value={form.full_name}
+            onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+          />
+        </div>
+        <div>
+          <Label>Username</Label>
+          <Input
+            value={form.username}
+            onChange={(e) => setForm({ ...form, username: e.target.value })}
+          />
+        </div>
         <div>
           <Label>Vai trò</Label>
-          <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+          <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v as AppRole })}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="admin">Admin</SelectItem>
-              <SelectItem value="marketing_manager">Trưởng Phòng Marketing</SelectItem>
+              <SelectItem value="manager">Trưởng phòng Marketing</SelectItem>
               <SelectItem value="leader">Leader Team</SelectItem>
               <SelectItem value="employee">Nhân viên</SelectItem>
             </SelectContent>
           </Select>
         </div>
+        {canAssignTeam && (
+          <div>
+            <Label>Team</Label>
+            <Select
+              value={form.team_id || NONE_TEAM}
+              onValueChange={(v) => setForm({ ...form, team_id: v === NONE_TEAM ? "" : v })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE_TEAM}>Không thuộc team</SelectItem>
+                {teams.map((team) => (
+                  <SelectItem key={team.id} value={team.id}>
+                    {team.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <div>
           <Label>Trạng thái</Label>
-          <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v as "active" | "inactive" })}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+          <Select
+            value={form.status}
+            onValueChange={(v) => setForm({ ...form, status: v as UserStatus })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="active">Active</SelectItem>
               <SelectItem value="inactive">Inactive</SelectItem>
             </SelectContent>
           </Select>
         </div>
-        <div><Label>Đặt lại mật khẩu (để trống nếu không đổi)</Label><Input type="text" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
+        <FixedAssetsFields
+          value={form.fixedAssets}
+          disabled={assetsLoading}
+          onChange={(fixedAssets) => setForm({ ...form, fixedAssets })}
+        />
       </div>
       <DialogFooter>
         <Button onClick={submit} disabled={loading}>
@@ -253,4 +582,109 @@ function EditUserDialog({ user, onClose }: { user: UserRow; onClose: () => void 
       </DialogFooter>
     </DialogContent>
   );
+}
+
+function FixedAssetsFields({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: FixedAssetForm;
+  disabled?: boolean;
+  onChange: (value: FixedAssetForm) => void;
+}) {
+  return (
+    <div className="rounded-xl border bg-muted/20 p-3">
+      <p className="mb-3 text-sm font-semibold">Tài sản cố định</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <Label>Hotline</Label>
+          <Input
+            value={value.hotline}
+            disabled={disabled}
+            onChange={(event) => onChange({ ...value, hotline: event.target.value })}
+            placeholder="Nhập hotline"
+          />
+        </div>
+        <div>
+          <Label>Tài khoản Odoo</Label>
+          <Input
+            value={value.odoo}
+            disabled={disabled}
+            onChange={(event) => onChange({ ...value, odoo: event.target.value })}
+            placeholder="Nhập tài khoản Odoo"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+async function saveFixedAssets(
+  userId: string,
+  fixedAssets: FixedAssetForm,
+  adminProfileId: string | null,
+) {
+  const entries: Array<{ type: FixedAssetType; value: string }> = [
+    { type: "hotline", value: fixedAssets.hotline.trim() },
+    { type: "odoo", value: fixedAssets.odoo.trim() },
+  ];
+
+  for (const entry of entries) {
+    if (!entry.value) {
+      const { error } = await supabase
+        .from("fixed_assets")
+        .delete()
+        .eq("user_id", userId)
+        .eq("asset_type", entry.type);
+      if (error) throw error;
+
+      const { error: assetError } = await supabase
+        .from("assets")
+        .delete()
+        .eq("asset_group", "fixed")
+        .eq("owner_profile_id", userId)
+        .eq("asset_type", entry.type);
+      if (assetError) throw assetError;
+      continue;
+    }
+
+    const { error } = await supabase.from("fixed_assets").upsert(
+      {
+        user_id: userId,
+        asset_type: entry.type,
+        asset_value: entry.value,
+        assigned_by: adminProfileId,
+        assigned_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,asset_type" },
+    );
+    if (error) throw error;
+
+    const { data: existingAsset, error: findAssetError } = await supabase
+      .from("assets")
+      .select("id")
+      .eq("asset_group", "fixed")
+      .eq("owner_profile_id", userId)
+      .eq("asset_type", entry.type)
+      .maybeSingle();
+    if (findAssetError) throw findAssetError;
+
+    const assetPayload = {
+      asset_group: "fixed",
+      asset_type: entry.type,
+      title: entry.type === "hotline" ? "Hotline" : "Tài khoản Odoo",
+      value: entry.value,
+      owner_profile_id: userId,
+      owner_team_id: null,
+      assigned_by: adminProfileId,
+      created_by: adminProfileId ?? userId,
+      is_active: true,
+    };
+
+    const { error: assetError } = existingAsset
+      ? await supabase.from("assets").update(assetPayload).eq("id", existingAsset.id)
+      : await supabase.from("assets").insert(assetPayload);
+    if (assetError) throw assetError;
+  }
 }

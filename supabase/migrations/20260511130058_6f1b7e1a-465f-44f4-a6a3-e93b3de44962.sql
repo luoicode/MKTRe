@@ -22,11 +22,11 @@ CREATE TRIGGER tr_mta_set_updated
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 -- Helper functions
-CREATE OR REPLACE FUNCTION public.is_marketing_manager()
+CREATE OR REPLACE FUNCTION public.is_manager()
 RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
 AS $$
-  SELECT public.has_role('marketing_manager'::app_role);
+  SELECT public.has_role('manager'::app_role);
 $$;
 
 CREATE OR REPLACE FUNCTION public.manager_leads_team(_team_id uuid)
@@ -107,7 +107,7 @@ CREATE POLICY mta_manager_self_select ON public.manager_team_assignments
   FOR SELECT TO authenticated
   USING (manager_id = public.get_current_profile_id());
 
--- Extend RLS for marketing_manager scope
+-- Extend RLS for manager scope
 DROP POLICY IF EXISTS teams_manager_select ON public.teams;
 CREATE POLICY teams_manager_select ON public.teams
   FOR SELECT TO authenticated

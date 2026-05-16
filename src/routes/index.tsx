@@ -16,13 +16,14 @@ function Index() {
       return;
     }
     if (role === "admin") navigate({ to: "/admin/dashboard" });
+    else if (role === "manager") navigate({ to: "/manager/dashboard" });
     else if (role === "leader") navigate({ to: "/leader/dashboard" });
-    else if (role === "employee") navigate({ to: "/employee/report" });
+    else if (role === "employee") navigate({ to: "/employee/dashboard" });
     else navigate({ to: "/login" });
   }, [loading, session, role, navigate]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
+    <div className="flex h-full min-h-0 items-center justify-center bg-background">
       <Loader2 className="h-8 w-8 animate-spin text-primary" />
     </div>
   );

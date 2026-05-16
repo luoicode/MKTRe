@@ -13,18 +13,53 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedManagerTodayTeamsRouteImport } from './routes/_authenticated/manager/today-teams'
+import { Route as AuthenticatedManagerTeamsRouteImport } from './routes/_authenticated/manager/teams'
+import { Route as AuthenticatedManagerTasksRouteImport } from './routes/_authenticated/manager/tasks'
+import { Route as AuthenticatedManagerRevenueRouteImport } from './routes/_authenticated/manager/revenue'
+import { Route as AuthenticatedManagerResourcesRouteImport } from './routes/_authenticated/manager/resources'
+import { Route as AuthenticatedManagerReportsRouteImport } from './routes/_authenticated/manager/reports'
+import { Route as AuthenticatedManagerRankingRouteImport } from './routes/_authenticated/manager/ranking'
+import { Route as AuthenticatedManagerProfileRouteImport } from './routes/_authenticated/manager/profile'
+import { Route as AuthenticatedManagerNotificationsRouteImport } from './routes/_authenticated/manager/notifications'
+import { Route as AuthenticatedManagerLeadersRouteImport } from './routes/_authenticated/manager/leaders'
+import { Route as AuthenticatedManagerKpiRouteImport } from './routes/_authenticated/manager/kpi'
+import { Route as AuthenticatedManagerEmployeesRouteImport } from './routes/_authenticated/manager/employees'
 import { Route as AuthenticatedManagerDashboardRouteImport } from './routes/_authenticated/manager/dashboard'
+import { Route as AuthenticatedManagerAssetsRouteImport } from './routes/_authenticated/manager/assets'
+import { Route as AuthenticatedLeaderTasksRouteImport } from './routes/_authenticated/leader/tasks'
 import { Route as AuthenticatedLeaderSlotReportRouteImport } from './routes/_authenticated/leader/slot-report'
+import { Route as AuthenticatedLeaderResourcesRouteImport } from './routes/_authenticated/leader/resources'
 import { Route as AuthenticatedLeaderReportsRouteImport } from './routes/_authenticated/leader/reports'
+import { Route as AuthenticatedLeaderReportSlotsRouteImport } from './routes/_authenticated/leader/report-slots'
+import { Route as AuthenticatedLeaderReportRouteImport } from './routes/_authenticated/leader/report'
+import { Route as AuthenticatedLeaderRankingRouteImport } from './routes/_authenticated/leader/ranking'
+import { Route as AuthenticatedLeaderProfileRouteImport } from './routes/_authenticated/leader/profile'
+import { Route as AuthenticatedLeaderNotificationsRouteImport } from './routes/_authenticated/leader/notifications'
+import { Route as AuthenticatedLeaderKpiRouteImport } from './routes/_authenticated/leader/kpi'
 import { Route as AuthenticatedLeaderDashboardRouteImport } from './routes/_authenticated/leader/dashboard'
 import { Route as AuthenticatedLeaderDailyReportRouteImport } from './routes/_authenticated/leader/daily-report'
+import { Route as AuthenticatedLeaderAssetsRouteImport } from './routes/_authenticated/leader/assets'
+import { Route as AuthenticatedEmployeeTasksRouteImport } from './routes/_authenticated/employee/tasks'
+import { Route as AuthenticatedEmployeeResourcesRouteImport } from './routes/_authenticated/employee/resources'
 import { Route as AuthenticatedEmployeeReportRouteImport } from './routes/_authenticated/employee/report'
+import { Route as AuthenticatedEmployeeRankingRouteImport } from './routes/_authenticated/employee/ranking'
+import { Route as AuthenticatedEmployeeProfileRouteImport } from './routes/_authenticated/employee/profile'
+import { Route as AuthenticatedEmployeeKpiRouteImport } from './routes/_authenticated/employee/kpi'
 import { Route as AuthenticatedEmployeeHistoryRouteImport } from './routes/_authenticated/employee/history'
+import { Route as AuthenticatedEmployeeDashboardRouteImport } from './routes/_authenticated/employee/dashboard'
+import { Route as AuthenticatedEmployeeAssetsRouteImport } from './routes/_authenticated/employee/assets'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminTeamsRouteImport } from './routes/_authenticated/admin/teams'
+import { Route as AuthenticatedAdminTasksRouteImport } from './routes/_authenticated/admin/tasks'
+import { Route as AuthenticatedAdminResourcesRouteImport } from './routes/_authenticated/admin/resources'
 import { Route as AuthenticatedAdminReportsRouteImport } from './routes/_authenticated/admin/reports'
+import { Route as AuthenticatedAdminRankingRouteImport } from './routes/_authenticated/admin/ranking'
+import { Route as AuthenticatedAdminProfileRouteImport } from './routes/_authenticated/admin/profile'
+import { Route as AuthenticatedAdminNotificationsRouteImport } from './routes/_authenticated/admin/notifications'
 import { Route as AuthenticatedAdminManagerAssignmentsRouteImport } from './routes/_authenticated/admin/manager-assignments'
+import { Route as AuthenticatedAdminKpiRouteImport } from './routes/_authenticated/admin/kpi'
 import { Route as AuthenticatedAdminDashboardRouteImport } from './routes/_authenticated/admin/dashboard'
+import { Route as AuthenticatedAdminAssetsRouteImport } from './routes/_authenticated/admin/assets'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -46,10 +81,87 @@ const AuthenticatedManagerTodayTeamsRoute =
     path: '/manager/today-teams',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedManagerTeamsRoute =
+  AuthenticatedManagerTeamsRouteImport.update({
+    id: '/manager/teams',
+    path: '/manager/teams',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedManagerTasksRoute =
+  AuthenticatedManagerTasksRouteImport.update({
+    id: '/manager/tasks',
+    path: '/manager/tasks',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedManagerRevenueRoute =
+  AuthenticatedManagerRevenueRouteImport.update({
+    id: '/manager/revenue',
+    path: '/manager/revenue',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedManagerResourcesRoute =
+  AuthenticatedManagerResourcesRouteImport.update({
+    id: '/manager/resources',
+    path: '/manager/resources',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedManagerReportsRoute =
+  AuthenticatedManagerReportsRouteImport.update({
+    id: '/manager/reports',
+    path: '/manager/reports',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedManagerRankingRoute =
+  AuthenticatedManagerRankingRouteImport.update({
+    id: '/manager/ranking',
+    path: '/manager/ranking',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedManagerProfileRoute =
+  AuthenticatedManagerProfileRouteImport.update({
+    id: '/manager/profile',
+    path: '/manager/profile',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedManagerNotificationsRoute =
+  AuthenticatedManagerNotificationsRouteImport.update({
+    id: '/manager/notifications',
+    path: '/manager/notifications',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedManagerLeadersRoute =
+  AuthenticatedManagerLeadersRouteImport.update({
+    id: '/manager/leaders',
+    path: '/manager/leaders',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedManagerKpiRoute = AuthenticatedManagerKpiRouteImport.update({
+  id: '/manager/kpi',
+  path: '/manager/kpi',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedManagerEmployeesRoute =
+  AuthenticatedManagerEmployeesRouteImport.update({
+    id: '/manager/employees',
+    path: '/manager/employees',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedManagerDashboardRoute =
   AuthenticatedManagerDashboardRouteImport.update({
     id: '/manager/dashboard',
     path: '/manager/dashboard',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedManagerAssetsRoute =
+  AuthenticatedManagerAssetsRouteImport.update({
+    id: '/manager/assets',
+    path: '/manager/assets',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedLeaderTasksRoute =
+  AuthenticatedLeaderTasksRouteImport.update({
+    id: '/leader/tasks',
+    path: '/leader/tasks',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedLeaderSlotReportRoute =
@@ -58,12 +170,53 @@ const AuthenticatedLeaderSlotReportRoute =
     path: '/leader/slot-report',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedLeaderResourcesRoute =
+  AuthenticatedLeaderResourcesRouteImport.update({
+    id: '/leader/resources',
+    path: '/leader/resources',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedLeaderReportsRoute =
   AuthenticatedLeaderReportsRouteImport.update({
     id: '/leader/reports',
     path: '/leader/reports',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedLeaderReportSlotsRoute =
+  AuthenticatedLeaderReportSlotsRouteImport.update({
+    id: '/leader/report-slots',
+    path: '/leader/report-slots',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedLeaderReportRoute =
+  AuthenticatedLeaderReportRouteImport.update({
+    id: '/leader/report',
+    path: '/leader/report',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedLeaderRankingRoute =
+  AuthenticatedLeaderRankingRouteImport.update({
+    id: '/leader/ranking',
+    path: '/leader/ranking',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedLeaderProfileRoute =
+  AuthenticatedLeaderProfileRouteImport.update({
+    id: '/leader/profile',
+    path: '/leader/profile',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedLeaderNotificationsRoute =
+  AuthenticatedLeaderNotificationsRouteImport.update({
+    id: '/leader/notifications',
+    path: '/leader/notifications',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedLeaderKpiRoute = AuthenticatedLeaderKpiRouteImport.update({
+  id: '/leader/kpi',
+  path: '/leader/kpi',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedLeaderDashboardRoute =
   AuthenticatedLeaderDashboardRouteImport.update({
     id: '/leader/dashboard',
@@ -76,16 +229,64 @@ const AuthenticatedLeaderDailyReportRoute =
     path: '/leader/daily-report',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedLeaderAssetsRoute =
+  AuthenticatedLeaderAssetsRouteImport.update({
+    id: '/leader/assets',
+    path: '/leader/assets',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedEmployeeTasksRoute =
+  AuthenticatedEmployeeTasksRouteImport.update({
+    id: '/employee/tasks',
+    path: '/employee/tasks',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedEmployeeResourcesRoute =
+  AuthenticatedEmployeeResourcesRouteImport.update({
+    id: '/employee/resources',
+    path: '/employee/resources',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedEmployeeReportRoute =
   AuthenticatedEmployeeReportRouteImport.update({
     id: '/employee/report',
     path: '/employee/report',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedEmployeeRankingRoute =
+  AuthenticatedEmployeeRankingRouteImport.update({
+    id: '/employee/ranking',
+    path: '/employee/ranking',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedEmployeeProfileRoute =
+  AuthenticatedEmployeeProfileRouteImport.update({
+    id: '/employee/profile',
+    path: '/employee/profile',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedEmployeeKpiRoute =
+  AuthenticatedEmployeeKpiRouteImport.update({
+    id: '/employee/kpi',
+    path: '/employee/kpi',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedEmployeeHistoryRoute =
   AuthenticatedEmployeeHistoryRouteImport.update({
     id: '/employee/history',
     path: '/employee/history',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedEmployeeDashboardRoute =
+  AuthenticatedEmployeeDashboardRouteImport.update({
+    id: '/employee/dashboard',
+    path: '/employee/dashboard',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedEmployeeAssetsRoute =
+  AuthenticatedEmployeeAssetsRouteImport.update({
+    id: '/employee/assets',
+    path: '/employee/assets',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
@@ -98,10 +299,39 @@ const AuthenticatedAdminTeamsRoute = AuthenticatedAdminTeamsRouteImport.update({
   path: '/admin/teams',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAdminTasksRoute = AuthenticatedAdminTasksRouteImport.update({
+  id: '/admin/tasks',
+  path: '/admin/tasks',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedAdminResourcesRoute =
+  AuthenticatedAdminResourcesRouteImport.update({
+    id: '/admin/resources',
+    path: '/admin/resources',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminReportsRoute =
   AuthenticatedAdminReportsRouteImport.update({
     id: '/admin/reports',
     path: '/admin/reports',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminRankingRoute =
+  AuthenticatedAdminRankingRouteImport.update({
+    id: '/admin/ranking',
+    path: '/admin/ranking',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminProfileRoute =
+  AuthenticatedAdminProfileRouteImport.update({
+    id: '/admin/profile',
+    path: '/admin/profile',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedAdminNotificationsRoute =
+  AuthenticatedAdminNotificationsRouteImport.update({
+    id: '/admin/notifications',
+    path: '/admin/notifications',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedAdminManagerAssignmentsRoute =
@@ -110,45 +340,126 @@ const AuthenticatedAdminManagerAssignmentsRoute =
     path: '/admin/manager-assignments',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminKpiRoute = AuthenticatedAdminKpiRouteImport.update({
+  id: '/admin/kpi',
+  path: '/admin/kpi',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedAdminDashboardRoute =
   AuthenticatedAdminDashboardRouteImport.update({
     id: '/admin/dashboard',
     path: '/admin/dashboard',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminAssetsRoute =
+  AuthenticatedAdminAssetsRouteImport.update({
+    id: '/admin/assets',
+    path: '/admin/assets',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/admin/assets': typeof AuthenticatedAdminAssetsRoute
   '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
+  '/admin/kpi': typeof AuthenticatedAdminKpiRoute
   '/admin/manager-assignments': typeof AuthenticatedAdminManagerAssignmentsRoute
+  '/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
+  '/admin/profile': typeof AuthenticatedAdminProfileRoute
+  '/admin/ranking': typeof AuthenticatedAdminRankingRoute
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
+  '/admin/resources': typeof AuthenticatedAdminResourcesRoute
+  '/admin/tasks': typeof AuthenticatedAdminTasksRoute
   '/admin/teams': typeof AuthenticatedAdminTeamsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/employee/assets': typeof AuthenticatedEmployeeAssetsRoute
+  '/employee/dashboard': typeof AuthenticatedEmployeeDashboardRoute
   '/employee/history': typeof AuthenticatedEmployeeHistoryRoute
+  '/employee/kpi': typeof AuthenticatedEmployeeKpiRoute
+  '/employee/profile': typeof AuthenticatedEmployeeProfileRoute
+  '/employee/ranking': typeof AuthenticatedEmployeeRankingRoute
   '/employee/report': typeof AuthenticatedEmployeeReportRoute
+  '/employee/resources': typeof AuthenticatedEmployeeResourcesRoute
+  '/employee/tasks': typeof AuthenticatedEmployeeTasksRoute
+  '/leader/assets': typeof AuthenticatedLeaderAssetsRoute
   '/leader/daily-report': typeof AuthenticatedLeaderDailyReportRoute
   '/leader/dashboard': typeof AuthenticatedLeaderDashboardRoute
+  '/leader/kpi': typeof AuthenticatedLeaderKpiRoute
+  '/leader/notifications': typeof AuthenticatedLeaderNotificationsRoute
+  '/leader/profile': typeof AuthenticatedLeaderProfileRoute
+  '/leader/ranking': typeof AuthenticatedLeaderRankingRoute
+  '/leader/report': typeof AuthenticatedLeaderReportRoute
+  '/leader/report-slots': typeof AuthenticatedLeaderReportSlotsRoute
   '/leader/reports': typeof AuthenticatedLeaderReportsRoute
+  '/leader/resources': typeof AuthenticatedLeaderResourcesRoute
   '/leader/slot-report': typeof AuthenticatedLeaderSlotReportRoute
+  '/leader/tasks': typeof AuthenticatedLeaderTasksRoute
+  '/manager/assets': typeof AuthenticatedManagerAssetsRoute
   '/manager/dashboard': typeof AuthenticatedManagerDashboardRoute
+  '/manager/employees': typeof AuthenticatedManagerEmployeesRoute
+  '/manager/kpi': typeof AuthenticatedManagerKpiRoute
+  '/manager/leaders': typeof AuthenticatedManagerLeadersRoute
+  '/manager/notifications': typeof AuthenticatedManagerNotificationsRoute
+  '/manager/profile': typeof AuthenticatedManagerProfileRoute
+  '/manager/ranking': typeof AuthenticatedManagerRankingRoute
+  '/manager/reports': typeof AuthenticatedManagerReportsRoute
+  '/manager/resources': typeof AuthenticatedManagerResourcesRoute
+  '/manager/revenue': typeof AuthenticatedManagerRevenueRoute
+  '/manager/tasks': typeof AuthenticatedManagerTasksRoute
+  '/manager/teams': typeof AuthenticatedManagerTeamsRoute
   '/manager/today-teams': typeof AuthenticatedManagerTodayTeamsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/admin/assets': typeof AuthenticatedAdminAssetsRoute
   '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
+  '/admin/kpi': typeof AuthenticatedAdminKpiRoute
   '/admin/manager-assignments': typeof AuthenticatedAdminManagerAssignmentsRoute
+  '/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
+  '/admin/profile': typeof AuthenticatedAdminProfileRoute
+  '/admin/ranking': typeof AuthenticatedAdminRankingRoute
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
+  '/admin/resources': typeof AuthenticatedAdminResourcesRoute
+  '/admin/tasks': typeof AuthenticatedAdminTasksRoute
   '/admin/teams': typeof AuthenticatedAdminTeamsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/employee/assets': typeof AuthenticatedEmployeeAssetsRoute
+  '/employee/dashboard': typeof AuthenticatedEmployeeDashboardRoute
   '/employee/history': typeof AuthenticatedEmployeeHistoryRoute
+  '/employee/kpi': typeof AuthenticatedEmployeeKpiRoute
+  '/employee/profile': typeof AuthenticatedEmployeeProfileRoute
+  '/employee/ranking': typeof AuthenticatedEmployeeRankingRoute
   '/employee/report': typeof AuthenticatedEmployeeReportRoute
+  '/employee/resources': typeof AuthenticatedEmployeeResourcesRoute
+  '/employee/tasks': typeof AuthenticatedEmployeeTasksRoute
+  '/leader/assets': typeof AuthenticatedLeaderAssetsRoute
   '/leader/daily-report': typeof AuthenticatedLeaderDailyReportRoute
   '/leader/dashboard': typeof AuthenticatedLeaderDashboardRoute
+  '/leader/kpi': typeof AuthenticatedLeaderKpiRoute
+  '/leader/notifications': typeof AuthenticatedLeaderNotificationsRoute
+  '/leader/profile': typeof AuthenticatedLeaderProfileRoute
+  '/leader/ranking': typeof AuthenticatedLeaderRankingRoute
+  '/leader/report': typeof AuthenticatedLeaderReportRoute
+  '/leader/report-slots': typeof AuthenticatedLeaderReportSlotsRoute
   '/leader/reports': typeof AuthenticatedLeaderReportsRoute
+  '/leader/resources': typeof AuthenticatedLeaderResourcesRoute
   '/leader/slot-report': typeof AuthenticatedLeaderSlotReportRoute
+  '/leader/tasks': typeof AuthenticatedLeaderTasksRoute
+  '/manager/assets': typeof AuthenticatedManagerAssetsRoute
   '/manager/dashboard': typeof AuthenticatedManagerDashboardRoute
+  '/manager/employees': typeof AuthenticatedManagerEmployeesRoute
+  '/manager/kpi': typeof AuthenticatedManagerKpiRoute
+  '/manager/leaders': typeof AuthenticatedManagerLeadersRoute
+  '/manager/notifications': typeof AuthenticatedManagerNotificationsRoute
+  '/manager/profile': typeof AuthenticatedManagerProfileRoute
+  '/manager/ranking': typeof AuthenticatedManagerRankingRoute
+  '/manager/reports': typeof AuthenticatedManagerReportsRoute
+  '/manager/resources': typeof AuthenticatedManagerResourcesRoute
+  '/manager/revenue': typeof AuthenticatedManagerRevenueRoute
+  '/manager/tasks': typeof AuthenticatedManagerTasksRoute
+  '/manager/teams': typeof AuthenticatedManagerTeamsRoute
   '/manager/today-teams': typeof AuthenticatedManagerTodayTeamsRoute
 }
 export interface FileRoutesById {
@@ -156,18 +467,53 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/login': typeof LoginRoute
+  '/_authenticated/admin/assets': typeof AuthenticatedAdminAssetsRoute
   '/_authenticated/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
+  '/_authenticated/admin/kpi': typeof AuthenticatedAdminKpiRoute
   '/_authenticated/admin/manager-assignments': typeof AuthenticatedAdminManagerAssignmentsRoute
+  '/_authenticated/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
+  '/_authenticated/admin/profile': typeof AuthenticatedAdminProfileRoute
+  '/_authenticated/admin/ranking': typeof AuthenticatedAdminRankingRoute
   '/_authenticated/admin/reports': typeof AuthenticatedAdminReportsRoute
+  '/_authenticated/admin/resources': typeof AuthenticatedAdminResourcesRoute
+  '/_authenticated/admin/tasks': typeof AuthenticatedAdminTasksRoute
   '/_authenticated/admin/teams': typeof AuthenticatedAdminTeamsRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/_authenticated/employee/assets': typeof AuthenticatedEmployeeAssetsRoute
+  '/_authenticated/employee/dashboard': typeof AuthenticatedEmployeeDashboardRoute
   '/_authenticated/employee/history': typeof AuthenticatedEmployeeHistoryRoute
+  '/_authenticated/employee/kpi': typeof AuthenticatedEmployeeKpiRoute
+  '/_authenticated/employee/profile': typeof AuthenticatedEmployeeProfileRoute
+  '/_authenticated/employee/ranking': typeof AuthenticatedEmployeeRankingRoute
   '/_authenticated/employee/report': typeof AuthenticatedEmployeeReportRoute
+  '/_authenticated/employee/resources': typeof AuthenticatedEmployeeResourcesRoute
+  '/_authenticated/employee/tasks': typeof AuthenticatedEmployeeTasksRoute
+  '/_authenticated/leader/assets': typeof AuthenticatedLeaderAssetsRoute
   '/_authenticated/leader/daily-report': typeof AuthenticatedLeaderDailyReportRoute
   '/_authenticated/leader/dashboard': typeof AuthenticatedLeaderDashboardRoute
+  '/_authenticated/leader/kpi': typeof AuthenticatedLeaderKpiRoute
+  '/_authenticated/leader/notifications': typeof AuthenticatedLeaderNotificationsRoute
+  '/_authenticated/leader/profile': typeof AuthenticatedLeaderProfileRoute
+  '/_authenticated/leader/ranking': typeof AuthenticatedLeaderRankingRoute
+  '/_authenticated/leader/report': typeof AuthenticatedLeaderReportRoute
+  '/_authenticated/leader/report-slots': typeof AuthenticatedLeaderReportSlotsRoute
   '/_authenticated/leader/reports': typeof AuthenticatedLeaderReportsRoute
+  '/_authenticated/leader/resources': typeof AuthenticatedLeaderResourcesRoute
   '/_authenticated/leader/slot-report': typeof AuthenticatedLeaderSlotReportRoute
+  '/_authenticated/leader/tasks': typeof AuthenticatedLeaderTasksRoute
+  '/_authenticated/manager/assets': typeof AuthenticatedManagerAssetsRoute
   '/_authenticated/manager/dashboard': typeof AuthenticatedManagerDashboardRoute
+  '/_authenticated/manager/employees': typeof AuthenticatedManagerEmployeesRoute
+  '/_authenticated/manager/kpi': typeof AuthenticatedManagerKpiRoute
+  '/_authenticated/manager/leaders': typeof AuthenticatedManagerLeadersRoute
+  '/_authenticated/manager/notifications': typeof AuthenticatedManagerNotificationsRoute
+  '/_authenticated/manager/profile': typeof AuthenticatedManagerProfileRoute
+  '/_authenticated/manager/ranking': typeof AuthenticatedManagerRankingRoute
+  '/_authenticated/manager/reports': typeof AuthenticatedManagerReportsRoute
+  '/_authenticated/manager/resources': typeof AuthenticatedManagerResourcesRoute
+  '/_authenticated/manager/revenue': typeof AuthenticatedManagerRevenueRoute
+  '/_authenticated/manager/tasks': typeof AuthenticatedManagerTasksRoute
+  '/_authenticated/manager/teams': typeof AuthenticatedManagerTeamsRoute
   '/_authenticated/manager/today-teams': typeof AuthenticatedManagerTodayTeamsRoute
 }
 export interface FileRouteTypes {
@@ -175,53 +521,158 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/admin/assets'
     | '/admin/dashboard'
+    | '/admin/kpi'
     | '/admin/manager-assignments'
+    | '/admin/notifications'
+    | '/admin/profile'
+    | '/admin/ranking'
     | '/admin/reports'
+    | '/admin/resources'
+    | '/admin/tasks'
     | '/admin/teams'
     | '/admin/users'
+    | '/employee/assets'
+    | '/employee/dashboard'
     | '/employee/history'
+    | '/employee/kpi'
+    | '/employee/profile'
+    | '/employee/ranking'
     | '/employee/report'
+    | '/employee/resources'
+    | '/employee/tasks'
+    | '/leader/assets'
     | '/leader/daily-report'
     | '/leader/dashboard'
+    | '/leader/kpi'
+    | '/leader/notifications'
+    | '/leader/profile'
+    | '/leader/ranking'
+    | '/leader/report'
+    | '/leader/report-slots'
     | '/leader/reports'
+    | '/leader/resources'
     | '/leader/slot-report'
+    | '/leader/tasks'
+    | '/manager/assets'
     | '/manager/dashboard'
+    | '/manager/employees'
+    | '/manager/kpi'
+    | '/manager/leaders'
+    | '/manager/notifications'
+    | '/manager/profile'
+    | '/manager/ranking'
+    | '/manager/reports'
+    | '/manager/resources'
+    | '/manager/revenue'
+    | '/manager/tasks'
+    | '/manager/teams'
     | '/manager/today-teams'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
+    | '/admin/assets'
     | '/admin/dashboard'
+    | '/admin/kpi'
     | '/admin/manager-assignments'
+    | '/admin/notifications'
+    | '/admin/profile'
+    | '/admin/ranking'
     | '/admin/reports'
+    | '/admin/resources'
+    | '/admin/tasks'
     | '/admin/teams'
     | '/admin/users'
+    | '/employee/assets'
+    | '/employee/dashboard'
     | '/employee/history'
+    | '/employee/kpi'
+    | '/employee/profile'
+    | '/employee/ranking'
     | '/employee/report'
+    | '/employee/resources'
+    | '/employee/tasks'
+    | '/leader/assets'
     | '/leader/daily-report'
     | '/leader/dashboard'
+    | '/leader/kpi'
+    | '/leader/notifications'
+    | '/leader/profile'
+    | '/leader/ranking'
+    | '/leader/report'
+    | '/leader/report-slots'
     | '/leader/reports'
+    | '/leader/resources'
     | '/leader/slot-report'
+    | '/leader/tasks'
+    | '/manager/assets'
     | '/manager/dashboard'
+    | '/manager/employees'
+    | '/manager/kpi'
+    | '/manager/leaders'
+    | '/manager/notifications'
+    | '/manager/profile'
+    | '/manager/ranking'
+    | '/manager/reports'
+    | '/manager/resources'
+    | '/manager/revenue'
+    | '/manager/tasks'
+    | '/manager/teams'
     | '/manager/today-teams'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/login'
+    | '/_authenticated/admin/assets'
     | '/_authenticated/admin/dashboard'
+    | '/_authenticated/admin/kpi'
     | '/_authenticated/admin/manager-assignments'
+    | '/_authenticated/admin/notifications'
+    | '/_authenticated/admin/profile'
+    | '/_authenticated/admin/ranking'
     | '/_authenticated/admin/reports'
+    | '/_authenticated/admin/resources'
+    | '/_authenticated/admin/tasks'
     | '/_authenticated/admin/teams'
     | '/_authenticated/admin/users'
+    | '/_authenticated/employee/assets'
+    | '/_authenticated/employee/dashboard'
     | '/_authenticated/employee/history'
+    | '/_authenticated/employee/kpi'
+    | '/_authenticated/employee/profile'
+    | '/_authenticated/employee/ranking'
     | '/_authenticated/employee/report'
+    | '/_authenticated/employee/resources'
+    | '/_authenticated/employee/tasks'
+    | '/_authenticated/leader/assets'
     | '/_authenticated/leader/daily-report'
     | '/_authenticated/leader/dashboard'
+    | '/_authenticated/leader/kpi'
+    | '/_authenticated/leader/notifications'
+    | '/_authenticated/leader/profile'
+    | '/_authenticated/leader/ranking'
+    | '/_authenticated/leader/report'
+    | '/_authenticated/leader/report-slots'
     | '/_authenticated/leader/reports'
+    | '/_authenticated/leader/resources'
     | '/_authenticated/leader/slot-report'
+    | '/_authenticated/leader/tasks'
+    | '/_authenticated/manager/assets'
     | '/_authenticated/manager/dashboard'
+    | '/_authenticated/manager/employees'
+    | '/_authenticated/manager/kpi'
+    | '/_authenticated/manager/leaders'
+    | '/_authenticated/manager/notifications'
+    | '/_authenticated/manager/profile'
+    | '/_authenticated/manager/ranking'
+    | '/_authenticated/manager/reports'
+    | '/_authenticated/manager/resources'
+    | '/_authenticated/manager/revenue'
+    | '/_authenticated/manager/tasks'
+    | '/_authenticated/manager/teams'
     | '/_authenticated/manager/today-teams'
   fileRoutesById: FileRoutesById
 }
@@ -261,11 +712,102 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedManagerTodayTeamsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/manager/teams': {
+      id: '/_authenticated/manager/teams'
+      path: '/manager/teams'
+      fullPath: '/manager/teams'
+      preLoaderRoute: typeof AuthenticatedManagerTeamsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/manager/tasks': {
+      id: '/_authenticated/manager/tasks'
+      path: '/manager/tasks'
+      fullPath: '/manager/tasks'
+      preLoaderRoute: typeof AuthenticatedManagerTasksRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/manager/revenue': {
+      id: '/_authenticated/manager/revenue'
+      path: '/manager/revenue'
+      fullPath: '/manager/revenue'
+      preLoaderRoute: typeof AuthenticatedManagerRevenueRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/manager/resources': {
+      id: '/_authenticated/manager/resources'
+      path: '/manager/resources'
+      fullPath: '/manager/resources'
+      preLoaderRoute: typeof AuthenticatedManagerResourcesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/manager/reports': {
+      id: '/_authenticated/manager/reports'
+      path: '/manager/reports'
+      fullPath: '/manager/reports'
+      preLoaderRoute: typeof AuthenticatedManagerReportsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/manager/ranking': {
+      id: '/_authenticated/manager/ranking'
+      path: '/manager/ranking'
+      fullPath: '/manager/ranking'
+      preLoaderRoute: typeof AuthenticatedManagerRankingRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/manager/profile': {
+      id: '/_authenticated/manager/profile'
+      path: '/manager/profile'
+      fullPath: '/manager/profile'
+      preLoaderRoute: typeof AuthenticatedManagerProfileRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/manager/notifications': {
+      id: '/_authenticated/manager/notifications'
+      path: '/manager/notifications'
+      fullPath: '/manager/notifications'
+      preLoaderRoute: typeof AuthenticatedManagerNotificationsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/manager/leaders': {
+      id: '/_authenticated/manager/leaders'
+      path: '/manager/leaders'
+      fullPath: '/manager/leaders'
+      preLoaderRoute: typeof AuthenticatedManagerLeadersRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/manager/kpi': {
+      id: '/_authenticated/manager/kpi'
+      path: '/manager/kpi'
+      fullPath: '/manager/kpi'
+      preLoaderRoute: typeof AuthenticatedManagerKpiRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/manager/employees': {
+      id: '/_authenticated/manager/employees'
+      path: '/manager/employees'
+      fullPath: '/manager/employees'
+      preLoaderRoute: typeof AuthenticatedManagerEmployeesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/manager/dashboard': {
       id: '/_authenticated/manager/dashboard'
       path: '/manager/dashboard'
       fullPath: '/manager/dashboard'
       preLoaderRoute: typeof AuthenticatedManagerDashboardRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/manager/assets': {
+      id: '/_authenticated/manager/assets'
+      path: '/manager/assets'
+      fullPath: '/manager/assets'
+      preLoaderRoute: typeof AuthenticatedManagerAssetsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/leader/tasks': {
+      id: '/_authenticated/leader/tasks'
+      path: '/leader/tasks'
+      fullPath: '/leader/tasks'
+      preLoaderRoute: typeof AuthenticatedLeaderTasksRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/leader/slot-report': {
@@ -275,11 +817,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedLeaderSlotReportRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/leader/resources': {
+      id: '/_authenticated/leader/resources'
+      path: '/leader/resources'
+      fullPath: '/leader/resources'
+      preLoaderRoute: typeof AuthenticatedLeaderResourcesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/leader/reports': {
       id: '/_authenticated/leader/reports'
       path: '/leader/reports'
       fullPath: '/leader/reports'
       preLoaderRoute: typeof AuthenticatedLeaderReportsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/leader/report-slots': {
+      id: '/_authenticated/leader/report-slots'
+      path: '/leader/report-slots'
+      fullPath: '/leader/report-slots'
+      preLoaderRoute: typeof AuthenticatedLeaderReportSlotsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/leader/report': {
+      id: '/_authenticated/leader/report'
+      path: '/leader/report'
+      fullPath: '/leader/report'
+      preLoaderRoute: typeof AuthenticatedLeaderReportRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/leader/ranking': {
+      id: '/_authenticated/leader/ranking'
+      path: '/leader/ranking'
+      fullPath: '/leader/ranking'
+      preLoaderRoute: typeof AuthenticatedLeaderRankingRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/leader/profile': {
+      id: '/_authenticated/leader/profile'
+      path: '/leader/profile'
+      fullPath: '/leader/profile'
+      preLoaderRoute: typeof AuthenticatedLeaderProfileRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/leader/notifications': {
+      id: '/_authenticated/leader/notifications'
+      path: '/leader/notifications'
+      fullPath: '/leader/notifications'
+      preLoaderRoute: typeof AuthenticatedLeaderNotificationsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/leader/kpi': {
+      id: '/_authenticated/leader/kpi'
+      path: '/leader/kpi'
+      fullPath: '/leader/kpi'
+      preLoaderRoute: typeof AuthenticatedLeaderKpiRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/leader/dashboard': {
@@ -296,6 +887,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedLeaderDailyReportRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/leader/assets': {
+      id: '/_authenticated/leader/assets'
+      path: '/leader/assets'
+      fullPath: '/leader/assets'
+      preLoaderRoute: typeof AuthenticatedLeaderAssetsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/employee/tasks': {
+      id: '/_authenticated/employee/tasks'
+      path: '/employee/tasks'
+      fullPath: '/employee/tasks'
+      preLoaderRoute: typeof AuthenticatedEmployeeTasksRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/employee/resources': {
+      id: '/_authenticated/employee/resources'
+      path: '/employee/resources'
+      fullPath: '/employee/resources'
+      preLoaderRoute: typeof AuthenticatedEmployeeResourcesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/employee/report': {
       id: '/_authenticated/employee/report'
       path: '/employee/report'
@@ -303,11 +915,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedEmployeeReportRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/employee/ranking': {
+      id: '/_authenticated/employee/ranking'
+      path: '/employee/ranking'
+      fullPath: '/employee/ranking'
+      preLoaderRoute: typeof AuthenticatedEmployeeRankingRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/employee/profile': {
+      id: '/_authenticated/employee/profile'
+      path: '/employee/profile'
+      fullPath: '/employee/profile'
+      preLoaderRoute: typeof AuthenticatedEmployeeProfileRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/employee/kpi': {
+      id: '/_authenticated/employee/kpi'
+      path: '/employee/kpi'
+      fullPath: '/employee/kpi'
+      preLoaderRoute: typeof AuthenticatedEmployeeKpiRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/employee/history': {
       id: '/_authenticated/employee/history'
       path: '/employee/history'
       fullPath: '/employee/history'
       preLoaderRoute: typeof AuthenticatedEmployeeHistoryRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/employee/dashboard': {
+      id: '/_authenticated/employee/dashboard'
+      path: '/employee/dashboard'
+      fullPath: '/employee/dashboard'
+      preLoaderRoute: typeof AuthenticatedEmployeeDashboardRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/employee/assets': {
+      id: '/_authenticated/employee/assets'
+      path: '/employee/assets'
+      fullPath: '/employee/assets'
+      preLoaderRoute: typeof AuthenticatedEmployeeAssetsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/users': {
@@ -324,11 +971,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminTeamsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/tasks': {
+      id: '/_authenticated/admin/tasks'
+      path: '/admin/tasks'
+      fullPath: '/admin/tasks'
+      preLoaderRoute: typeof AuthenticatedAdminTasksRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/resources': {
+      id: '/_authenticated/admin/resources'
+      path: '/admin/resources'
+      fullPath: '/admin/resources'
+      preLoaderRoute: typeof AuthenticatedAdminResourcesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/reports': {
       id: '/_authenticated/admin/reports'
       path: '/admin/reports'
       fullPath: '/admin/reports'
       preLoaderRoute: typeof AuthenticatedAdminReportsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/ranking': {
+      id: '/_authenticated/admin/ranking'
+      path: '/admin/ranking'
+      fullPath: '/admin/ranking'
+      preLoaderRoute: typeof AuthenticatedAdminRankingRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/profile': {
+      id: '/_authenticated/admin/profile'
+      path: '/admin/profile'
+      fullPath: '/admin/profile'
+      preLoaderRoute: typeof AuthenticatedAdminProfileRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/notifications': {
+      id: '/_authenticated/admin/notifications'
+      path: '/admin/notifications'
+      fullPath: '/admin/notifications'
+      preLoaderRoute: typeof AuthenticatedAdminNotificationsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/manager-assignments': {
@@ -338,6 +1020,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminManagerAssignmentsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/kpi': {
+      id: '/_authenticated/admin/kpi'
+      path: '/admin/kpi'
+      fullPath: '/admin/kpi'
+      preLoaderRoute: typeof AuthenticatedAdminKpiRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/dashboard': {
       id: '/_authenticated/admin/dashboard'
       path: '/admin/dashboard'
@@ -345,39 +1034,117 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminDashboardRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/assets': {
+      id: '/_authenticated/admin/assets'
+      path: '/admin/assets'
+      fullPath: '/admin/assets'
+      preLoaderRoute: typeof AuthenticatedAdminAssetsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
 
 interface AuthenticatedRouteChildren {
+  AuthenticatedAdminAssetsRoute: typeof AuthenticatedAdminAssetsRoute
   AuthenticatedAdminDashboardRoute: typeof AuthenticatedAdminDashboardRoute
+  AuthenticatedAdminKpiRoute: typeof AuthenticatedAdminKpiRoute
   AuthenticatedAdminManagerAssignmentsRoute: typeof AuthenticatedAdminManagerAssignmentsRoute
+  AuthenticatedAdminNotificationsRoute: typeof AuthenticatedAdminNotificationsRoute
+  AuthenticatedAdminProfileRoute: typeof AuthenticatedAdminProfileRoute
+  AuthenticatedAdminRankingRoute: typeof AuthenticatedAdminRankingRoute
   AuthenticatedAdminReportsRoute: typeof AuthenticatedAdminReportsRoute
+  AuthenticatedAdminResourcesRoute: typeof AuthenticatedAdminResourcesRoute
+  AuthenticatedAdminTasksRoute: typeof AuthenticatedAdminTasksRoute
   AuthenticatedAdminTeamsRoute: typeof AuthenticatedAdminTeamsRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
+  AuthenticatedEmployeeAssetsRoute: typeof AuthenticatedEmployeeAssetsRoute
+  AuthenticatedEmployeeDashboardRoute: typeof AuthenticatedEmployeeDashboardRoute
   AuthenticatedEmployeeHistoryRoute: typeof AuthenticatedEmployeeHistoryRoute
+  AuthenticatedEmployeeKpiRoute: typeof AuthenticatedEmployeeKpiRoute
+  AuthenticatedEmployeeProfileRoute: typeof AuthenticatedEmployeeProfileRoute
+  AuthenticatedEmployeeRankingRoute: typeof AuthenticatedEmployeeRankingRoute
   AuthenticatedEmployeeReportRoute: typeof AuthenticatedEmployeeReportRoute
+  AuthenticatedEmployeeResourcesRoute: typeof AuthenticatedEmployeeResourcesRoute
+  AuthenticatedEmployeeTasksRoute: typeof AuthenticatedEmployeeTasksRoute
+  AuthenticatedLeaderAssetsRoute: typeof AuthenticatedLeaderAssetsRoute
   AuthenticatedLeaderDailyReportRoute: typeof AuthenticatedLeaderDailyReportRoute
   AuthenticatedLeaderDashboardRoute: typeof AuthenticatedLeaderDashboardRoute
+  AuthenticatedLeaderKpiRoute: typeof AuthenticatedLeaderKpiRoute
+  AuthenticatedLeaderNotificationsRoute: typeof AuthenticatedLeaderNotificationsRoute
+  AuthenticatedLeaderProfileRoute: typeof AuthenticatedLeaderProfileRoute
+  AuthenticatedLeaderRankingRoute: typeof AuthenticatedLeaderRankingRoute
+  AuthenticatedLeaderReportRoute: typeof AuthenticatedLeaderReportRoute
+  AuthenticatedLeaderReportSlotsRoute: typeof AuthenticatedLeaderReportSlotsRoute
   AuthenticatedLeaderReportsRoute: typeof AuthenticatedLeaderReportsRoute
+  AuthenticatedLeaderResourcesRoute: typeof AuthenticatedLeaderResourcesRoute
   AuthenticatedLeaderSlotReportRoute: typeof AuthenticatedLeaderSlotReportRoute
+  AuthenticatedLeaderTasksRoute: typeof AuthenticatedLeaderTasksRoute
+  AuthenticatedManagerAssetsRoute: typeof AuthenticatedManagerAssetsRoute
   AuthenticatedManagerDashboardRoute: typeof AuthenticatedManagerDashboardRoute
+  AuthenticatedManagerEmployeesRoute: typeof AuthenticatedManagerEmployeesRoute
+  AuthenticatedManagerKpiRoute: typeof AuthenticatedManagerKpiRoute
+  AuthenticatedManagerLeadersRoute: typeof AuthenticatedManagerLeadersRoute
+  AuthenticatedManagerNotificationsRoute: typeof AuthenticatedManagerNotificationsRoute
+  AuthenticatedManagerProfileRoute: typeof AuthenticatedManagerProfileRoute
+  AuthenticatedManagerRankingRoute: typeof AuthenticatedManagerRankingRoute
+  AuthenticatedManagerReportsRoute: typeof AuthenticatedManagerReportsRoute
+  AuthenticatedManagerResourcesRoute: typeof AuthenticatedManagerResourcesRoute
+  AuthenticatedManagerRevenueRoute: typeof AuthenticatedManagerRevenueRoute
+  AuthenticatedManagerTasksRoute: typeof AuthenticatedManagerTasksRoute
+  AuthenticatedManagerTeamsRoute: typeof AuthenticatedManagerTeamsRoute
   AuthenticatedManagerTodayTeamsRoute: typeof AuthenticatedManagerTodayTeamsRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedAdminAssetsRoute: AuthenticatedAdminAssetsRoute,
   AuthenticatedAdminDashboardRoute: AuthenticatedAdminDashboardRoute,
+  AuthenticatedAdminKpiRoute: AuthenticatedAdminKpiRoute,
   AuthenticatedAdminManagerAssignmentsRoute:
     AuthenticatedAdminManagerAssignmentsRoute,
+  AuthenticatedAdminNotificationsRoute: AuthenticatedAdminNotificationsRoute,
+  AuthenticatedAdminProfileRoute: AuthenticatedAdminProfileRoute,
+  AuthenticatedAdminRankingRoute: AuthenticatedAdminRankingRoute,
   AuthenticatedAdminReportsRoute: AuthenticatedAdminReportsRoute,
+  AuthenticatedAdminResourcesRoute: AuthenticatedAdminResourcesRoute,
+  AuthenticatedAdminTasksRoute: AuthenticatedAdminTasksRoute,
   AuthenticatedAdminTeamsRoute: AuthenticatedAdminTeamsRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
+  AuthenticatedEmployeeAssetsRoute: AuthenticatedEmployeeAssetsRoute,
+  AuthenticatedEmployeeDashboardRoute: AuthenticatedEmployeeDashboardRoute,
   AuthenticatedEmployeeHistoryRoute: AuthenticatedEmployeeHistoryRoute,
+  AuthenticatedEmployeeKpiRoute: AuthenticatedEmployeeKpiRoute,
+  AuthenticatedEmployeeProfileRoute: AuthenticatedEmployeeProfileRoute,
+  AuthenticatedEmployeeRankingRoute: AuthenticatedEmployeeRankingRoute,
   AuthenticatedEmployeeReportRoute: AuthenticatedEmployeeReportRoute,
+  AuthenticatedEmployeeResourcesRoute: AuthenticatedEmployeeResourcesRoute,
+  AuthenticatedEmployeeTasksRoute: AuthenticatedEmployeeTasksRoute,
+  AuthenticatedLeaderAssetsRoute: AuthenticatedLeaderAssetsRoute,
   AuthenticatedLeaderDailyReportRoute: AuthenticatedLeaderDailyReportRoute,
   AuthenticatedLeaderDashboardRoute: AuthenticatedLeaderDashboardRoute,
+  AuthenticatedLeaderKpiRoute: AuthenticatedLeaderKpiRoute,
+  AuthenticatedLeaderNotificationsRoute: AuthenticatedLeaderNotificationsRoute,
+  AuthenticatedLeaderProfileRoute: AuthenticatedLeaderProfileRoute,
+  AuthenticatedLeaderRankingRoute: AuthenticatedLeaderRankingRoute,
+  AuthenticatedLeaderReportRoute: AuthenticatedLeaderReportRoute,
+  AuthenticatedLeaderReportSlotsRoute: AuthenticatedLeaderReportSlotsRoute,
   AuthenticatedLeaderReportsRoute: AuthenticatedLeaderReportsRoute,
+  AuthenticatedLeaderResourcesRoute: AuthenticatedLeaderResourcesRoute,
   AuthenticatedLeaderSlotReportRoute: AuthenticatedLeaderSlotReportRoute,
+  AuthenticatedLeaderTasksRoute: AuthenticatedLeaderTasksRoute,
+  AuthenticatedManagerAssetsRoute: AuthenticatedManagerAssetsRoute,
   AuthenticatedManagerDashboardRoute: AuthenticatedManagerDashboardRoute,
+  AuthenticatedManagerEmployeesRoute: AuthenticatedManagerEmployeesRoute,
+  AuthenticatedManagerKpiRoute: AuthenticatedManagerKpiRoute,
+  AuthenticatedManagerLeadersRoute: AuthenticatedManagerLeadersRoute,
+  AuthenticatedManagerNotificationsRoute:
+    AuthenticatedManagerNotificationsRoute,
+  AuthenticatedManagerProfileRoute: AuthenticatedManagerProfileRoute,
+  AuthenticatedManagerRankingRoute: AuthenticatedManagerRankingRoute,
+  AuthenticatedManagerReportsRoute: AuthenticatedManagerReportsRoute,
+  AuthenticatedManagerResourcesRoute: AuthenticatedManagerResourcesRoute,
+  AuthenticatedManagerRevenueRoute: AuthenticatedManagerRevenueRoute,
+  AuthenticatedManagerTasksRoute: AuthenticatedManagerTasksRoute,
+  AuthenticatedManagerTeamsRoute: AuthenticatedManagerTeamsRoute,
   AuthenticatedManagerTodayTeamsRoute: AuthenticatedManagerTodayTeamsRoute,
 }
 
@@ -393,3 +1160,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

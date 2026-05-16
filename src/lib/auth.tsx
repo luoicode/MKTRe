@@ -2,11 +2,11 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { supabase } from "@/integrations/supabase/client";
 import type { Session, User } from "@supabase/supabase-js";
 
-export type AppRole = "admin" | "marketing_manager" | "leader" | "employee";
+export type AppRole = "admin" | "manager" | "leader" | "employee";
 
 export const ROLE_LABELS: Record<AppRole, string> = {
   admin: "Admin",
-  marketing_manager: "Trưởng Phòng Marketing",
+  manager: "Trưởng Phòng Marketing",
   leader: "Leader Team",
   employee: "Nhân viên",
 };
@@ -19,6 +19,7 @@ export interface Profile {
   email: string;
   status: "active" | "inactive";
   avatar_url: string | null;
+  phone: string | null;
 }
 
 interface AuthCtx {
@@ -103,7 +104,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <Ctx.Provider value={{ session, user: session?.user ?? null, profile, role, loading, signOut, refresh }}>
+    <Ctx.Provider
+      value={{ session, user: session?.user ?? null, profile, role, loading, signOut, refresh }}
+    >
       {children}
     </Ctx.Provider>
   );

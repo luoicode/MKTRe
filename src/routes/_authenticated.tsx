@@ -24,15 +24,15 @@ function AuthGuard() {
     const path = location.pathname;
     const allowed: Record<AppRole, string> = {
       admin: "/admin",
-      marketing_manager: "/manager",
+      manager: "/manager",
       leader: "/leader",
       employee: "/employee",
     };
     const home: Record<AppRole, string> = {
       admin: "/admin/dashboard",
-      marketing_manager: "/manager/dashboard",
+      manager: "/manager/dashboard",
       leader: "/leader/dashboard",
-      employee: "/employee/report",
+      employee: "/employee/dashboard",
     };
     if (!path.startsWith(allowed[role])) {
       navigate({ to: home[role] });
@@ -41,7 +41,7 @@ function AuthGuard() {
 
   if (loading || !session || !role) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex h-full min-h-0 items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
