@@ -50,10 +50,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Marketing Sales Report System" },
+      { title: "MKTRe" },
       { name: "description", content: "Hệ thống quản lý báo cáo Marketing/Sales nội bộ" },
     ],
-    links: [{ rel: "stylesheet", href: appCss }],
+    links: [
+      { rel: "stylesheet", href: appCss },
+      { rel: "icon", type: "image/png", href: "/favicon_main copy.png" },
+    ],
   }),
   shellComponent: RootShell,
   component: RootComponent,

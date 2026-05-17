@@ -183,11 +183,15 @@ export function AppLayout({ children }: { children: ReactNode }) {
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 px-4 py-5">
         <div className="flex items-center gap-3 rounded-xl px-2">
-          <div className="gradient-primary flex h-10 w-10 items-center justify-center rounded-xl">
-            <BarChart3 className="h-5 w-5 text-primary-foreground" />
+          <div className="h-10 w-10 overflow-hidden rounded-xl">
+            <img
+              src="/favicon_main.png"
+              alt="MKTRe"
+              className="h-full w-full object-cover"
+            />
           </div>
           <div>
-            <p className="text-sm font-semibold text-sidebar-foreground">MSRS</p>
+            <p className="text-sm font-semibold text-sidebar-foreground">MKTRe</p>
             <p className="text-xs text-sidebar-foreground/60">Báo cáo nội bộ</p>
           </div>
         </div>
@@ -319,7 +323,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <Button variant="ghost" size="icon" onClick={() => setOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
-          <span className="text-sm font-semibold">MSRS</span>
+          <span className="text-sm font-semibold">MKTRe</span>
           <div className="flex items-center gap-1">
             <NotificationsBell />
             {UserMenu}
