@@ -67,22 +67,32 @@ const ROLE_LABELS: Record<AppRole, string> = {
 const NONE_TEAM = "__none__";
 const emptyFixedAssets: FixedAssetForm = { hotline: "", odoo: "" };
 
-async function callFn(name: string, body: unknown) {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-      Authorization: `Bearer ${session?.access_token ?? ""}`,
-    },
-    body: JSON.stringify(body),
-  });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error || "Request failed");
-  return json;
+async function callFn(name: string, body: Record<string, unknown>) {
+  try {
+    const { data, error } = await supabase.functions.invoke(name, { body });
+    if (error) {
+      let message = error.message;
+      const context = (error as { context?: Response }).context;
+      if (context) {
+        try {
+          const payload = (await context.clone().json()) as { error?: string; message?: string };
+          message = payload.error || payload.message || message;
+        } catch {
+          // Keep the Supabase client error when the function response is not JSON.
+        }
+      }
+      throw new Error(message);
+    }
+    return data;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message === "Failed to fetch" || message.includes("fetch")) {
+      throw new Error(
+        "Không gọi được hàm tạo user. Kiểm tra Supabase Edge Function admin-create-user hoặc biến môi trường.",
+      );
+    }
+    throw error;
+  }
 }
 
 function roleLabel(role?: string | null) {
@@ -173,6 +183,7 @@ function AdminUsers() {
             </Button>
           </DialogTrigger>
           <CreateUserDialog
+            teams={teams}
             adminProfileId={profile?.id ?? null}
             onClose={() => {
               setCreateOpen(false);
@@ -186,7 +197,7 @@ function AdminUsers() {
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle>Danh sách</CardTitle>
           <Input
-            placeholder="Tìm theo tên, username, vai trò..."
+            placeholder="Tìm theo tên, tài khoản đăng nhập, vai trò..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="max-w-xs"
@@ -203,7 +214,7 @@ function AdminUsers() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Tên</TableHead>
-                    <TableHead>Username</TableHead>
+                    <TableHead>Tài khoản đăng nhập</TableHead>
                     <TableHead>Vai trò</TableHead>
                     <TableHead>Team</TableHead>
                     <TableHead>Trạng thái</TableHead>
@@ -214,7 +225,7 @@ function AdminUsers() {
                   {filtered.map((u) => (
                     <TableRow key={u.id}>
                       <TableCell className="font-medium">{u.full_name}</TableCell>
-                      <TableCell>@{u.username}</TableCell>
+                      <TableCell>{u.username}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{roleLabel(u.role)}</Badge>
                       </TableCell>
@@ -263,9 +274,11 @@ function AdminUsers() {
 }
 
 function CreateUserDialog({
+  teams,
   adminProfileId,
   onClose,
 }: {
+  teams: TeamOption[];
   adminProfileId: string | null;
   onClose: () => void;
 }) {
@@ -275,6 +288,7 @@ function CreateUserDialog({
     password: "",
     role: "employee",
     status: "active",
+    team_id: "",
     fixedAssets: emptyFixedAssets,
   };
   const [form, setForm] = useState(initial);
@@ -283,6 +297,10 @@ function CreateUserDialog({
   const submit = async () => {
     if (!form.full_name || !form.username || !form.password) {
       toast.error("Nhập đầy đủ thông tin");
+      return;
+    }
+    if (form.role === "employee" && !form.team_id) {
+      toast.error("Chọn team cho employee để tạo checklist onboarding");
       return;
     }
     setLoading(true);
@@ -295,7 +313,32 @@ function CreateUserDialog({
         status: form.status,
       })) as { profile?: { id?: string } };
       if (result.profile?.id) {
-        await saveFixedAssets(result.profile.id, form.fixedAssets, adminProfileId);
+        if ((form.role === "employee" || form.role === "leader") && form.team_id) {
+          const { error: membershipError } = await supabase.from("team_memberships").insert({
+            user_id: result.profile.id,
+            team_id: form.team_id,
+            role_in_team: form.role === "leader" ? "leader" : "employee",
+          });
+          if (membershipError) throw membershipError;
+        }
+
+        if (form.role === "leader" && form.team_id) {
+          const { error: setLeaderError } = await supabase
+            .from("teams")
+            .update({ leader_id: result.profile.id })
+            .eq("id", form.team_id);
+          if (setLeaderError) throw setLeaderError;
+        }
+
+        if (form.role === "employee") {
+          const { error: onboardingError } = await supabase.rpc("clone_onboarding_tasks_for_user", {
+            p_user_id: result.profile.id,
+            p_team_id: form.team_id,
+          });
+          if (onboardingError) throw onboardingError;
+        }
+
+        await saveFixedAssets(result.profile.id, form.fixedAssets, adminProfileId, false);
       }
       toast.success("Tạo user thành công");
       setForm(initial);
@@ -321,11 +364,11 @@ function CreateUserDialog({
           />
         </div>
         <div>
-          <Label>Username</Label>
+          <Label>Tài khoản đăng nhập</Label>
           <Input
             value={form.username}
             onChange={(e) => setForm({ ...form, username: e.target.value })}
-            placeholder="vd: nguyen.van.a"
+            placeholder="vd: dangkhoa123"
           />
         </div>
         <div>
@@ -350,6 +393,29 @@ function CreateUserDialog({
             </SelectContent>
           </Select>
         </div>
+        {(form.role === "employee" || form.role === "leader") && (
+          <div>
+            <Label>Team</Label>
+            <Select
+              value={form.team_id || NONE_TEAM}
+              onValueChange={(v) => setForm({ ...form, team_id: v === NONE_TEAM ? "" : v })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE_TEAM}>
+                  {form.role === "employee" ? "Chọn team" : "Không thuộc team"}
+                </SelectItem>
+                {teams.map((team) => (
+                  <SelectItem key={team.id} value={team.id}>
+                    {team.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <div>
           <Label>Trạng thái</Label>
           <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
@@ -431,7 +497,7 @@ function EditUserDialog({
     const fullName = form.full_name.trim();
     const username = form.username.trim();
     if (!fullName || !username) {
-      toast.error("Nhập đầy đủ họ tên và username");
+      toast.error("Nhập đầy đủ họ tên và tài khoản đăng nhập");
       return;
     }
 
@@ -502,7 +568,7 @@ function EditUserDialog({
   return (
     <DialogContent className="max-h-[90vh] overflow-y-auto">
       <DialogHeader>
-        <DialogTitle>Chỉnh sửa: @{user.username}</DialogTitle>
+        <DialogTitle>Chỉnh sửa: {user.username}</DialogTitle>
       </DialogHeader>
       <div className="space-y-3">
         <div>
@@ -513,10 +579,11 @@ function EditUserDialog({
           />
         </div>
         <div>
-          <Label>Username</Label>
+          <Label>Tài khoản đăng nhập</Label>
           <Input
             value={form.username}
             onChange={(e) => setForm({ ...form, username: e.target.value })}
+            placeholder="vd: dangkhoa123"
           />
         </div>
         <div>
@@ -624,6 +691,7 @@ async function saveFixedAssets(
   userId: string,
   fixedAssets: FixedAssetForm,
   adminProfileId: string | null,
+  clearBlank = true,
 ) {
   const entries: Array<{ type: FixedAssetType; value: string }> = [
     { type: "hotline", value: fixedAssets.hotline.trim() },
@@ -632,6 +700,8 @@ async function saveFixedAssets(
 
   for (const entry of entries) {
     if (!entry.value) {
+      if (!clearBlank) continue;
+
       const { error } = await supabase
         .from("fixed_assets")
         .delete()

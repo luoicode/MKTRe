@@ -42,6 +42,15 @@ type TeamRow = Pick<Tables<"teams">, "id" | "name">;
 type ProfileRow = Pick<Tables<"profiles">, "id" | "full_name" | "username">;
 type KpiPeriod = Enums<"kpi_period">;
 type KpiTargetRow = Tables<"kpi_targets">;
+type MembershipRow = { user_id: string; team_id: string; role_in_team: OperationalRole | null };
+type OperationalRole = "employee" | "leader";
+type KpiRangePreset = "today" | "week" | "month" | "quarter" | "year" | "custom";
+
+type KpiRangeState = {
+  preset: KpiRangePreset;
+  from: string;
+  to: string;
+};
 
 type KpiFormState = {
   team_id: string;
@@ -56,6 +65,8 @@ type KpiFormState = {
 
 type MemberKpiRow = {
   user: ProfileRow;
+  team?: TeamRow;
+  role?: OperationalRole;
   target: number;
   actual: number;
   percent: number | null;
@@ -78,6 +89,80 @@ function createDefaultForm(teamId = ""): KpiFormState {
     ads_target: "",
     note: "",
   };
+}
+
+function createKpiRange(preset: KpiRangePreset = "month"): KpiRangeState {
+  const today = new Date();
+  if (preset === "custom") return { preset, ...monthRange(today) };
+  return { preset, ...getKpiPresetRange(preset, today) };
+}
+
+function getKpiPresetRange(preset: Exclude<KpiRangePreset, "custom">, base = new Date()) {
+  const year = base.getFullYear();
+  const month = base.getMonth();
+  if (preset === "today") {
+    const today = formatLocalYmd(base);
+    return { from: today, to: today };
+  }
+  if (preset === "week") {
+    const day = base.getDay() || 7;
+    return { from: formatLocalYmd(addDays(base, 1 - day)), to: formatLocalYmd(base) };
+  }
+  if (preset === "quarter") {
+    const quarterStartMonth = Math.floor(month / 3) * 3;
+    return {
+      from: formatLocalYmd(new Date(year, quarterStartMonth, 1)),
+      to: formatLocalYmd(new Date(year, quarterStartMonth + 3, 0)),
+    };
+  }
+  if (preset === "year") {
+    return {
+      from: formatLocalYmd(new Date(year, 0, 1)),
+      to: formatLocalYmd(new Date(year, 11, 31)),
+    };
+  }
+  return monthRange(base);
+}
+
+function formatLocalYmd(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(date: Date, amount: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + amount);
+  return next;
+}
+
+function normalizeKpiRange(range: KpiRangeState) {
+  if (range.from <= range.to) return range;
+  return { ...range, from: range.to, to: range.from };
+}
+
+function exactMonthLabel(from: string, to: string) {
+  const [year, month] = from.split("-").map(Number);
+  if (!year || !month) return null;
+  const expected = monthRange(new Date(year, month - 1, 1));
+  return expected.from === from && expected.to === to ? `Tháng ${month}/${year}` : null;
+}
+
+function kpiRangeLabel(range: KpiRangeState) {
+  const normalized = normalizeKpiRange(range);
+  const exactMonth = exactMonthLabel(normalized.from, normalized.to);
+  if (exactMonth) return exactMonth;
+  const start = new Date(`${normalized.from}T00:00:00`);
+  if (normalized.preset === "today") return `Ngày ${formatDateVN(normalized.from)}`;
+  if (normalized.preset === "week") {
+    return `Tuần ${formatDateVN(normalized.from)} - ${formatDateVN(normalized.to)}`;
+  }
+  if (normalized.preset === "quarter") {
+    return `Quý ${Math.floor(start.getMonth() / 3) + 1}/${start.getFullYear()}`;
+  }
+  if (normalized.preset === "year") return `Năm ${start.getFullYear()}`;
+  return `${formatDateVN(normalized.from)} - ${formatDateVN(normalized.to)}`;
 }
 
 function pickLatestKpi(rows: KpiTargetRow[]) {
@@ -105,14 +190,18 @@ function statusClass(status: ReturnType<typeof kpiStatus>) {
 export function KpiWorkspace() {
   const { profile, role } = useAuth();
   const qc = useQueryClient();
-  const canEdit = role === "manager" || role === "leader";
+  const canEdit = role === "admin" || role === "manager" || role === "leader";
   const [createOpen, setCreateOpen] = useState(false);
   const [memberSearch, setMemberSearch] = useState("");
+  const [periodRange, setPeriodRange] = useState<KpiRangeState>(() => createKpiRange("month"));
+  const [teamFilter, setTeamFilter] = useState("all");
+  const [userFilter, setUserFilter] = useState("all");
   const [form, setForm] = useState<KpiFormState>(() => createDefaultForm());
-  const currentMonth = useMemo(() => monthRange(), []);
+  const currentPeriod = useMemo(() => normalizeKpiRange(periodRange), [periodRange]);
+  const periodLabel = useMemo(() => kpiRangeLabel(currentPeriod), [currentPeriod]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["kpi-workspace", role, profile?.id, currentMonth.from, currentMonth.to],
+    queryKey: ["kpi-workspace", role, profile?.id, currentPeriod.from, currentPeriod.to],
     enabled: !!profile && !!role,
     queryFn: async () => {
       let teamIds: string[] | undefined;
@@ -123,14 +212,19 @@ export function KpiWorkspace() {
       if (teamIds?.length) teamsQuery = teamsQuery.in("id", teamIds);
       const { data: teams, error: teamsError } = await teamsQuery;
       if (teamsError) throw teamsError;
+      const visibleTeamIds =
+        role === "admin" ? (teams ?? []).map((team) => team.id) : (teamIds ?? []);
 
       const memberships = teamIds?.length
         ? await supabase
             .from("team_memberships")
-            .select("user_id, team_id")
+            .select("user_id, team_id, role_in_team")
             .in("team_id", teamIds)
             .eq("is_active", true)
-        : await supabase.from("team_memberships").select("user_id, team_id").eq("is_active", true);
+        : await supabase
+            .from("team_memberships")
+            .select("user_id, team_id, role_in_team")
+            .eq("is_active", true);
       if (memberships.error) throw memberships.error;
 
       const userIds = Array.from(
@@ -138,11 +232,38 @@ export function KpiWorkspace() {
       );
       if (profile?.id && !userIds.includes(profile.id)) userIds.push(profile.id);
 
-      const { data: users, error: usersError } = userIds.length
+      const { data: operationalRoles, error: rolesError } = userIds.length
+        ? await supabase.from("user_roles").select("user_id, role").in("user_id", userIds)
+        : { data: [], error: null };
+      if (rolesError) throw rolesError;
+
+      const operationalRoleByUserId = new Map(
+        (operationalRoles ?? [])
+          .filter((row) => row.role === "employee" || row.role === "leader")
+          .map((row) => [row.user_id, row.role as OperationalRole]),
+      );
+      for (const membership of memberships.data ?? []) {
+        if (
+          !operationalRoleByUserId.has(membership.user_id) &&
+          (membership.role_in_team === "employee" || membership.role_in_team === "leader")
+        ) {
+          operationalRoleByUserId.set(membership.user_id, membership.role_in_team);
+        }
+      }
+      const nonOperationalUserIds = new Set(
+        (operationalRoles ?? [])
+          .filter((row) => row.role === "admin" || row.role === "manager")
+          .map((row) => row.user_id),
+      );
+      const operationalUserIds = userIds.filter(
+        (userId) => operationalRoleByUserId.has(userId) && !nonOperationalUserIds.has(userId),
+      );
+
+      const { data: users, error: usersError } = operationalUserIds.length
         ? await supabase
             .from("profiles")
             .select("id, full_name, username")
-            .in("id", userIds)
+            .in("id", operationalUserIds)
             .order("full_name")
         : { data: [], error: null };
       if (usersError) throw usersError;
@@ -150,33 +271,43 @@ export function KpiWorkspace() {
       const { data: kpis, error: kpisError } = await supabase
         .from("kpi_targets")
         .select("*")
-        .eq("period_type", "month")
-        .lte("period_start", currentMonth.to)
-        .gte("period_end", currentMonth.from)
+        .lte("period_start", currentPeriod.to)
+        .gte("period_end", currentPeriod.from)
         .order("updated_at", { ascending: false });
       if (kpisError) throw kpisError;
 
-      const personalReports = await getVisibleReports({
-        from: currentMonth.from,
-        to: currentMonth.to,
-        userId: profile!.id,
-      });
+      const personalReports =
+        role === "employee" || role === "leader"
+          ? await getVisibleReports({
+              from: currentPeriod.from,
+              to: currentPeriod.to,
+              userId: profile!.id,
+            })
+          : [];
 
       const scopedTeamIds =
         teamIds?.length || role === "leader" || role === "manager" ? teamIds : undefined;
-      const teamReports = scopedTeamIds?.length
-        ? await getVisibleReports({
-            from: currentMonth.from,
-            to: currentMonth.to,
-            teamIds: scopedTeamIds,
-          })
-        : [];
+      const teamReports =
+        role === "admin"
+          ? await getVisibleReports({
+              from: currentPeriod.from,
+              to: currentPeriod.to,
+            })
+          : scopedTeamIds?.length
+            ? await getVisibleReports({
+                from: currentPeriod.from,
+                to: currentPeriod.to,
+                teamIds: scopedTeamIds,
+              })
+            : [];
 
       return {
         teams: teams ?? [],
         users: (users ?? []) as ProfileRow[],
+        operationalRoleByUserId,
         kpis: (kpis ?? []) as KpiTargetRow[],
-        teamIds: teamIds ?? [],
+        memberships: (memberships.data ?? []) as MembershipRow[],
+        teamIds: visibleTeamIds,
         personalActual: sumReportMetrics(personalReports),
         teamReports,
         teamActual: sumReportMetrics(teamReports),
@@ -198,9 +329,13 @@ export function KpiWorkspace() {
   const teamKpis = useMemo(() => {
     if (!data?.teamIds.length) return [];
     return (data.kpis ?? []).filter(
-      (kpi) => !kpi.user_id && kpi.team_id && data.teamIds.includes(kpi.team_id),
+      (kpi) =>
+        !kpi.user_id &&
+        kpi.team_id &&
+        data.teamIds.includes(kpi.team_id) &&
+        (teamFilter === "all" || kpi.team_id === teamFilter),
     );
-  }, [data?.kpis, data?.teamIds]);
+  }, [data?.kpis, data?.teamIds, teamFilter]);
 
   const teamTarget = useMemo(
     () => teamKpis.reduce((sum, kpi) => sum + Number(kpi.revenue_target ?? 0), 0),
@@ -210,6 +345,20 @@ export function KpiWorkspace() {
     () => teamKpis.reduce((sum, kpi) => sum + Number(kpi.ads_target ?? 0), 0),
     [teamKpis],
   );
+  const filteredTeamReports = useMemo(() => {
+    if (teamFilter === "all") return data?.teamReports ?? [];
+    return (data?.teamReports ?? []).filter((report) => report.team_id === teamFilter);
+  }, [data?.teamReports, teamFilter]);
+  const filteredTeamActual = useMemo(
+    () => sumReportMetrics(filteredTeamReports),
+    [filteredTeamReports],
+  );
+  const teamSummaryName =
+    teamFilter === "all"
+      ? role === "admin"
+        ? "Toàn hệ thống"
+        : data?.teams.map((team) => team.name).join(", ") || "Team"
+      : data?.teams.find((team) => team.id === teamFilter)?.name || "Team";
 
   const memberRows = useMemo<MemberKpiRow[]>(() => {
     const actualByUser = new Map<string, number>();
@@ -219,19 +368,68 @@ export function KpiWorkspace() {
         (actualByUser.get(report.user_id) ?? 0) + report.total_revenue,
       );
     }
+    const teamById = new Map((data?.teams ?? []).map((team) => [team.id, team]));
+    const teamByUserId = new Map(
+      (data?.memberships ?? []).map((membership) => [
+        membership.user_id,
+        teamById.get(membership.team_id),
+      ]),
+    );
     return (data?.users ?? [])
       .filter(
         (user) =>
-          !memberSearch || user.full_name.toLowerCase().includes(memberSearch.toLowerCase()),
+          (teamFilter === "all" || teamByUserId.get(user.id)?.id === teamFilter) &&
+          (userFilter === "all" || user.id === userFilter) &&
+          (!memberSearch || user.full_name.toLowerCase().includes(memberSearch.toLowerCase())),
       )
       .map((user) => {
         const kpi = pickLatestKpi((data?.kpis ?? []).filter((row) => row.user_id === user.id));
         const target = Number(kpi?.revenue_target ?? 0);
         const actual = actualByUser.get(user.id) ?? 0;
         const percent = kpiPercent(actual, target);
-        return { user, target, actual, percent, status: kpiStatus(percent) };
+        return {
+          user,
+          team: teamByUserId.get(user.id),
+          role: data?.operationalRoleByUserId.get(user.id),
+          target,
+          actual,
+          percent,
+          status: kpiStatus(percent),
+        };
       });
-  }, [data?.kpis, data?.teamReports, data?.users, memberSearch]);
+  }, [
+    data?.kpis,
+    data?.memberships,
+    data?.operationalRoleByUserId,
+    data?.teamReports,
+    data?.teams,
+    data?.users,
+    memberSearch,
+    teamFilter,
+    userFilter,
+  ]);
+
+  const usersForFilter = useMemo(() => {
+    if (teamFilter === "all") return data?.users ?? [];
+    const teamUserIds = new Set(
+      (data?.memberships ?? [])
+        .filter((membership) => membership.team_id === teamFilter)
+        .map((membership) => membership.user_id),
+    );
+    return (data?.users ?? []).filter((user) => teamUserIds.has(user.id));
+  }, [data?.memberships, data?.users, teamFilter]);
+
+  const usersForForm = useMemo(() => {
+    if (!form.team_id) return data?.users ?? [];
+    const teamUserIds = new Set(
+      (data?.memberships ?? [])
+        .filter((membership) => membership.team_id === form.team_id)
+        .map((membership) => membership.user_id),
+    );
+    return (data?.users ?? []).filter((user) => teamUserIds.has(user.id));
+  }, [data?.memberships, data?.users, form.team_id]);
+
+  const showScopeFilters = role === "admin" || role === "manager";
 
   const save = async () => {
     if (!form.team_id || !form.period_start || !form.period_end) {
@@ -274,15 +472,16 @@ export function KpiWorkspace() {
             {role === "employee" || role === "leader" ? "KPI Cá Nhân" : "KPI"}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {profile?.full_name ?? "Nhân sự"} · Tháng {new Date().getMonth() + 1}/
-            {new Date().getFullYear()}
+            {profile?.full_name ?? "Nhân sự"} · {periodLabel}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge className={statusClass(personalStatus)}>
-            <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
-            {statusLabel(personalStatus)}
-          </Badge>
+          {(role === "employee" || role === "leader") && (
+            <Badge className={statusClass(personalStatus)}>
+              <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+              {statusLabel(personalStatus)}
+            </Badge>
+          )}
           {canEdit && (
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
               <DialogTrigger asChild>
@@ -295,7 +494,7 @@ export function KpiWorkspace() {
                 setForm={setForm}
                 role={role}
                 teams={data?.teams ?? []}
-                users={data?.users ?? []}
+                users={usersForForm}
                 onSave={save}
               />
             </Dialog>
@@ -310,41 +509,158 @@ export function KpiWorkspace() {
           </div>
         ) : (
           <div className="space-y-5">
-            <PersonalKpiPanel
-              kpi={personalKpi}
-              actualRevenue={data?.personalActual.total_revenue ?? 0}
-              percent={personalPercent}
-              status={personalStatus}
-              canEdit={canEdit}
-              onEdit={() => setCreateOpen(true)}
-              monthFrom={currentMonth.from}
-              monthTo={currentMonth.to}
-            />
-            <KpiHistory kpis={personalKpis} />
+            {showScopeFilters && (
+              <KpiScopeFilters
+                periodRange={periodRange}
+                onPeriodRangeChange={setPeriodRange}
+                teamFilter={teamFilter}
+                onTeamChange={(value) => {
+                  setTeamFilter(value);
+                  setUserFilter("all");
+                }}
+                userFilter={userFilter}
+                onUserChange={setUserFilter}
+                teams={data?.teams ?? []}
+                users={usersForFilter}
+              />
+            )}
+            {(role === "employee" || role === "leader") && (
+              <>
+                <PersonalKpiPanel
+                  kpi={personalKpi}
+                  actualRevenue={data?.personalActual.total_revenue ?? 0}
+                  percent={personalPercent}
+                  status={personalStatus}
+                  canEdit={canEdit}
+                  onEdit={() => setCreateOpen(true)}
+                  monthFrom={currentPeriod.from}
+                  monthTo={currentPeriod.to}
+                />
+                <KpiHistory kpis={personalKpis} />
+              </>
+            )}
 
-            {role === "leader" && (
+            {(role === "leader" || role === "admin" || role === "manager") && (
               <>
                 <TeamKpiPanel
-                  teamName={data?.teams.map((team) => team.name).join(", ") || "Team"}
+                  teamName={teamSummaryName}
                   target={teamTarget}
-                  actual={data?.teamActual.total_revenue ?? 0}
+                  actual={
+                    role === "leader"
+                      ? (data?.teamActual.total_revenue ?? 0)
+                      : filteredTeamActual.total_revenue
+                  }
                   adsTarget={teamAdsTarget}
-                />
-                <MemberKpiTable
-                  rows={memberRows}
-                  search={memberSearch}
-                  onSearch={setMemberSearch}
                 />
               </>
             )}
 
-            {role !== "employee" && role !== "leader" && (
+            {role !== "employee" && (
               <MemberKpiTable rows={memberRows} search={memberSearch} onSearch={setMemberSearch} />
             )}
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+function KpiScopeFilters({
+  periodRange,
+  onPeriodRangeChange,
+  teamFilter,
+  onTeamChange,
+  userFilter,
+  onUserChange,
+  teams,
+  users,
+}: {
+  periodRange: KpiRangeState;
+  onPeriodRangeChange: (value: KpiRangeState) => void;
+  teamFilter: string;
+  onTeamChange: (value: string) => void;
+  userFilter: string;
+  onUserChange: (value: string) => void;
+  teams: TeamRow[];
+  users: ProfileRow[];
+}) {
+  const setPreset = (preset: KpiRangePreset) => {
+    onPeriodRangeChange(createKpiRange(preset));
+  };
+
+  return (
+    <section className="rounded-2xl border bg-card p-4 shadow-sm">
+      <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr_1fr]">
+        <Field label="Thời gian">
+          <div className="grid gap-2">
+            <Select
+              value={periodRange.preset}
+              onValueChange={(value) => setPreset(value as KpiRangePreset)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="today">Hôm nay</SelectItem>
+                <SelectItem value="week">Tuần này</SelectItem>
+                <SelectItem value="month">Tháng này</SelectItem>
+                <SelectItem value="quarter">Quý này</SelectItem>
+                <SelectItem value="year">Năm nay</SelectItem>
+                <SelectItem value="custom">Tuỳ chỉnh</SelectItem>
+              </SelectContent>
+            </Select>
+            {periodRange.preset === "custom" && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Input
+                  type="date"
+                  value={periodRange.from}
+                  onChange={(event) =>
+                    onPeriodRangeChange({ ...periodRange, from: event.target.value })
+                  }
+                />
+                <Input
+                  type="date"
+                  value={periodRange.to}
+                  onChange={(event) =>
+                    onPeriodRangeChange({ ...periodRange, to: event.target.value })
+                  }
+                />
+              </div>
+            )}
+          </div>
+        </Field>
+        <Field label="Team">
+          <Select value={teamFilter} onValueChange={onTeamChange}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tất cả team</SelectItem>
+              {teams.map((team) => (
+                <SelectItem key={team.id} value={team.id}>
+                  {team.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label="Nhân sự">
+          <Select value={userFilter} onValueChange={onUserChange}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tất cả nhân sự</SelectItem>
+              {users.map((user) => (
+                <SelectItem key={user.id} value={user.id}>
+                  {user.full_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+      </div>
+    </section>
   );
 }
 
@@ -378,7 +694,10 @@ function KpiCreateDialog({
           </div>
         ) : (
           <Field label="Team">
-            <Select value={form.team_id} onValueChange={(v) => setForm({ ...form, team_id: v })}>
+            <Select
+              value={form.team_id}
+              onValueChange={(v) => setForm({ ...form, team_id: v, user_id: "team" })}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Chọn team" />
               </SelectTrigger>
@@ -495,7 +814,7 @@ function PersonalKpiPanel({
         <Target className="mx-auto h-10 w-10 text-muted-foreground" />
         <h2 className="mt-4 text-xl font-semibold">Chưa có KPI tháng này</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          KPI tháng hiện tại sẽ hiển thị tại đây khi Leader/Manager tạo mục tiêu.
+          KPI trong kỳ đang chọn sẽ hiển thị tại đây khi người quản lý tạo mục tiêu.
         </p>
         {canEdit && (
           <Button className="mt-5 bg-emerald-600 text-white hover:bg-emerald-700" onClick={onEdit}>
@@ -619,7 +938,7 @@ function KpiHistory({ kpis }: { kpis: KpiTargetRow[] }) {
         </div>
       ) : (
         <div className="mt-4 rounded-2xl border border-dashed p-5 text-center text-sm text-muted-foreground">
-          Chưa có KPI tháng này
+          Chưa có KPI trong kỳ này
         </div>
       )}
     </section>
@@ -643,7 +962,7 @@ function MemberKpiTable({
             <TrendingUp className="h-5 w-5 text-emerald-500" />
             Theo dõi KPI từng người
           </h2>
-          <p className="text-sm text-muted-foreground">Chỉ hiển thị KPI tháng hiện tại.</p>
+          <p className="text-sm text-muted-foreground">Hiển thị KPI theo bộ lọc thời gian.</p>
         </div>
         <div className="relative w-full sm:w-72">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -660,6 +979,7 @@ function MemberKpiTable({
           <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-4 py-3">Tên</th>
+              <th className="px-4 py-3">Team</th>
               <th className="px-4 py-3 text-right">Mục tiêu</th>
               <th className="px-4 py-3 text-right">Thực tế</th>
               <th className="px-4 py-3 text-right">% hoàn thành</th>
@@ -674,6 +994,7 @@ function MemberKpiTable({
                     <p className="font-semibold">{row.user.full_name}</p>
                     <p className="text-xs text-muted-foreground">@{row.user.username}</p>
                   </td>
+                  <td className="px-4 py-3 text-muted-foreground">{row.team?.name ?? "—"}</td>
                   <td className="px-4 py-3 text-right font-medium">{fmtVndDong(row.target)}</td>
                   <td className="px-4 py-3 text-right font-medium">{fmtVndDong(row.actual)}</td>
                   <td className="px-4 py-3 text-right font-semibold">
@@ -686,8 +1007,8 @@ function MemberKpiTable({
               ))
             ) : (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">
-                  Chưa có KPI tháng này
+                <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
+                  Chưa có KPI trong kỳ này
                 </td>
               </tr>
             )}

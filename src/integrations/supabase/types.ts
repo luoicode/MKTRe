@@ -875,6 +875,53 @@ export type Database = {
           },
         ];
       };
+      onboarding_task_templates: {
+        Row: {
+          created_at: string;
+          created_by: string | null;
+          deadline_hours: number;
+          description: string | null;
+          id: string;
+          is_active: boolean;
+          priority: string;
+          sort_order: number;
+          title: string;
+          updated_at: string;
+        };
+        Insert: {
+          created_at?: string;
+          created_by?: string | null;
+          deadline_hours?: number;
+          description?: string | null;
+          id?: string;
+          is_active?: boolean;
+          priority?: string;
+          sort_order?: number;
+          title: string;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          created_by?: string | null;
+          deadline_hours?: number;
+          description?: string | null;
+          id?: string;
+          is_active?: boolean;
+          priority?: string;
+          sort_order?: number;
+          title?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_task_templates_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       profile_channels: {
         Row: {
           channel: string;
@@ -1435,6 +1482,7 @@ export type Database = {
           id: string;
           note: string | null;
           proof_url: string | null;
+          priority: string | null;
           review_feedback: string | null;
           reviewed_at: string | null;
           reviewed_by: string | null;
@@ -1453,6 +1501,7 @@ export type Database = {
           id?: string;
           note?: string | null;
           proof_url?: string | null;
+          priority?: string | null;
           review_feedback?: string | null;
           reviewed_at?: string | null;
           reviewed_by?: string | null;
@@ -1471,6 +1520,7 @@ export type Database = {
           id?: string;
           note?: string | null;
           proof_url?: string | null;
+          priority?: string | null;
           review_feedback?: string | null;
           reviewed_at?: string | null;
           reviewed_by?: string | null;
@@ -1506,9 +1556,12 @@ export type Database = {
           created_at: string;
           created_by: string | null;
           deadline: string | null;
+          dedupe_key: string | null;
           description: string | null;
           id: string;
+          onboarding_template_id: string | null;
           proof_url: string | null;
+          priority: string | null;
           review_feedback: string | null;
           reviewed_at: string | null;
           reviewed_by: string | null;
@@ -1527,9 +1580,12 @@ export type Database = {
           created_at?: string;
           created_by?: string | null;
           deadline?: string | null;
+          dedupe_key?: string | null;
           description?: string | null;
           id?: string;
+          onboarding_template_id?: string | null;
           proof_url?: string | null;
+          priority?: string | null;
           review_feedback?: string | null;
           reviewed_at?: string | null;
           reviewed_by?: string | null;
@@ -1548,9 +1604,12 @@ export type Database = {
           created_at?: string;
           created_by?: string | null;
           deadline?: string | null;
+          dedupe_key?: string | null;
           description?: string | null;
           id?: string;
+          onboarding_template_id?: string | null;
           proof_url?: string | null;
+          priority?: string | null;
           review_feedback?: string | null;
           reviewed_at?: string | null;
           reviewed_by?: string | null;
@@ -1562,6 +1621,13 @@ export type Database = {
           updated_at?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: "tasks_onboarding_template_id_fkey";
+            columns: ["onboarding_template_id"];
+            isOneToOne: false;
+            referencedRelation: "onboarding_task_templates";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "tasks_assigned_by_fkey";
             columns: ["assigned_by"];
@@ -1632,10 +1698,15 @@ export type Database = {
           p_deadline?: string | null;
           p_description?: string | null;
           p_task_date?: string;
+          p_priority?: string | null;
           p_team_id: string;
           p_title: string;
         };
         Returns: Database["public"]["Tables"]["tasks"]["Row"];
+      };
+      clone_onboarding_tasks_for_user: {
+        Args: { p_team_id?: string | null; p_user_id: string };
+        Returns: number;
       };
       get_current_profile_id: { Args: never; Returns: string };
       get_ranking_entries: {

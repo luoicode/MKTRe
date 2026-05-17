@@ -27,6 +27,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
@@ -38,6 +46,9 @@ const PAGE_SIZE = 20;
 
 type NotificationRow = {
   id: string;
+  target_profile_id?: string | null;
+  actor_profile_id?: string | null;
+  created_by?: string | null;
   title: string;
   body: string | null;
   message?: string | null;
@@ -62,14 +73,16 @@ function isTargetScope(value: string): value is TargetScope {
   return value === "system" || value === "team";
 }
 
-export function NotificationsWorkspace() {
+export function NotificationsWorkspace({ mode = "auto" }: { mode?: "auto" | "history" | "inbox" }) {
   const { profile, role } = useAuth();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const canCreate = role === "admin" || role === "manager";
-  const isHistoryMode = canCreate;
+  const isHistoryMode = mode === "history" || (mode === "auto" && canCreate);
+  const pageTitle = mode === "inbox" ? "Tất cả thông báo" : "Thông báo";
   const [readFilter, setReadFilter] = useState<ReadFilter>("all");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState<{
     title: string;
     body: string;
@@ -97,12 +110,14 @@ export function NotificationsWorkspace() {
       let notificationsQuery = supabase
         .from("notifications")
         .select(
-          "id, title, message, body, type, kind, scope, severity, is_read, entity_type, entity_id, metadata, created_at",
+          "id, target_profile_id, actor_profile_id, created_by, title, message, body, type, kind, scope, severity, is_read, entity_type, entity_id, metadata, created_at",
         )
         .order("created_at", { ascending: false });
 
       if (isHistoryMode) {
-        notificationsQuery = notificationsQuery.eq("actor_profile_id", profile!.id);
+        notificationsQuery = notificationsQuery
+          .or(`actor_profile_id.eq.${profile!.id},created_by.eq.${profile!.id}`)
+          .or("type.eq.announcement,kind.eq.announcement");
       } else {
         notificationsQuery = notificationsQuery.eq("target_profile_id", profile!.id);
         if (readFilter === "unread") {
@@ -120,7 +135,10 @@ export function NotificationsWorkspace() {
 
       const [{ data: teams, error: teamsError }, notificationsResult] = await Promise.all([
         teamsQuery,
-        notificationsQuery.range(0, isHistoryMode ? Math.max(visibleCount * 50, 50) : visibleCount),
+        notificationsQuery.range(
+          0,
+          isHistoryMode ? Math.max(visibleCount * 250, 500) : visibleCount,
+        ),
       ]);
       if (teamsError) throw teamsError;
       if (notificationsResult.error) throw notificationsResult.error;
@@ -147,6 +165,17 @@ export function NotificationsWorkspace() {
       const fetchedNotifications = (notificationsResult.data ?? []) as NotificationRow[];
       const teamNameById = new Map((teams ?? []).map((team) => [team.id, team.name]));
       const historyNotifications = buildSentHistory(fetchedNotifications, teamNameById);
+      if (isHistoryMode) {
+        console.debug("[MKTRe announcement history]", {
+          currentUserId: profile!.id,
+          rowsCountBeforeGroup: fetchedNotifications.length,
+          groupsCountAfterGroup: historyNotifications.length,
+          batchIds: historyNotifications.slice(0, 5).map((notification) => {
+            const metadata = readMetadata(notification.metadata);
+            return metadata.batch_id ?? notification.id;
+          }),
+        });
+      }
       const adminIds = (adminRoles ?? []).map((row) => row.user_id);
       return {
         teams: teams ?? [],
@@ -197,6 +226,8 @@ export function NotificationsWorkspace() {
     const selectedTeam = data?.teams.find((team) => team.id === form.team_id);
     const baseMetadata = {
       batch_id: batchId,
+      created_by: profile!.id,
+      audience_type: form.target_scope === "system" ? "all_users" : "team",
       recipient_count: uniqueTargetIds.length,
       recipient_mode: form.target_scope === "system" ? "all_users" : "team",
       ...(form.target_scope === "team"
@@ -221,13 +252,33 @@ export function NotificationsWorkspace() {
       team_id: form.target_scope === "team" ? form.team_id : null,
       body: form.body || null,
     }));
-    const { error } = await supabase.from("notifications").insert(payloads);
+    const { data: insertedRows, error } = await supabase
+      .from("notifications")
+      .insert(payloads)
+      .select("id");
     if (error) {
       toast.error(error.message);
       return;
     }
+    console.debug("[MKTRe announcement create]", {
+      actorId: profile!.id,
+      audience_type: baseMetadata.audience_type,
+      team_id: form.target_scope === "team" ? form.team_id : null,
+      recipientIds: uniqueTargetIds,
+      batch_id: batchId,
+      insertedNotificationCount: payloads.length,
+      insertedIds: (insertedRows ?? []).map((row) => row.id),
+    });
     toast.success("Đã tạo thông báo");
-    setForm((f) => ({ ...f, title: "", body: "" }));
+    setCreateOpen(false);
+    setVisibleCount(PAGE_SIZE);
+    setForm((f) => ({
+      ...f,
+      title: "",
+      body: "",
+      team_id: "",
+      target_scope: role === "admin" ? "system" : "team",
+    }));
     await invalidateNotifications();
   };
 
@@ -282,98 +333,118 @@ export function NotificationsWorkspace() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Thông báo</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{pageTitle}</h1>
           <p className="text-sm text-muted-foreground">
-            {canCreate
+            {isHistoryMode
               ? "Tạo tin tức, nhắc báo cáo, KPI hoặc task mới."
               : "Hộp thông báo và các cập nhật mới nhất."}
           </p>
         </div>
-        {!isHistoryMode && (
-          <Button variant="outline" onClick={markAllRead}>
-            <CheckCheck className="mr-2 h-4 w-4" />
-            Đọc tất cả
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {canCreate && (
+            <Button onClick={() => setCreateOpen(true)} className="shadow-sm">
+              <BellPlus className="mr-2 h-4 w-4" />
+              Tạo thông báo
+            </Button>
+          )}
+          {!isHistoryMode && (
+            <Button variant="outline" onClick={markAllRead}>
+              <CheckCheck className="mr-2 h-4 w-4" />
+              Đọc tất cả
+            </Button>
+          )}
+        </div>
       </div>
 
       {canCreate && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Tạo thông báo</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-3">
-            <Field label="Tiêu đề">
-              <Input
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-              />
-            </Field>
-            <Field label="Mức độ">
-              <Select
-                value={form.severity}
-                onValueChange={(v) => setForm({ ...form, severity: v as NotificationSeverity })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="info">Info</SelectItem>
-                  <SelectItem value="success">Success</SelectItem>
-                  <SelectItem value="warning">Warning</SelectItem>
-                  <SelectItem value="error">Error</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Người nhận">
-              <Select
-                value={form.target_scope}
-                onValueChange={(v) => {
-                  if (isTargetScope(v)) setForm({ ...form, target_scope: v, team_id: "" });
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {role === "admin" && <SelectItem value="system">Tất cả người dùng</SelectItem>}
-                  <SelectItem value="team">Theo team</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            {form.target_scope === "team" && (
-              <Field label="Team">
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogContent className="sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Tạo thông báo</DialogTitle>
+              <DialogDescription>
+                Gửi thông báo đến toàn bộ người dùng hoặc một team theo quyền hiện tại.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Tiêu đề">
+                <Input
+                  value={form.title}
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  placeholder="Nhập tiêu đề thông báo"
+                />
+              </Field>
+              <Field label="Mức độ">
                 <Select
-                  value={form.team_id}
-                  onValueChange={(v) => setForm({ ...form, team_id: v })}
+                  value={form.severity}
+                  onValueChange={(v) => setForm({ ...form, severity: v as NotificationSeverity })}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Chọn team" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {data?.teams.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        {t.name}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="info">Info</SelectItem>
+                    <SelectItem value="success">Success</SelectItem>
+                    <SelectItem value="warning">Warning</SelectItem>
+                    <SelectItem value="error">Error</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
-            )}
-            <div className="md:col-span-3">
-              <Label>Nội dung</Label>
-              <Textarea
-                value={form.body}
-                onChange={(e) => setForm({ ...form, body: e.target.value })}
-              />
+              <Field label="Người nhận">
+                <Select
+                  value={form.target_scope}
+                  onValueChange={(v) => {
+                    if (isTargetScope(v)) setForm({ ...form, target_scope: v, team_id: "" });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {role === "admin" && <SelectItem value="system">Tất cả người dùng</SelectItem>}
+                    <SelectItem value="team">Theo team</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              {form.target_scope === "team" && (
+                <Field label="Team">
+                  <Select
+                    value={form.team_id}
+                    onValueChange={(v) => setForm({ ...form, team_id: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Chọn team" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {data?.teams.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
+              <div className="md:col-span-2">
+                <Label>Nội dung</Label>
+                <Textarea
+                  value={form.body}
+                  onChange={(e) => setForm({ ...form, body: e.target.value })}
+                  placeholder="Nhập nội dung gửi đến người nhận"
+                  className="min-h-28"
+                />
+              </div>
             </div>
-            <div className="md:col-span-3">
-              <Button onClick={create}>
-                <BellPlus className="mr-2 h-4 w-4" /> Tạo thông báo
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCreateOpen(false)}>
+                Huỷ
               </Button>
-            </div>
-          </CardContent>
-        </Card>
+              <Button onClick={create}>
+                <BellPlus className="mr-2 h-4 w-4" />
+                Gửi thông báo
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
 
       <Card>
@@ -392,11 +463,11 @@ export function NotificationsWorkspace() {
             </Select>
           )}
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent>
           {isLoading ? (
             <Loader2 className="mx-auto h-6 w-6 animate-spin" />
           ) : data?.notifications.length ? (
-            <>
+            <div className={"max-h-[520px] space-y-3 overflow-y-auto pr-2"}>
               {data.notifications.map((n) =>
                 isHistoryMode ? (
                   <SentNotificationCard key={n.id} notification={n as SentNotificationHistory} />
@@ -419,7 +490,7 @@ export function NotificationsWorkspace() {
                   </Button>
                 </div>
               )}
-            </>
+            </div>
           ) : (
             <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
               Chưa có thông báo.
@@ -435,7 +506,10 @@ function buildSentHistory(
   notifications: NotificationRow[],
   teamNameById: Map<string, string>,
 ): SentNotificationHistory[] {
-  const grouped = new Map<string, { first: NotificationRow; count: number }>();
+  const grouped = new Map<
+    string,
+    { first: NotificationRow; count: number; targetIds: Set<string> }
+  >();
 
   for (const notification of notifications) {
     const metadata = readMetadata(notification.metadata);
@@ -445,18 +519,23 @@ function buildSentHistory(
         notification.title,
         notification.message ?? notification.body ?? "",
         notification.scope ?? "",
-        notification.created_at.slice(0, 16),
+        notification.created_at,
       ].join("|");
     const existing = grouped.get(key);
     if (existing) {
       existing.count += 1;
+      if (notification.target_profile_id) existing.targetIds.add(notification.target_profile_id);
     } else {
-      grouped.set(key, { first: notification, count: 1 });
+      grouped.set(key, {
+        first: notification,
+        count: 1,
+        targetIds: new Set(notification.target_profile_id ? [notification.target_profile_id] : []),
+      });
     }
   }
 
   return Array.from(grouped.values())
-    .map(({ first, count }) => {
+    .map(({ first, count, targetIds }) => {
       const metadata = readMetadata(first.metadata);
       const recipientMode: SentNotificationHistory["recipient_mode"] =
         metadata.recipient_mode === "all_users"
@@ -469,7 +548,7 @@ function buildSentHistory(
         (metadata.team_id ? (teamNameById.get(metadata.team_id) ?? null) : null);
       return {
         ...first,
-        recipient_count: metadata.recipient_count ?? count,
+        recipient_count: metadata.recipient_count ?? (targetIds.size || count),
         recipient_mode: recipientMode,
         team_name: teamName,
       };

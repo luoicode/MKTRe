@@ -15,10 +15,13 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
 import { todayStr } from "@/lib/reports";
+import { playNotification } from "@/utils/playNotification";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
+
+const APP_TITLE = "MKTRe";
 
 export function NotificationsBell() {
   const { profile, role } = useAuth();
@@ -45,12 +48,18 @@ export function NotificationsBell() {
       const { data: notifications, error } = await supabase
         .from("notifications")
         .select(
-          "id, title, message, body, type, kind, scope, severity, is_read, entity_type, entity_id, metadata, created_at",
+          "id, target_profile_id, actor_profile_id, user_id, title, message, body, type, kind, scope, severity, is_read, entity_type, entity_id, metadata, created_at",
         )
         .eq("target_profile_id", profileId!)
         .order("created_at", { ascending: false })
         .limit(15);
       if (error) throw error;
+      const { count: unreadCount, error: unreadError } = await supabase
+        .from("notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("target_profile_id", profileId!)
+        .eq("is_read", false);
+      if (unreadError) throw unreadError;
       const virtualNotifications =
         role === "employee" || role === "leader"
           ? await buildEmployeeReminderNotifications(profileId!, notifications ?? [])
@@ -58,6 +67,7 @@ export function NotificationsBell() {
       return {
         notifications: notifications ?? [],
         virtualNotifications,
+        unreadCount: unreadCount ?? 0,
       };
     },
   });
@@ -88,12 +98,27 @@ export function NotificationsBell() {
           (payload) => {
             if (payload.eventType === "INSERT") {
               const incoming = payload.new as NotificationRow;
+              let duplicateSkipped = false;
+              let shouldPlay =
+                incoming.target_profile_id === profileId &&
+                !(incoming.actor_profile_id === profileId && incoming.type === "announcement");
               queryClientRef.current.setQueriesData<{
                 notifications: NotificationRow[];
                 virtualNotifications: VirtualNotification[];
+                unreadCount: number;
               }>({ queryKey: ["notifications", profileId] }, (current) => {
-                if (!current) return current;
-                if (current.notifications.some((notification) => notification.id === incoming.id)) {
+                if (!current) {
+                  return current;
+                }
+                if (
+                  current.notifications.some(
+                    (notification) =>
+                      notification.id === incoming.id ||
+                      notificationDedupeKey(notification) === notificationDedupeKey(incoming),
+                  )
+                ) {
+                  duplicateSkipped = true;
+                  shouldPlay = false;
                   return current;
                 }
                 return {
@@ -103,8 +128,22 @@ export function NotificationsBell() {
                       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
                     )
                     .slice(0, 15),
+                  unreadCount: incoming.is_read
+                    ? (current.unreadCount ?? 0)
+                    : (current.unreadCount ?? 0) + 1,
                 };
               });
+              console.debug("[MKTRe notification realtime]", {
+                currentUserId: profileId,
+                insertedNotificationId: incoming.id,
+                notificationUserId: incoming.user_id ?? null,
+                recipientId: incoming.target_profile_id ?? null,
+                type: incoming.type ?? incoming.kind ?? null,
+                shouldPlaySound: shouldPlay,
+                duplicateSkipped,
+              });
+              if (shouldPlay) playNotification();
+              queryClientRef.current.invalidateQueries({ queryKey: ["notifications", profileId] });
               return;
             }
             queryClientRef.current.invalidateQueries({ queryKey: ["notifications", profileId] });
@@ -128,19 +167,24 @@ export function NotificationsBell() {
 
   const allNotifications = useMemo(
     () =>
-      [...(data?.virtualNotifications ?? []), ...(data?.notifications ?? [])]
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-        .slice(0, 15),
+      dedupeNotifications([...(data?.virtualNotifications ?? []), ...(data?.notifications ?? [])]),
     [data],
   );
 
-  const unread = useMemo(
-    () =>
-      allNotifications.filter((n) =>
-        isVirtualNotification(n) ? !virtualReadIds.has(n.id) : !n.is_read,
-      ).length,
-    [allNotifications, virtualReadIds],
-  );
+  const unread = useMemo(() => {
+    const virtualUnread = (data?.virtualNotifications ?? []).filter(
+      (n) => !virtualReadIds.has(n.id),
+    ).length;
+    return (data?.unreadCount ?? 0) + virtualUnread;
+  }, [data?.unreadCount, data?.virtualNotifications, virtualReadIds]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.title = unread > 0 ? `(${unread}) 🔔 ${APP_TITLE}` : APP_TITLE;
+    return () => {
+      document.title = APP_TITLE;
+    };
+  }, [unread]);
 
   const markAllRead = async () => {
     if (!profile || !allNotifications.length) return;
@@ -159,6 +203,22 @@ export function NotificationsBell() {
         return;
       }
     }
+    qc.setQueriesData<{
+      notifications: NotificationRow[];
+      virtualNotifications: VirtualNotification[];
+      unreadCount: number;
+    }>({ queryKey: ["notifications", profile.id] }, (current) =>
+      current
+        ? {
+            ...current,
+            unreadCount: 0,
+            notifications: current.notifications.map((notification) => ({
+              ...notification,
+              is_read: true,
+            })),
+          }
+        : current,
+    );
     if (virtualUnreadIds.length) {
       const next = new Set([...virtualReadIds, ...virtualUnreadIds]);
       setVirtualReadIds(next);
@@ -195,6 +255,21 @@ export function NotificationsBell() {
       toast.error(error.message);
       return;
     }
+    qc.setQueriesData<{
+      notifications: NotificationRow[];
+      virtualNotifications: VirtualNotification[];
+      unreadCount: number;
+    }>({ queryKey: ["notifications", profile.id] }, (current) =>
+      current
+        ? {
+            ...current,
+            unreadCount: Math.max(0, (current.unreadCount ?? 0) - (notification.is_read ? 0 : 1)),
+            notifications: current.notifications.map((row) =>
+              row.id === notification.id ? { ...row, is_read: true } : row,
+            ),
+          }
+        : current,
+    );
     qc.invalidateQueries({ queryKey: ["notifications", profile.id] });
   };
 
@@ -217,6 +292,21 @@ export function NotificationsBell() {
         toast.error(error.message);
         return;
       }
+      qc.setQueriesData<{
+        notifications: NotificationRow[];
+        virtualNotifications: VirtualNotification[];
+        unreadCount: number;
+      }>({ queryKey: ["notifications", profile.id] }, (current) =>
+        current
+          ? {
+              ...current,
+              unreadCount: Math.max(0, (current.unreadCount ?? 0) - 1),
+              notifications: current.notifications.map((row) =>
+                row.id === notification.id ? { ...row, is_read: true } : row,
+              ),
+            }
+          : current,
+      );
       qc.invalidateQueries({ queryKey: ["notifications", profile.id] });
     }
 
@@ -316,7 +406,7 @@ export function NotificationsBell() {
             size="sm"
             className="w-full"
             onClick={() => {
-              if (role) navigate({ to: `/${role}/notifications` });
+              navigate({ to: "/notifications" });
             }}
           >
             Xem tất cả thông báo
@@ -329,6 +419,9 @@ export function NotificationsBell() {
 
 type NotificationRow = {
   id: string;
+  target_profile_id?: string | null;
+  actor_profile_id?: string | null;
+  user_id?: string | null;
   title: string;
   body: string | null;
   message?: string | null;
@@ -351,6 +444,38 @@ function isVirtualNotification(
   return "virtual" in row && row.virtual;
 }
 
+function dedupeNotifications(rows: Array<NotificationRow | VirtualNotification>) {
+  const seen = new Set<string>();
+  return rows
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .filter((row) => {
+      const key = notificationDedupeKey(row);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 15);
+}
+
+function notificationDedupeKey(row: NotificationRow | VirtualNotification) {
+  const metadata = row.metadata;
+  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+    const dedupeKey = metadata.dedupe_key;
+    if (typeof dedupeKey === "string" && dedupeKey) return `dedupe:${dedupeKey}`;
+
+    const reportDate = metadata.report_date;
+    const slotId = metadata.slot_id;
+    const slotTime = metadata.slot_time;
+    if (
+      typeof reportDate === "string" &&
+      (typeof slotId === "string" || typeof slotTime === "string")
+    ) {
+      return `report:${row.target_profile_id ?? row.user_id ?? ""}:${row.type ?? row.kind ?? ""}:${reportDate}:${slotId ?? slotTime}`;
+    }
+  }
+  return `id:${row.id}`;
+}
+
 async function buildEmployeeReminderNotifications(
   profileId: string,
   existingNotifications: NotificationRow[],
@@ -369,6 +494,8 @@ async function buildEmployeeReminderNotifications(
     notifications.push({
       id: `virtual-task-${date}`,
       virtual: true,
+      target_profile_id: profileId,
+      user_id: profileId,
       title: "Bạn có task cần hoàn thành hôm nay",
       body: `${tasks?.length ?? 0} task đang chờ xác nhận.`,
       kind: "task",
@@ -413,6 +540,8 @@ async function buildEmployeeReminderNotifications(
     notifications.push({
       id: `virtual-checklist-${date}`,
       virtual: true,
+      target_profile_id: profileId,
+      user_id: profileId,
       title: "Bạn còn checklist thường ngày chưa xác nhận",
       body: `${pendingTemplateCount} checklist đang chờ xác nhận.`,
       kind: "task",
@@ -443,6 +572,8 @@ async function buildEmployeeReminderNotifications(
     notifications.push({
       id: `virtual-report-${type}-${reportDate}-${slot.id}`,
       virtual: true,
+      target_profile_id: profileId,
+      user_id: profileId,
       title: timing === "due" ? "Đến giờ báo cáo" : "Quá giờ báo cáo",
       body:
         timing === "due"
@@ -453,7 +584,12 @@ async function buildEmployeeReminderNotifications(
       severity: timing === "due" ? "warning" : "error",
       is_read: false,
       entity_type: "report",
-      metadata: { report_date: reportDate, slot_id: slot.id, slot_time: slot.slot_time },
+      metadata: {
+        dedupe_key: `${type}:${profileId}:${reportDate}:${slot.id}`,
+        report_date: reportDate,
+        slot_id: slot.id,
+        slot_time: slot.slot_time,
+      },
       created_at: `${reportDate}T${slot.slot_time}`,
     });
   }

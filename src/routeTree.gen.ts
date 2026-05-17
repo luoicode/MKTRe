@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
 import { Route as AuthenticatedManagerTodayTeamsRouteImport } from './routes/_authenticated/manager/today-teams'
 import { Route as AuthenticatedManagerTeamsRouteImport } from './routes/_authenticated/manager/teams'
 import { Route as AuthenticatedManagerTasksRouteImport } from './routes/_authenticated/manager/tasks'
@@ -41,6 +42,7 @@ import { Route as AuthenticatedLeaderDailyReportRouteImport } from './routes/_au
 import { Route as AuthenticatedLeaderAssetsRouteImport } from './routes/_authenticated/leader/assets'
 import { Route as AuthenticatedEmployeeTasksRouteImport } from './routes/_authenticated/employee/tasks'
 import { Route as AuthenticatedEmployeeResourcesRouteImport } from './routes/_authenticated/employee/resources'
+import { Route as AuthenticatedEmployeeReportsRouteImport } from './routes/_authenticated/employee/reports'
 import { Route as AuthenticatedEmployeeReportRouteImport } from './routes/_authenticated/employee/report'
 import { Route as AuthenticatedEmployeeRankingRouteImport } from './routes/_authenticated/employee/ranking'
 import { Route as AuthenticatedEmployeeProfileRouteImport } from './routes/_authenticated/employee/profile'
@@ -75,6 +77,12 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedNotificationsRoute =
+  AuthenticatedNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedManagerTodayTeamsRoute =
   AuthenticatedManagerTodayTeamsRouteImport.update({
     id: '/manager/today-teams',
@@ -247,6 +255,12 @@ const AuthenticatedEmployeeResourcesRoute =
     path: '/employee/resources',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedEmployeeReportsRoute =
+  AuthenticatedEmployeeReportsRouteImport.update({
+    id: '/employee/reports',
+    path: '/employee/reports',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedEmployeeReportRoute =
   AuthenticatedEmployeeReportRouteImport.update({
     id: '/employee/report',
@@ -361,6 +375,7 @@ const AuthenticatedAdminAssetsRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/notifications': typeof AuthenticatedNotificationsRoute
   '/admin/assets': typeof AuthenticatedAdminAssetsRoute
   '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
   '/admin/kpi': typeof AuthenticatedAdminKpiRoute
@@ -380,6 +395,7 @@ export interface FileRoutesByFullPath {
   '/employee/profile': typeof AuthenticatedEmployeeProfileRoute
   '/employee/ranking': typeof AuthenticatedEmployeeRankingRoute
   '/employee/report': typeof AuthenticatedEmployeeReportRoute
+  '/employee/reports': typeof AuthenticatedEmployeeReportsRoute
   '/employee/resources': typeof AuthenticatedEmployeeResourcesRoute
   '/employee/tasks': typeof AuthenticatedEmployeeTasksRoute
   '/leader/assets': typeof AuthenticatedLeaderAssetsRoute
@@ -413,6 +429,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/notifications': typeof AuthenticatedNotificationsRoute
   '/admin/assets': typeof AuthenticatedAdminAssetsRoute
   '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
   '/admin/kpi': typeof AuthenticatedAdminKpiRoute
@@ -432,6 +449,7 @@ export interface FileRoutesByTo {
   '/employee/profile': typeof AuthenticatedEmployeeProfileRoute
   '/employee/ranking': typeof AuthenticatedEmployeeRankingRoute
   '/employee/report': typeof AuthenticatedEmployeeReportRoute
+  '/employee/reports': typeof AuthenticatedEmployeeReportsRoute
   '/employee/resources': typeof AuthenticatedEmployeeResourcesRoute
   '/employee/tasks': typeof AuthenticatedEmployeeTasksRoute
   '/leader/assets': typeof AuthenticatedLeaderAssetsRoute
@@ -467,6 +485,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/login': typeof LoginRoute
+  '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/_authenticated/admin/assets': typeof AuthenticatedAdminAssetsRoute
   '/_authenticated/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
   '/_authenticated/admin/kpi': typeof AuthenticatedAdminKpiRoute
@@ -486,6 +505,7 @@ export interface FileRoutesById {
   '/_authenticated/employee/profile': typeof AuthenticatedEmployeeProfileRoute
   '/_authenticated/employee/ranking': typeof AuthenticatedEmployeeRankingRoute
   '/_authenticated/employee/report': typeof AuthenticatedEmployeeReportRoute
+  '/_authenticated/employee/reports': typeof AuthenticatedEmployeeReportsRoute
   '/_authenticated/employee/resources': typeof AuthenticatedEmployeeResourcesRoute
   '/_authenticated/employee/tasks': typeof AuthenticatedEmployeeTasksRoute
   '/_authenticated/leader/assets': typeof AuthenticatedLeaderAssetsRoute
@@ -521,6 +541,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/notifications'
     | '/admin/assets'
     | '/admin/dashboard'
     | '/admin/kpi'
@@ -540,6 +561,7 @@ export interface FileRouteTypes {
     | '/employee/profile'
     | '/employee/ranking'
     | '/employee/report'
+    | '/employee/reports'
     | '/employee/resources'
     | '/employee/tasks'
     | '/leader/assets'
@@ -573,6 +595,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/notifications'
     | '/admin/assets'
     | '/admin/dashboard'
     | '/admin/kpi'
@@ -592,6 +615,7 @@ export interface FileRouteTypes {
     | '/employee/profile'
     | '/employee/ranking'
     | '/employee/report'
+    | '/employee/reports'
     | '/employee/resources'
     | '/employee/tasks'
     | '/leader/assets'
@@ -626,6 +650,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/login'
+    | '/_authenticated/notifications'
     | '/_authenticated/admin/assets'
     | '/_authenticated/admin/dashboard'
     | '/_authenticated/admin/kpi'
@@ -645,6 +670,7 @@ export interface FileRouteTypes {
     | '/_authenticated/employee/profile'
     | '/_authenticated/employee/ranking'
     | '/_authenticated/employee/report'
+    | '/_authenticated/employee/reports'
     | '/_authenticated/employee/resources'
     | '/_authenticated/employee/tasks'
     | '/_authenticated/leader/assets'
@@ -704,6 +730,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/notifications': {
+      id: '/_authenticated/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof AuthenticatedNotificationsRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/manager/today-teams': {
       id: '/_authenticated/manager/today-teams'
@@ -908,6 +941,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedEmployeeResourcesRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/employee/reports': {
+      id: '/_authenticated/employee/reports'
+      path: '/employee/reports'
+      fullPath: '/employee/reports'
+      preLoaderRoute: typeof AuthenticatedEmployeeReportsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/employee/report': {
       id: '/_authenticated/employee/report'
       path: '/employee/report'
@@ -1045,6 +1085,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteChildren {
+  AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedAdminAssetsRoute: typeof AuthenticatedAdminAssetsRoute
   AuthenticatedAdminDashboardRoute: typeof AuthenticatedAdminDashboardRoute
   AuthenticatedAdminKpiRoute: typeof AuthenticatedAdminKpiRoute
@@ -1064,6 +1105,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedEmployeeProfileRoute: typeof AuthenticatedEmployeeProfileRoute
   AuthenticatedEmployeeRankingRoute: typeof AuthenticatedEmployeeRankingRoute
   AuthenticatedEmployeeReportRoute: typeof AuthenticatedEmployeeReportRoute
+  AuthenticatedEmployeeReportsRoute: typeof AuthenticatedEmployeeReportsRoute
   AuthenticatedEmployeeResourcesRoute: typeof AuthenticatedEmployeeResourcesRoute
   AuthenticatedEmployeeTasksRoute: typeof AuthenticatedEmployeeTasksRoute
   AuthenticatedLeaderAssetsRoute: typeof AuthenticatedLeaderAssetsRoute
@@ -1096,6 +1138,7 @@ interface AuthenticatedRouteChildren {
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedAdminAssetsRoute: AuthenticatedAdminAssetsRoute,
   AuthenticatedAdminDashboardRoute: AuthenticatedAdminDashboardRoute,
   AuthenticatedAdminKpiRoute: AuthenticatedAdminKpiRoute,
@@ -1116,6 +1159,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedEmployeeProfileRoute: AuthenticatedEmployeeProfileRoute,
   AuthenticatedEmployeeRankingRoute: AuthenticatedEmployeeRankingRoute,
   AuthenticatedEmployeeReportRoute: AuthenticatedEmployeeReportRoute,
+  AuthenticatedEmployeeReportsRoute: AuthenticatedEmployeeReportsRoute,
   AuthenticatedEmployeeResourcesRoute: AuthenticatedEmployeeResourcesRoute,
   AuthenticatedEmployeeTasksRoute: AuthenticatedEmployeeTasksRoute,
   AuthenticatedLeaderAssetsRoute: AuthenticatedLeaderAssetsRoute,

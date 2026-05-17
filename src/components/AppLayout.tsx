@@ -16,6 +16,7 @@ import {
   UserRound,
   Lock,
   Package,
+  Bell,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -50,17 +51,22 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   // Admin
-  { to: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin"] },
+  { to: "/admin/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["admin"] },
+  { to: "/admin/reports", label: "Báo cáo tổng", icon: FileText, roles: ["admin"] },
+  { to: "/admin/kpi", label: "KPI", icon: Target, roles: ["admin"] },
   { to: "/admin/users", label: "Quản lý User", icon: Users, roles: ["admin"] },
   { to: "/admin/teams", label: "Quản lý Team", icon: UsersRound, roles: ["admin"] },
+  { to: "/admin/tasks", label: "Checklist công việc", icon: CheckSquare, roles: ["admin"] },
+  { to: "/admin/notifications", label: "Thông báo", icon: Bell, roles: ["admin"] },
   { to: "/admin/assets", label: "Tài sản", icon: Package, roles: ["admin"] },
   { to: "/admin/ranking", label: "Bảng xếp hạng", icon: Trophy, roles: ["admin"] },
   { to: "/admin/resources", label: "Hướng dẫn tân thủ", icon: BookOpen, roles: ["admin"] },
 
   // Marketing Manager
-  { to: "/manager/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["manager"] },
+  { to: "/manager/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["manager"] },
   { to: "/manager/kpi", label: "KPI", icon: Target, roles: ["manager"] },
   { to: "/manager/tasks", label: "Checklist công việc", icon: CheckSquare, roles: ["manager"] },
+  { to: "/manager/notifications", label: "Thông báo", icon: Bell, roles: ["manager"] },
   { to: "/manager/assets", label: "Tài sản", icon: Package, roles: ["manager"] },
   { to: "/manager/ranking", label: "Bảng xếp hạng", icon: Trophy, roles: ["manager"] },
   { to: "/manager/teams", label: "Teams", icon: UsersRound, roles: ["manager"] },
@@ -73,7 +79,7 @@ const NAV: NavItem[] = [
 
   // Leader
   { to: "/leader/resources", label: "Hướng dẫn tân thủ", icon: BookOpen, roles: ["leader"] },
-  { to: "/leader/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["leader"] },
+  { to: "/leader/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["leader"] },
   { to: "/leader/kpi", label: "KPI", icon: Target, roles: ["leader"] },
   { to: "/leader/report-slots", label: "Nhập báo cáo cá nhân", icon: FileText, roles: ["leader"] },
   { to: "/leader/daily-report", label: "Báo cáo tổng", icon: FileText, roles: ["leader"] },
@@ -88,7 +94,7 @@ const NAV: NavItem[] = [
     icon: BookOpen,
     roles: ["employee"],
   },
-  { to: "/employee/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["employee"] },
+  { to: "/employee/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["employee"] },
   { to: "/employee/kpi", label: "KPI", icon: Target, roles: ["employee"] },
   { to: "/employee/report", label: "Nhập báo cáo", icon: FileText, roles: ["employee"] },
   { to: "/employee/tasks", label: "Checklist công việc", icon: CheckSquare, roles: ["employee"] },
@@ -184,11 +190,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <div className="shrink-0 px-4 py-5">
         <div className="flex items-center gap-3 rounded-xl px-2">
           <div className="h-10 w-10 overflow-hidden rounded-xl">
-            <img
-              src="/favicon_main.png"
-              alt="MKTRe"
-              className="h-full w-full object-cover"
-            />
+            <img src="/favicon_main.png" alt="MKTRe" className="h-full w-full object-cover" />
           </div>
           <div>
             <p className="text-sm font-semibold text-sidebar-foreground">MKTRe</p>

@@ -15,8 +15,16 @@ const ROLE_HOME: Record<AppRole, string> = {
   admin: "/admin/dashboard",
   manager: "/manager/dashboard",
   leader: "/leader/dashboard",
-  employee: "/employee/report",
+  employee: "/employee/dashboard",
 };
+const INTERNAL_AUTH_DOMAIN = "mktre.local";
+
+function normalizeLoginEmail(value: string) {
+  const raw = value.trim().toLowerCase();
+  const localPart = raw.includes("@") ? raw.split("@")[0] : raw;
+  const loginName = localPart.replace(/\s+/g, "").replace(/[^a-z0-9._-]/g, "_");
+  return loginName ? `${loginName}@${INTERNAL_AUTH_DOMAIN}` : "";
+}
 
 function LoginPage() {
   const { session, role, loading, refresh } = useAuth();
@@ -32,20 +40,25 @@ function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const email = emailInput.trim();
-    if (!email || !password) {
-      toast.error("Vui lòng nhập đầy đủ email đăng nhập và mật khẩu.");
+    const loginValue = emailInput.trim();
+    const authEmail = normalizeLoginEmail(loginValue);
+    if (!authEmail || !password) {
+      toast.error("Vui lòng nhập đầy đủ tài khoản đăng nhập và mật khẩu.");
       return;
     }
     setSubmitting(true);
     if (import.meta.env.DEV) {
       console.info("[login] signInWithPassword payload", {
-        email,
+        input: loginValue,
+        email: authEmail,
         passwordLength: password.length,
         supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
       });
     }
-    const { data: authData, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: authData, error } = await supabase.auth.signInWithPassword({
+      email: authEmail,
+      password,
+    });
     if (error) {
       setSubmitting(false);
       toast.error(error.message);
@@ -96,29 +109,27 @@ function LoginPage() {
     <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto bg-gradient-to-br from-background via-background to-muted px-4 py-12">
       <div className="w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="gradient-primary shadow-elegant mb-4 flex h-14 w-14 items-center justify-center rounded-2xl">
-            <BarChart3 className="h-7 w-7 text-primary-foreground" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight">Marketing Sales Report</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Hệ thống báo cáo nội bộ</p>
+          <img src="/favicon_main.png" alt="MKTRe" className="h-16 w-16 rounded-2xl object-cover" />
+          <h1 className="text-2xl font-bold tracking-tight">Marketing Report</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Hệ thống nội bộ</p>
         </div>
 
         <Card className="shadow-elegant">
           <CardHeader>
             <CardTitle>Đăng nhập</CardTitle>
-            <CardDescription>Sử dụng email đăng nhập được Admin cấp</CardDescription>
+            <CardDescription>Sử dụng tài khoản đăng nhập nội bộ được Admin cấp</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email đăng nhập</Label>
+                <Label htmlFor="email">Tài khoản đăng nhập</Label>
                 <Input
                   id="email"
-                  type="email"
-                  autoComplete="email"
+                  type="text"
+                  autoComplete="username"
                   value={emailInput}
                   onChange={(e) => setEmailInput(e.target.value)}
-                  placeholder="vd: admin@dasnotri.com"
+                  placeholder="vd: dangkhoa123"
                   disabled={submitting}
                   required
                 />
@@ -140,10 +151,6 @@ function LoginPage() {
                 Đăng nhập
               </Button>
             </form>
-            <p className="mt-6 rounded-md bg-muted/60 p-3 text-xs text-muted-foreground">
-              Tài khoản được cấp bởi Admin hệ thống. Vui lòng liên hệ Admin nếu bạn chưa có tài
-              khoản.
-            </p>
           </CardContent>
         </Card>
       </div>

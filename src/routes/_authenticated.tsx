@@ -34,6 +34,8 @@ function AuthGuard() {
       leader: "/leader/dashboard",
       employee: "/employee/dashboard",
     };
+    const sharedAuthenticatedPaths = ["/notifications"];
+    if (sharedAuthenticatedPaths.some((sharedPath) => path === sharedPath)) return;
     if (!path.startsWith(allowed[role])) {
       navigate({ to: home[role] });
     }

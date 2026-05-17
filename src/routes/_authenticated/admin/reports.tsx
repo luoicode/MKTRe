@@ -1,20 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import {
-  useSlots,
-  formatVnd,
-  formatVndSigned,
-  formatPercent,
-  fmtInt,
-  formatDateVN,
-  formatDateTimeVN,
-  calculateReportMetrics,
-} from "@/lib/reports";
-import { getReconciledReportIds, isReconciliationSlot } from "@/lib/reportAudit";
+  getLatestDailyReportPerEmployeeRange,
+  sumTotals,
+  type EmployeeLatest,
+} from "@/lib/dailyAggregates";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
+import { Loader2 } from "lucide-react";
+import {
+  calculateReportMetrics,
+  fmtInt,
+  fmtPctValue,
+  fmtVndDong,
+  formatDateVN,
+} from "@/lib/reports";
+import { ReportActions } from "@/components/ReportActions";
+import { DateRangeFilter } from "@/components/DateRangeFilter";
+import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib/dateRange";
 import {
   Select,
   SelectContent,
@@ -22,251 +26,374 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Loader2 } from "lucide-react";
-import { DateRangeFilter } from "@/components/DateRangeFilter";
-import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib/dateRange";
+import { Label } from "@/components/ui/label";
 
 export const Route = createFileRoute("/_authenticated/admin/reports")({ component: AdminReports });
 
-const HEAD = [
-  "Ngày",
-  "Khung giờ",
-  "Loại",
-  "Cập nhật cuối",
-  "Nhân viên",
-  "Chi Phí Ads",
-  "MESS",
-  "Chi Phí ADS/MESS",
-  "Data",
-  "Chi Phí/DATA trong ngày",
-  "Đơn chốt DATA trong ngày",
-  "Tỉ lệ chốt DATA trong ngày",
-  "Doanh số DATA trong ngày",
-  "Trung bình đơn",
-  "Chi Phí ADS/Doanh số ngày",
-  "Tổng Đơn Chốt",
-  "Tổng Doanh Số",
-  "Chi Phí ADS/Tổng Doanh Số",
-  "Doanh số chốt lại",
-  "Status",
-  "Ghi chú",
-];
-
-function statusLabel(s: string) {
-  const map: Record<string, string> = {
-    draft: "Nháp",
-    submitted: "Đã gửi",
-    approved: "Đã duyệt",
-    rejected: "Từ chối",
-    locked: "Khóa",
-  };
-  return map[s] ?? s;
-}
+type TeamRow = {
+  id: string;
+  name: string;
+};
 
 function AdminReports() {
   const [range, setRange] = useState<DateRangeValue>(() => initialDateRange("today"));
-  const { from, to } = normalizeDateRange(range);
-  const { data: slots } = useSlots();
-  const [slotId, setSlotId] = useState<string>("");
-  const [teamId, setTeamId] = useState<string>("all");
+  const [teamId, setTeamId] = useState("all");
+  const [screenshot, setScreenshot] = useState(false);
+  const [now, setNow] = useState(new Date().toISOString());
+  const ref = useRef<HTMLDivElement>(null);
+  const normalizedRange = normalizeDateRange(range);
+  const dateLabel =
+    normalizedRange.from === normalizedRange.to
+      ? formatDateVN(normalizedRange.from)
+      : `${formatDateVN(normalizedRange.from)} - ${formatDateVN(normalizedRange.to)}`;
+  const isSingleDay = normalizedRange.from === normalizedRange.to;
 
-  const { data: teams } = useQuery({
-    queryKey: ["teams-list"],
-    queryFn: async () => (await supabase.from("teams").select("id, name").order("name")).data ?? [],
-  });
+  useEffect(() => {
+    if (screenshot) document.body.classList.add("screenshot-mode");
+    else document.body.classList.remove("screenshot-mode");
+    return () => document.body.classList.remove("screenshot-mode");
+  }, [screenshot]);
 
-  const { data: rows, isLoading } = useQuery({
-    queryKey: ["admin-reports", from, to, slotId, teamId],
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin-team-summary-report", normalizedRange.from, normalizedRange.to, teamId],
     queryFn: async () => {
-      let q = supabase
-        .from("slot_reports")
-        .select(
-          "*, profiles!slot_reports_user_id_fkey(full_name, username), teams(name), report_slots(slot_name, sort_order)",
-        )
-        .gte("report_date", from)
-        .lte("report_date", to);
-      if (slotId) q = q.eq("slot_id", slotId);
-      if (teamId !== "all") q = q.eq("team_id", teamId);
-      const { data, error } = await q;
-      if (error) throw error;
-      const reconciledReportIds = await getReconciledReportIds((data ?? []).map((row) => row.id));
-      return (data ?? []).map((row) => ({
-        ...row,
-        was_reconciled: reconciledReportIds.has(row.id),
-      }));
+      const { data: teams, error: teamsError } = await supabase
+        .from("teams")
+        .select("id, name")
+        .order("name");
+      if (teamsError) throw teamsError;
+
+      const allTeams = (teams ?? []) as TeamRow[];
+      const selectedTeamIds = teamId === "all" ? allTeams.map((team) => team.id) : [teamId];
+      const selectedTeams = allTeams.filter((team) => selectedTeamIds.includes(team.id));
+      const agg = await getLatestDailyReportPerEmployeeRange({
+        teamIds: selectedTeamIds,
+        from: normalizedRange.from,
+        to: normalizedRange.to,
+      });
+
+      const leaderNames = await getLeaderNamesByTeam(selectedTeamIds);
+      setNow(new Date().toISOString());
+      return {
+        teams: allTeams,
+        selectedTeams,
+        rows: agg.rows,
+        leaderNames,
+      };
     },
   });
 
-  return (
-    <div className="space-y-5 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden">
-      <div className="shrink-0">
-        <h1 className="text-2xl font-bold tracking-tight">Báo cáo tổng hợp</h1>
-        <p className="text-sm text-muted-foreground">Lọc theo ngày, khung giờ, team</p>
-      </div>
+  const totals = useMemo(() => (data ? sumTotals(data.rows) : null), [data]);
+  const totalsMetrics = useMemo(() => (totals ? calculateReportMetrics(totals) : null), [totals]);
+  const selectedTeamName =
+    teamId === "all"
+      ? "Tất cả team"
+      : (data?.selectedTeams.map((team) => team.name).join(", ") ?? "—");
+  const leaderName =
+    teamId === "all"
+      ? "Toàn hệ thống"
+      : data?.selectedTeams
+          .flatMap((team) => data.leaderNames.get(team.id) ?? [])
+          .filter(Boolean)
+          .join(", ") || "—";
+  const missing = (data?.rows ?? []).filter((row) => !row.countedInTotal);
+  const reportTitle =
+    teamId === "all"
+      ? isSingleDay
+        ? "BÁO CÁO TỔNG TOÀN HỆ THỐNG TRONG NGÀY"
+        : "BÁO CÁO TỔNG TOÀN HỆ THỐNG THEO KHOẢNG NGÀY"
+      : isSingleDay
+        ? "BÁO CÁO TỔNG TEAM TRONG NGÀY"
+        : "BÁO CÁO TỔNG TEAM THEO KHOẢNG NGÀY";
 
-      <Card className="shrink-0">
-        <CardContent className="grid gap-3 p-4 md:grid-cols-3">
+  return (
+    <div className="mx-auto max-w-7xl space-y-2 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden">
+      <div className="screenshot-hide shrink-0 gap-2 md:flex md:flex-wrap md:items-end md:justify-between">
+        <div className="flex flex-wrap items-end gap-2">
           <DateRangeFilter value={range} onChange={setRange} />
-          <div>
-            <Label>Khung giờ</Label>
-            <Select value={slotId || "all"} onValueChange={(v) => setSlotId(v === "all" ? "" : v)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tất cả</SelectItem>
-                {(slots ?? []).map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.slot_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
+          <div className="min-w-56">
             <Label>Team</Label>
             <Select value={teamId} onValueChange={setTeamId}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tất cả</SelectItem>
-                {(teams ?? []).map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.name}
+                <SelectItem value="all">Tất cả team</SelectItem>
+                {(data?.teams ?? []).map((team) => (
+                  <SelectItem key={team.id} value={team.id}>
+                    {team.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+        <ReportActions
+          targetRef={ref}
+          filename={teamReportExportFilename(now, normalizedRange.to, selectedTeamName)}
+          screenshotMode={screenshot}
+          onToggleScreenshot={() => setScreenshot((value) => !value)}
+        />
+      </div>
 
-      <Card className="md:flex md:min-h-0 md:flex-1 md:flex-col">
-        <CardHeader className="shrink-0">
-          <CardTitle>
-            Báo cáo {formatDateVN(from)} - {formatDateVN(to)}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="md:min-h-0 md:flex-1 md:overflow-y-auto">
-          {isLoading ? (
-            <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    {HEAD.map((h) => (
-                      <TableHead key={h} className="whitespace-nowrap">
-                        {h}
-                      </TableHead>
+      {isLoading ? (
+        <div className="flex justify-center py-10 md:min-h-0 md:flex-1 md:items-center">
+          <Loader2 className="h-6 w-6 animate-spin" />
+        </div>
+      ) : data && totals && totalsMetrics ? (
+        <div
+          ref={ref}
+          className="space-y-2 bg-white p-2 text-slate-900 md:flex md:min-h-0 md:flex-1 md:flex-col md:overflow-hidden"
+        >
+          <header className="shrink-0 border-b-2 border-slate-900 pb-2">
+            <h1 className="text-center text-lg font-extrabold tracking-wide">{reportTitle}</h1>
+            <div className="mt-1 grid gap-1 text-xs md:grid-cols-2">
+              <div>
+                <b>Team:</b> {selectedTeamName}
+              </div>
+              <div>
+                <b>Leader:</b> {leaderName}
+              </div>
+              <div>
+                <b>Ngày báo cáo:</b> {dateLabel}
+              </div>
+            </div>
+            <p className="mt-1 text-[11px] italic text-slate-600">
+              Dữ liệu tổng team được tính bằng báo cáo mới nhất trong ngày của từng nhân viên (lũy
+              kế), không cộng dồn các khung giờ.
+            </p>
+          </header>
+
+          <div className="grid shrink-0 grid-cols-3 gap-1.5 md:grid-cols-6">
+            <Stat label="Tổng Chi Phí Ads" value={fmtVndDong(totals.ads_cost)} />
+            <Stat label="Tổng MESS" value={fmtInt(totals.mess_count)} />
+            <Stat label="Chi Phí ADS/MESS" value={fmtVndDong(totalsMetrics.cp_mess)} />
+            <Stat label="Tổng Data" value={fmtInt(totals.data_count)} />
+            <Stat label="Chi Phí/DATA trong ngày" value={fmtVndDong(totalsMetrics.cp_data)} />
+            <Stat label="Đơn chốt DATA trong ngày" value={fmtInt(totals.closed_orders)} />
+            <Stat label="Tỉ lệ chốt DATA trong ngày" value={fmtPctValue(totalsMetrics.conv_rate)} />
+            <Stat label="Doanh số DATA trong ngày" value={fmtVndDong(totals.daily_data_revenue)} />
+            <Stat label="Trung bình đơn" value={fmtVndDong(totalsMetrics.avg_order)} />
+            <Stat
+              label="Chi Phí ADS/Doanh số ngày"
+              value={fmtPctValue(totalsMetrics.cp_daily_pct)}
+            />
+            <Stat label="Tổng Đơn Chốt" value={fmtInt(totals.total_orders)} />
+            <Stat label="Tổng Doanh Số" value={fmtVndDong(totals.total_revenue)} />
+            <Stat
+              label="Chi Phí ADS/Tổng Doanh Số"
+              value={fmtPctValue(totalsMetrics.cp_total_pct)}
+            />
+            <Stat label="Tổng DS chốt lại" value={fmtVndDong(totals.recovered_revenue)} />
+            {isSingleDay && (
+              <>
+                <Stat
+                  label="Đã báo cáo"
+                  value={`${totals.reportedCount}/${totals.totalEmployees}`}
+                />
+                <Stat
+                  label="Chưa báo cáo"
+                  value={String(totals.missingCount)}
+                  danger={totals.missingCount > 0}
+                />
+              </>
+            )}
+          </div>
+
+          <Card className="md:flex md:min-h-0 md:flex-1 md:flex-col">
+            <CardHeader className="shrink-0 py-2">
+              <CardTitle className="text-base">Chi tiết theo nhân viên</CardTitle>
+            </CardHeader>
+            <CardContent className="min-h-0 flex-1 overflow-auto p-0">
+              <table className="w-full table-fixed text-xs">
+                <thead className="bg-slate-100 text-left">
+                  <tr>
+                    {[
+                      "Marketing",
+                      ...(teamId === "all" ? ["Team"] : []),
+                      "CP ADS",
+                      "MESS",
+                      "CP ADS/MESS",
+                      "Data",
+                      "CP/DATA ngày",
+                      "Đơn DATA ngày",
+                      "TLC DATA ngày",
+                      "DS DATA ngày",
+                      "TB đơn",
+                      "CP ADS/DS ngày",
+                      "Tổng Đơn",
+                      "Tổng DS",
+                      "CP ADS/Tổng DS",
+                      "DS chốt lại",
+                    ].map((header) => (
+                      <th key={header} className="border-b px-2 py-1.5 font-semibold">
+                        {header}
+                      </th>
                     ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(rows ?? []).map((r) => {
-                    const p = r.profiles as { full_name: string } | null;
-                    const slot = (r.report_slots as { slot_name: string } | null)?.slot_name ?? "—";
-                    const isReconciliation = isReconciliationSlot(slot) || r.was_reconciled;
-                    const m = calculateReportMetrics({
-                      ads_cost: Number(r.ads_cost) || 0,
-                      mess_count: Number(r.mess_count) || 0,
-                      data_count: Number(r.data_count) || 0,
-                      closed_orders: Number(r.closed_orders) || 0,
-                      daily_data_revenue: Number(r.daily_data_revenue) || 0,
-                      total_orders: Number(r.total_orders) || 0,
-                      total_revenue: Number(r.total_revenue) || 0,
-                    });
-                    return (
-                      <TableRow key={r.id}>
-                        <TableCell className="whitespace-nowrap">
-                          {formatDateVN(r.report_date)}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">{slot}</TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          <div className="flex flex-wrap gap-1">
-                            <Badge variant={isReconciliation ? "secondary" : "outline"}>
-                              {isReconciliation ? "Chỉnh hôm trước" : "Hôm nay"}
-                            </Badge>
-                            {r.was_reconciled && (
-                              <Badge variant="outline">Đã chỉnh sau reconciliation</Badge>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          {formatDateTimeVN(r.updated_at)}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap font-medium">
-                          {p?.full_name}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-right">
-                          {formatVnd(r.ads_cost)}
-                        </TableCell>
-                        <TableCell className="text-right">{fmtInt(r.mess_count)}</TableCell>
-                        <TableCell className="whitespace-nowrap text-right">
-                          {formatVnd(m.cp_mess)}
-                        </TableCell>
-                        <TableCell className="text-right">{fmtInt(r.data_count)}</TableCell>
-                        <TableCell className="whitespace-nowrap text-right">
-                          {formatVnd(m.cp_data)}
-                        </TableCell>
-                        <TableCell className="text-right">{fmtInt(r.closed_orders)}</TableCell>
-                        <TableCell className="text-right">{formatPercent(m.conv_rate)}</TableCell>
-                        <TableCell className="whitespace-nowrap text-right">
-                          {formatVnd(r.daily_data_revenue)}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-right">
-                          {formatVnd(m.avg_order)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatPercent(m.cp_daily_pct)}
-                        </TableCell>
-                        <TableCell className="text-right">{fmtInt(r.total_orders)}</TableCell>
-                        <TableCell className="whitespace-nowrap text-right">
-                          {formatVnd(r.total_revenue)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatPercent(m.cp_total_pct)}
-                        </TableCell>
-                        <TableCell
-                          className={`whitespace-nowrap text-right ${m.recovered < 0 ? "text-red-600 font-semibold" : ""}`}
-                        >
-                          {formatVndSigned(m.recovered)}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{statusLabel(r.status as string)}</Badge>
-                        </TableCell>
-                        <TableCell className="max-w-[240px] truncate" title={r.note ?? ""}>
-                          {r.note ?? "—"}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                  {rows && rows.length === 0 && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={HEAD.length}
-                        className="text-center text-muted-foreground py-6"
-                      >
-                        Chưa có báo cáo
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.rows.map((row) => (
+                    <EmpRow
+                      key={`${row.team_id}:${row.user_id}`}
+                      row={row}
+                      showTeam={teamId === "all"}
+                      teamName={data.teams.find((team) => team.id === row.team_id)?.name ?? "—"}
+                    />
+                  ))}
+                  <TotalsRow
+                    totals={totals}
+                    totalsMetrics={totalsMetrics}
+                    showTeam={teamId === "all"}
+                  />
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+
+          {isSingleDay && missing.length > 0 && (
+            <div className="shrink-0 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs">
+              <b>Nhân viên chưa báo cáo / chưa gửi:</b>{" "}
+              {missing.map((employee) => employee.full_name).join(", ")}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
+          Chưa có dữ liệu báo cáo.
+        </div>
+      )}
     </div>
+  );
+}
+
+async function getLeaderNamesByTeam(teamIds: string[]) {
+  if (!teamIds.length) return new Map<string, string[]>();
+  const { data: memberships } = await supabase
+    .from("team_memberships")
+    .select("team_id, user_id")
+    .in("team_id", teamIds)
+    .eq("is_active", true);
+  const userIds = Array.from(new Set((memberships ?? []).map((membership) => membership.user_id)));
+  if (!userIds.length) return new Map<string, string[]>();
+
+  const { data: roles } = await supabase
+    .from("user_roles")
+    .select("user_id, role")
+    .in("user_id", userIds)
+    .eq("role", "leader");
+  const leaderIds = new Set((roles ?? []).map((role) => role.user_id));
+  if (!leaderIds.size) return new Map<string, string[]>();
+
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, full_name")
+    .in("id", Array.from(leaderIds));
+  const nameById = new Map((profiles ?? []).map((profile) => [profile.id, profile.full_name]));
+  const leaderNamesByTeam = new Map<string, string[]>();
+  for (const membership of memberships ?? []) {
+    if (!leaderIds.has(membership.user_id)) continue;
+    const name = nameById.get(membership.user_id);
+    if (!name) continue;
+    const names = leaderNamesByTeam.get(membership.team_id) ?? [];
+    names.push(name);
+    leaderNamesByTeam.set(membership.team_id, names);
+  }
+  return leaderNamesByTeam;
+}
+
+function teamReportExportFilename(iso: string, reportDate: string, teamName: string) {
+  const d = new Date(iso);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const [year, month, day] = reportDate.split("-");
+  const cleanTeam =
+    teamName
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9]+/g, "") || "Team";
+  return `${hh}${mm}_${day}${month}${year}_${cleanTeam}.png`;
+}
+
+function Stat({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
+  return (
+    <div className={`rounded-lg border p-2 ${danger ? "border-red-300 bg-red-50" : "bg-white"}`}>
+      <p className="text-[11px] text-slate-600">{label}</p>
+      <p className={`mt-0.5 text-sm font-bold ${danger ? "text-red-700" : "text-slate-900"}`}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function EmpRow({
+  row,
+  showTeam,
+  teamName,
+}: {
+  row: EmployeeLatest;
+  showTeam: boolean;
+  teamName: string;
+}) {
+  const muted = !row.countedInTotal;
+  const metrics = calculateReportMetrics(row);
+  return (
+    <tr className={muted ? "bg-amber-50/50 text-slate-500" : ""}>
+      <td className="border-b px-2 py-1 font-medium">{row.full_name}</td>
+      {showTeam && <td className="border-b px-2 py-1">{teamName}</td>}
+      <td className="border-b px-2 py-1">{row.hasReport ? fmtVndDong(row.ads_cost) : "—"}</td>
+      <td className="border-b px-2 py-1">{row.hasReport ? fmtInt(row.mess_count) : "—"}</td>
+      <td className="border-b px-2 py-1">{row.hasReport ? fmtVndDong(metrics.cp_mess) : "—"}</td>
+      <td className="border-b px-2 py-1">{row.hasReport ? fmtInt(row.data_count) : "—"}</td>
+      <td className="border-b px-2 py-1">{row.hasReport ? fmtVndDong(metrics.cp_data) : "—"}</td>
+      <td className="border-b px-2 py-1">{row.hasReport ? fmtInt(row.closed_orders) : "—"}</td>
+      <td className="border-b px-2 py-1">{row.hasReport ? fmtPctValue(metrics.conv_rate) : "—"}</td>
+      <td className="border-b px-2 py-1">
+        {row.hasReport ? fmtVndDong(row.daily_data_revenue) : "—"}
+      </td>
+      <td className="border-b px-2 py-1">{row.hasReport ? fmtVndDong(metrics.avg_order) : "—"}</td>
+      <td className="border-b px-2 py-1">
+        {row.hasReport ? fmtPctValue(metrics.cp_daily_pct) : "—"}
+      </td>
+      <td className="border-b px-2 py-1">{row.hasReport ? fmtInt(row.total_orders) : "—"}</td>
+      <td className="border-b px-2 py-1">{row.hasReport ? fmtVndDong(row.total_revenue) : "—"}</td>
+      <td className="border-b px-2 py-1">
+        {row.hasReport ? fmtPctValue(metrics.cp_total_pct) : "—"}
+      </td>
+      <td className="border-b px-2 py-1">
+        {row.hasReport ? fmtVndDong(row.recovered_revenue) : "—"}
+      </td>
+    </tr>
+  );
+}
+
+function TotalsRow({
+  totals,
+  totalsMetrics,
+  showTeam,
+}: {
+  totals: NonNullable<ReturnType<typeof sumTotals>>;
+  totalsMetrics: ReturnType<typeof calculateReportMetrics>;
+  showTeam: boolean;
+}) {
+  return (
+    <tr className="bg-slate-50 font-semibold">
+      <td className="border-t px-2 py-1.5">TỔNG</td>
+      {showTeam && <td className="border-t px-2 py-1.5">—</td>}
+      <td className="border-t px-2 py-1.5">{fmtVndDong(totals.ads_cost)}</td>
+      <td className="border-t px-2 py-1.5">{fmtInt(totals.mess_count)}</td>
+      <td className="border-t px-2 py-1.5">{fmtVndDong(totalsMetrics.cp_mess)}</td>
+      <td className="border-t px-2 py-1.5">{fmtInt(totals.data_count)}</td>
+      <td className="border-t px-2 py-1.5">{fmtVndDong(totalsMetrics.cp_data)}</td>
+      <td className="border-t px-2 py-1.5">{fmtInt(totals.closed_orders)}</td>
+      <td className="border-t px-2 py-1.5">{fmtPctValue(totalsMetrics.conv_rate)}</td>
+      <td className="border-t px-2 py-1.5">{fmtVndDong(totals.daily_data_revenue)}</td>
+      <td className="border-t px-2 py-1.5">{fmtVndDong(totalsMetrics.avg_order)}</td>
+      <td className="border-t px-2 py-1.5">{fmtPctValue(totalsMetrics.cp_daily_pct)}</td>
+      <td className="border-t px-2 py-1.5">{fmtInt(totals.total_orders)}</td>
+      <td className="border-t px-2 py-1.5">{fmtVndDong(totals.total_revenue)}</td>
+      <td className="border-t px-2 py-1.5">{fmtPctValue(totalsMetrics.cp_total_pct)}</td>
+      <td className="border-t px-2 py-1.5">{fmtVndDong(totals.recovered_revenue)}</td>
+    </tr>
   );
 }

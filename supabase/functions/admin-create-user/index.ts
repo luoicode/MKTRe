@@ -4,9 +4,16 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const sanitize = (u: string) => u.toLowerCase().replace(/[^a-z0-9._-]/g, "_");
+const INTERNAL_AUTH_DOMAIN = "mktre.local";
+
+function normalizeLoginName(value: string) {
+  const raw = value.trim().toLowerCase();
+  const localPart = raw.includes("@") ? raw.split("@")[0] : raw;
+  return localPart.replace(/\s+/g, "").replace(/[^a-z0-9._-]/g, "_");
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -61,22 +68,41 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Mật khẩu tối thiểu 6 ký tự" }, { status: 400, headers: corsHeaders });
     }
 
-    const email = `${sanitize(username)}@msrs.local`;
+    const normalizedUsername = normalizeLoginName(username);
+    if (!normalizedUsername) {
+      return Response.json({ error: "Tài khoản đăng nhập không hợp lệ" }, { status: 400, headers: corsHeaders });
+    }
+    const email = `${normalizedUsername}@${INTERNAL_AUTH_DOMAIN}`;
+
+    const { data: existingProfile, error: existingProfileError } = await admin
+      .from("profiles")
+      .select("id")
+      .or(`username.eq.${normalizedUsername},email.eq.${email}`)
+      .maybeSingle();
+    if (existingProfileError) throw existingProfileError;
+    if (existingProfile) {
+      return Response.json({ error: "Tài khoản đăng nhập đã tồn tại" }, { status: 409, headers: corsHeaders });
+    }
 
     const { data: created, error: createErr } = await admin.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
-      user_metadata: { username, full_name },
+      user_metadata: { username: normalizedUsername, full_name },
     });
-    if (createErr) throw createErr;
+    if (createErr) {
+      if (createErr.message?.toLowerCase().includes("already")) {
+        return Response.json({ error: "Tài khoản đăng nhập đã tồn tại" }, { status: 409, headers: corsHeaders });
+      }
+      throw createErr;
+    }
 
     const { data: profile, error: profErr } = await admin
       .from("profiles")
       .insert({
         auth_user_id: created.user!.id,
         full_name,
-        username,
+        username: normalizedUsername,
         email,
         status: status ?? "active",
       })
@@ -98,7 +124,7 @@ Deno.serve(async (req) => {
       action: "create_user",
       entity_type: "profiles",
       entity_id: profile.id,
-      new_value: { username, full_name, role, status: status ?? "active" },
+      new_value: { username: normalizedUsername, email, full_name, role, status: status ?? "active" },
     });
 
     return Response.json({ ok: true, profile }, { headers: corsHeaders });

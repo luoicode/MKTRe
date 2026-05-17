@@ -193,7 +193,9 @@ async function ensureReportSlotNotification(
     message: string;
   },
 ) {
+  const dedupeKey = `${item.type}:${profileId}:${item.slot.reportDate}:${item.slot.id}`;
   const metadata = {
+    dedupe_key: dedupeKey,
     report_date: item.slot.reportDate,
     slot_id: item.slot.id,
     slot_time: item.slot.slot_time,
@@ -203,7 +205,7 @@ async function ensureReportSlotNotification(
     .select("id")
     .eq("target_profile_id", profileId)
     .eq("type", item.type)
-    .contains("metadata", metadata)
+    .contains("metadata", { dedupe_key: dedupeKey })
     .limit(1);
 
   if (existingError) {
@@ -212,6 +214,25 @@ async function ensureReportSlotNotification(
     return false;
   }
   if ((existing ?? []).length > 0) return true;
+
+  const { data: legacyExisting, error: legacyExistingError } = await supabase
+    .from("notifications")
+    .select("id")
+    .eq("target_profile_id", profileId)
+    .eq("type", item.type)
+    .contains("metadata", {
+      report_date: item.slot.reportDate,
+      slot_id: item.slot.id,
+      slot_time: item.slot.slot_time,
+    })
+    .limit(1);
+
+  if (legacyExistingError) {
+    if (import.meta.env.DEV)
+      console.warn("[report-slot-notification] legacy lookup failed", legacyExistingError);
+    return false;
+  }
+  if ((legacyExisting ?? []).length > 0) return true;
 
   const payload: TablesInsert<"notifications"> = {
     target_profile_id: profileId,
@@ -234,6 +255,7 @@ async function ensureReportSlotNotification(
 
   const { error } = await supabase.from("notifications").insert(payload);
   if (error) {
+    if (error.code === "23505") return true;
     if (import.meta.env.DEV) console.warn("[report-slot-notification] insert failed", error);
     return false;
   }
