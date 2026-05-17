@@ -236,6 +236,344 @@ export type Database = {
           },
         ];
       };
+      onboarding_answers: {
+        Row: {
+          answers: Json;
+          completed_at: string;
+          created_at: string;
+          id: string;
+          profile_id: string;
+          section_id: string;
+          updated_at: string;
+        };
+        Insert: {
+          answers?: Json;
+          completed_at?: string;
+          created_at?: string;
+          id?: string;
+          profile_id: string;
+          section_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          answers?: Json;
+          completed_at?: string;
+          created_at?: string;
+          id?: string;
+          profile_id?: string;
+          section_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_answers_profile_id_fkey";
+            columns: ["profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "onboarding_answers_section_id_fkey";
+            columns: ["section_id"];
+            isOneToOne: false;
+            referencedRelation: "onboarding_sections";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      onboarding_card_progress: {
+        Row: {
+          accepted_commitment: boolean;
+          card_id: string;
+          completed_at: string | null;
+          created_at: string;
+          id: string;
+          profile_id: string;
+          updated_at: string;
+        };
+        Insert: {
+          accepted_commitment?: boolean;
+          card_id: string;
+          completed_at?: string | null;
+          created_at?: string;
+          id?: string;
+          profile_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          accepted_commitment?: boolean;
+          card_id?: string;
+          completed_at?: string | null;
+          created_at?: string;
+          id?: string;
+          profile_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_card_progress_card_id_fkey";
+            columns: ["card_id"];
+            isOneToOne: false;
+            referencedRelation: "onboarding_cards";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "onboarding_card_progress_profile_id_fkey";
+            columns: ["profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      onboarding_cards: {
+        Row: {
+          content: string | null;
+          created_at: string;
+          created_by: string | null;
+          icon: string | null;
+          id: string;
+          image_url: string | null;
+          is_active: boolean;
+          link_url: string | null;
+          section_id: string;
+          sort_order: number;
+          summary: string | null;
+          title: string;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          content?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          icon?: string | null;
+          id?: string;
+          image_url?: string | null;
+          is_active?: boolean;
+          link_url?: string | null;
+          section_id: string;
+          sort_order?: number;
+          summary?: string | null;
+          title: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          content?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          icon?: string | null;
+          id?: string;
+          image_url?: string | null;
+          is_active?: boolean;
+          link_url?: string | null;
+          section_id?: string;
+          sort_order?: number;
+          summary?: string | null;
+          title?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_cards_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "onboarding_cards_section_id_fkey";
+            columns: ["section_id"];
+            isOneToOne: false;
+            referencedRelation: "onboarding_sections";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "onboarding_cards_updated_by_fkey";
+            columns: ["updated_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      onboarding_documents: {
+        Row: {
+          created_at: string;
+          created_by: string | null;
+          description: string | null;
+          document_type: string | null;
+          id: string;
+          is_active: boolean;
+          link_url: string | null;
+          sort_order: number;
+          title: string;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          created_at?: string;
+          created_by?: string | null;
+          description?: string | null;
+          document_type?: string | null;
+          id?: string;
+          is_active?: boolean;
+          link_url?: string | null;
+          sort_order?: number;
+          title: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          created_at?: string;
+          created_by?: string | null;
+          description?: string | null;
+          document_type?: string | null;
+          id?: string;
+          is_active?: boolean;
+          link_url?: string | null;
+          sort_order?: number;
+          title?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_documents_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "onboarding_documents_updated_by_fkey";
+            columns: ["updated_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      onboarding_questions: {
+        Row: {
+          created_at: string;
+          created_by: string | null;
+          id: string;
+          is_active: boolean;
+          options: Json;
+          question_text: string;
+          question_type: string;
+          section_id: string;
+          sort_order: number;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          created_at?: string;
+          created_by?: string | null;
+          id?: string;
+          is_active?: boolean;
+          options?: Json;
+          question_text: string;
+          question_type?: string;
+          section_id: string;
+          sort_order?: number;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          created_at?: string;
+          created_by?: string | null;
+          id?: string;
+          is_active?: boolean;
+          options?: Json;
+          question_text?: string;
+          question_type?: string;
+          section_id?: string;
+          sort_order?: number;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_questions_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "onboarding_questions_section_id_fkey";
+            columns: ["section_id"];
+            isOneToOne: false;
+            referencedRelation: "onboarding_sections";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "onboarding_questions_updated_by_fkey";
+            columns: ["updated_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      onboarding_sections: {
+        Row: {
+          created_at: string;
+          created_by: string | null;
+          description: string | null;
+          id: string;
+          is_active: boolean;
+          section_key: string;
+          sort_order: number;
+          title: string;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          created_at?: string;
+          created_by?: string | null;
+          description?: string | null;
+          id?: string;
+          is_active?: boolean;
+          section_key: string;
+          sort_order?: number;
+          title: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          created_at?: string;
+          created_by?: string | null;
+          description?: string | null;
+          id?: string;
+          is_active?: boolean;
+          section_key?: string;
+          sort_order?: number;
+          title?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_sections_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "onboarding_sections_updated_by_fkey";
+            columns: ["updated_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       fixed_assets: {
         Row: {
           asset_type: string;

@@ -55,7 +55,7 @@ const NAV: NavItem[] = [
   { to: "/admin/teams", label: "Quản lý Team", icon: UsersRound, roles: ["admin"] },
   { to: "/admin/assets", label: "Tài sản", icon: Package, roles: ["admin"] },
   { to: "/admin/ranking", label: "Bảng xếp hạng", icon: Trophy, roles: ["admin"] },
-  { to: "/admin/resources", label: "Giới thiệu & Tài nguyên", icon: BookOpen, roles: ["admin"] },
+  { to: "/admin/resources", label: "Hướng dẫn tân thủ", icon: BookOpen, roles: ["admin"] },
 
   // Marketing Manager
   { to: "/manager/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["manager"] },
@@ -66,13 +66,13 @@ const NAV: NavItem[] = [
   { to: "/manager/teams", label: "Teams", icon: UsersRound, roles: ["manager"] },
   {
     to: "/manager/resources",
-    label: "Giới thiệu & Tài nguyên",
+    label: "Hướng dẫn tân thủ",
     icon: BookOpen,
     roles: ["manager"],
   },
 
   // Leader
-  { to: "/leader/resources", label: "Giới thiệu & Tài nguyên", icon: BookOpen, roles: ["leader"] },
+  { to: "/leader/resources", label: "Hướng dẫn tân thủ", icon: BookOpen, roles: ["leader"] },
   { to: "/leader/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["leader"] },
   { to: "/leader/kpi", label: "KPI", icon: Target, roles: ["leader"] },
   { to: "/leader/report-slots", label: "Nhập báo cáo cá nhân", icon: FileText, roles: ["leader"] },
@@ -84,7 +84,7 @@ const NAV: NavItem[] = [
   // Employee
   {
     to: "/employee/resources",
-    label: "Giới thiệu & Tài nguyên",
+    label: "Hướng dẫn tân thủ",
     icon: BookOpen,
     roles: ["employee"],
   },

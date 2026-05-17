@@ -1,29 +1,63 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, ExternalLink, Loader2, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import {
+  ArrowRight,
+  Award,
+  BookOpenCheck,
+  CheckCircle2,
+  ExternalLink,
+  FileText,
+  GraduationCap,
+  HelpCircle,
+  Loader2,
+  Lock,
+  Pencil,
+  Plus,
+  Save,
+  Trash2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
-import type { Tables, TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
+import type { Json, Tables, TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
+import { cn } from "@/lib/utils";
 
-type IntroSection = Tables<"intro_sections">;
+type OnboardingSection = Tables<"onboarding_sections">;
+type OnboardingCard = Tables<"onboarding_cards">;
+type OnboardingProgress = Tables<"onboarding_card_progress">;
+type OnboardingQuestion = Tables<"onboarding_questions">;
+type OnboardingAnswer = Tables<"onboarding_answers">;
+type OnboardingDocument = Tables<"onboarding_documents">;
+type ProfileRow = Tables<"profiles">;
 
-type IntroFormState = {
+type QuestionType = "text" | "multiple_choice" | "checkbox";
+type AnswerDraft = Record<string, string | string[]>;
+
+type CardFormState = {
   id: string;
+  section_id: string;
   icon: string;
   title: string;
   summary: string;
@@ -34,8 +68,36 @@ type IntroFormState = {
   is_active: boolean;
 };
 
-const emptyIntroForm: IntroFormState = {
+type QuestionFormState = {
+  id: string;
+  section_id: string;
+  question_text: string;
+  question_type: QuestionType;
+  optionsText: string;
+  sort_order: number;
+  is_active: boolean;
+};
+
+type DocumentFormState = {
+  id: string;
+  title: string;
+  description: string;
+  link_url: string;
+  document_type: string;
+  sort_order: number;
+  is_active: boolean;
+};
+
+const SECTION_KEYS = ["intro", "training", "advanced"] as const;
+const EMPTY_CARDS: OnboardingCard[] = [];
+const EMPTY_QUESTIONS: OnboardingQuestion[] = [];
+const EMPTY_DOCUMENTS: OnboardingDocument[] = [];
+const EMPTY_PROGRESS: OnboardingProgress[] = [];
+const EMPTY_ANSWERS: OnboardingAnswer[] = [];
+
+const emptyCardForm: CardFormState = {
   id: "",
+  section_id: "",
   icon: "🚀",
   title: "",
   summary: "",
@@ -46,283 +108,939 @@ const emptyIntroForm: IntroFormState = {
   is_active: true,
 };
 
+const emptyQuestionForm: QuestionFormState = {
+  id: "",
+  section_id: "",
+  question_text: "",
+  question_type: "text",
+  optionsText: "",
+  sort_order: 0,
+  is_active: true,
+};
+
+const emptyDocumentForm: DocumentFormState = {
+  id: "",
+  title: "",
+  description: "",
+  link_url: "",
+  document_type: "Tài liệu",
+  sort_order: 0,
+  is_active: true,
+};
+
 export function ResourcesWorkspace() {
   const { profile, role } = useAuth();
   const qc = useQueryClient();
   const isAdmin = role === "admin";
-  const [introDialogOpen, setIntroDialogOpen] = useState(false);
-  const [selectedIntro, setSelectedIntro] = useState<IntroSection | null>(null);
-  const [showAllIntro, setShowAllIntro] = useState(false);
-  const [introForm, setIntroForm] = useState<IntroFormState>(emptyIntroForm);
+  const isEmployee = role === "employee";
+  const canViewProgress = role === "admin" || role === "manager" || role === "leader";
 
-  const { data: introSections = [], isLoading } = useQuery({
-    queryKey: ["resources-intro-sections", role],
-    enabled: !!role,
+  const [selectedCard, setSelectedCard] = useState<OnboardingCard | null>(null);
+  const [cardDialogOpen, setCardDialogOpen] = useState(false);
+  const [questionDialogOpen, setQuestionDialogOpen] = useState(false);
+  const [documentDialogOpen, setDocumentDialogOpen] = useState(false);
+  const [quizSection, setQuizSection] = useState<OnboardingSection | null>(null);
+  const [cardForm, setCardForm] = useState<CardFormState>(emptyCardForm);
+  const [questionForm, setQuestionForm] = useState<QuestionFormState>(emptyQuestionForm);
+  const [documentForm, setDocumentForm] = useState<DocumentFormState>(emptyDocumentForm);
+  const [answerDrafts, setAnswerDrafts] = useState<Record<string, AnswerDraft>>({});
+  const [progressSearch, setProgressSearch] = useState("");
+  const [progressStatus, setProgressStatus] = useState("all");
+
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ["onboarding-workspace", role, profile?.id],
+    enabled: !!profile?.id && !!role,
     queryFn: async () => {
-      let query = supabase
-        .from("intro_sections")
+      let sectionsQuery = supabase
+        .from("onboarding_sections")
+        .select("*")
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true });
+      let cardsQuery = supabase
+        .from("onboarding_cards")
+        .select("*")
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true });
+      let questionsQuery = supabase
+        .from("onboarding_questions")
+        .select("*")
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true });
+      let documentsQuery = supabase
+        .from("onboarding_documents")
         .select("*")
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true });
 
       if (!isAdmin) {
-        query = query.eq("is_active", true);
+        sectionsQuery = sectionsQuery.eq("is_active", true);
+        cardsQuery = cardsQuery.eq("is_active", true);
+        questionsQuery = questionsQuery.eq("is_active", true);
+        documentsQuery = documentsQuery.eq("is_active", true);
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
-      return (data ?? []) as IntroSection[];
+      const [
+        sectionsResult,
+        cardsResult,
+        questionsResult,
+        documentsResult,
+        progressResult,
+        answersResult,
+        allProgressResult,
+        allAnswersResult,
+        profilesResult,
+        rolesResult,
+      ] = await Promise.all([
+        sectionsQuery,
+        cardsQuery,
+        questionsQuery,
+        documentsQuery,
+        supabase.from("onboarding_card_progress").select("*").eq("profile_id", profile!.id),
+        supabase.from("onboarding_answers").select("*").eq("profile_id", profile!.id),
+        canViewProgress
+          ? supabase.from("onboarding_card_progress").select("*")
+          : Promise.resolve({ data: [], error: null }),
+        canViewProgress
+          ? supabase.from("onboarding_answers").select("*")
+          : Promise.resolve({ data: [], error: null }),
+        canViewProgress
+          ? supabase
+              .from("profiles")
+              .select(
+                "id, full_name, username, avatar_url, status, auth_user_id, email, phone, created_at, updated_at",
+              )
+              .eq("status", "active")
+          : Promise.resolve({ data: [], error: null }),
+        canViewProgress
+          ? supabase.from("user_roles").select("user_id, role").eq("role", "employee")
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+
+      const firstError =
+        sectionsResult.error ??
+        cardsResult.error ??
+        questionsResult.error ??
+        documentsResult.error ??
+        progressResult.error ??
+        answersResult.error ??
+        allProgressResult.error ??
+        allAnswersResult.error ??
+        profilesResult.error ??
+        rolesResult.error;
+      if (firstError) throw firstError;
+
+      return {
+        sections: (sectionsResult.data ?? []) as OnboardingSection[],
+        cards: (cardsResult.data ?? []) as OnboardingCard[],
+        questions: (questionsResult.data ?? []) as OnboardingQuestion[],
+        documents: (documentsResult.data ?? []) as OnboardingDocument[],
+        progress: (progressResult.data ?? []) as OnboardingProgress[],
+        answers: (answersResult.data ?? []) as OnboardingAnswer[],
+        allProgress: (allProgressResult.data ?? []) as OnboardingProgress[],
+        allAnswers: (allAnswersResult.data ?? []) as OnboardingAnswer[],
+        profiles: (profilesResult.data ?? []) as ProfileRow[],
+        employeeRoleIds: new Set((rolesResult.data ?? []).map((row) => row.user_id)),
+      };
     },
   });
 
-  const visibleIntroSections = showAllIntro ? introSections : introSections.slice(0, 8);
+  const sections = useMemo(() => {
+    const existing = data?.sections ?? [];
+    return SECTION_KEYS.map((sectionKey, index) => {
+      const found = existing.find((section) => section.section_key === sectionKey);
+      if (found) return found;
+      return {
+        id: sectionKey,
+        section_key: sectionKey,
+        title: index === 0 ? "Giới thiệu" : index === 1 ? "Đào tạo" : "Nâng cao",
+        description: null,
+        sort_order: index + 1,
+        is_active: true,
+        created_by: null,
+        updated_by: null,
+        created_at: "",
+        updated_at: "",
+      } satisfies OnboardingSection;
+    });
+  }, [data?.sections]);
 
-  const resetIntroForm = () => setIntroForm(emptyIntroForm);
+  const cards = data?.cards ?? EMPTY_CARDS;
+  const questions = data?.questions ?? EMPTY_QUESTIONS;
+  const documents = data?.documents ?? EMPTY_DOCUMENTS;
+  const progress = data?.progress ?? EMPTY_PROGRESS;
+  const answers = data?.answers ?? EMPTY_ANSWERS;
 
-  const saveIntroSection = async () => {
-    if (!introForm.title.trim()) {
-      toast.error("Nhập tiêu đề giới thiệu");
+  const progressByCard = useMemo(
+    () => new Map(progress.map((item) => [item.card_id, item])),
+    [progress],
+  );
+  const answerBySection = useMemo(
+    () => new Map(answers.map((item) => [item.section_id, item])),
+    [answers],
+  );
+
+  const cardsBySection = useMemo(() => groupBy(cards, "section_id"), [cards]);
+  const questionsBySection = useMemo(() => groupBy(questions, "section_id"), [questions]);
+  const learningCardsBySection = useMemo(() => {
+    const map = new Map<string, OnboardingCard[]>();
+    sections.forEach((section) => {
+      map.set(section.id, (cardsBySection.get(section.id) ?? []).slice(0, 4));
+    });
+    return map;
+  }, [cardsBySection, sections]);
+  const learningCards = useMemo(
+    () => sections.flatMap((section) => learningCardsBySection.get(section.id) ?? []),
+    [learningCardsBySection, sections],
+  );
+  const totalCards = learningCards.length;
+  const completedCards = learningCards.filter(
+    (card) => progressByCard.get(card.id)?.completed_at,
+  ).length;
+  const progressPercent = totalCards > 0 ? Math.round((completedCards / totalCards) * 100) : 0;
+  const certificateReady =
+    totalCards > 0 &&
+    completedCards === totalCards &&
+    sections.every((section) => {
+      const sectionQuestions = questionsBySection.get(section.id) ?? [];
+      return sectionQuestions.length === 0 || answerBySection.has(section.id);
+    });
+
+  const visibility = useMemo(() => {
+    const sectionUnlocked = new Map<string, boolean>();
+    const cardUnlocked = new Map<string, boolean>();
+
+    sections.forEach((section, sectionIndex) => {
+      if (!isEmployee) {
+        sectionUnlocked.set(section.id, true);
+        return;
+      }
+
+      if (sectionIndex === 0) {
+        sectionUnlocked.set(section.id, true);
+        return;
+      }
+
+      const previous = sections[sectionIndex - 1];
+      const previousCards = learningCardsBySection.get(previous.id) ?? [];
+      const previousQuestions = questionsBySection.get(previous.id) ?? [];
+      const previousCardsDone = previousCards.every(
+        (card) => progressByCard.get(card.id)?.completed_at,
+      );
+      const previousQuizDone = previousQuestions.length === 0 || answerBySection.has(previous.id);
+      sectionUnlocked.set(
+        section.id,
+        sectionUnlocked.get(previous.id) === true && previousCardsDone && previousQuizDone,
+      );
+    });
+
+    sections.forEach((section) => {
+      const sectionCards = learningCardsBySection.get(section.id) ?? [];
+      sectionCards.forEach((card, cardIndex) => {
+        if (!isEmployee) {
+          cardUnlocked.set(card.id, true);
+          return;
+        }
+        const previousCardsDone = sectionCards
+          .slice(0, cardIndex)
+          .every((previousCard) => progressByCard.get(previousCard.id)?.completed_at);
+        cardUnlocked.set(card.id, sectionUnlocked.get(section.id) === true && previousCardsDone);
+      });
+    });
+
+    return { sectionUnlocked, cardUnlocked };
+  }, [
+    answerBySection,
+    isEmployee,
+    learningCardsBySection,
+    progressByCard,
+    questionsBySection,
+    sections,
+  ]);
+
+  const progressRows = useMemo(() => {
+    if (!canViewProgress || !data) return [];
+    const activeCardIds = new Set(learningCards.map((card) => card.id));
+    const sectionIds = new Set(sections.map((section) => section.id));
+    const questionSections = sections.filter(
+      (section) => (questionsBySection.get(section.id) ?? []).length > 0,
+    );
+    const progressByProfile = groupBy(data.allProgress, "profile_id");
+    const answersByProfile = groupBy(data.allAnswers, "profile_id");
+
+    return data.profiles
+      .filter((item) => data.employeeRoleIds.has(item.id))
+      .map((item) => {
+        const userProgress = progressByProfile.get(item.id) ?? [];
+        const userAnswers = answersByProfile.get(item.id) ?? [];
+        const completed = userProgress.filter(
+          (row) => row.completed_at && activeCardIds.has(row.card_id),
+        ).length;
+        const quizzesDone = questionSections.filter((section) =>
+          userAnswers.some(
+            (answer) => answer.section_id === section.id && sectionIds.has(answer.section_id),
+          ),
+        ).length;
+        const percent = totalCards > 0 ? Math.round((completed / totalCards) * 100) : 0;
+        const complete =
+          totalCards > 0 && completed === totalCards && quizzesDone === questionSections.length;
+        return {
+          id: item.id,
+          name: item.full_name,
+          username: item.username,
+          completed,
+          percent,
+          status: completed === 0 ? "Chưa bắt đầu" : complete ? "Hoàn thành" : "Đang học",
+          complete,
+        };
+      })
+      .sort((a, b) => b.percent - a.percent || a.name.localeCompare(b.name));
+  }, [canViewProgress, data, learningCards, questionsBySection, sections, totalCards]);
+
+  const visibleProgressRows = useMemo(() => {
+    const search = progressSearch.trim().toLowerCase();
+    return progressRows.filter((row) => {
+      const matchesSearch =
+        !search ||
+        row.name.toLowerCase().includes(search) ||
+        row.username.toLowerCase().includes(search);
+      const matchesStatus = progressStatus === "all" || row.status === progressStatus;
+      return matchesSearch && matchesStatus;
+    });
+  }, [progressRows, progressSearch, progressStatus]);
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["onboarding-workspace"] });
+
+  const openCardForm = (sectionId: string, card?: OnboardingCard) => {
+    setCardForm(
+      card
+        ? {
+            id: card.id,
+            section_id: card.section_id,
+            icon: card.icon ?? "🚀",
+            title: card.title,
+            summary: card.summary ?? "",
+            content: card.content ?? "",
+            image_url: card.image_url ?? "",
+            link_url: card.link_url ?? "",
+            sort_order: card.sort_order ?? 0,
+            is_active: card.is_active,
+          }
+        : { ...emptyCardForm, section_id: sectionId },
+    );
+    setCardDialogOpen(true);
+  };
+
+  const openQuestionForm = (sectionId: string, question?: OnboardingQuestion) => {
+    setQuestionForm(
+      question
+        ? {
+            id: question.id,
+            section_id: question.section_id,
+            question_text: question.question_text,
+            question_type: question.question_type as QuestionType,
+            optionsText: getQuestionOptions(question).join("\n"),
+            sort_order: question.sort_order ?? 0,
+            is_active: question.is_active,
+          }
+        : { ...emptyQuestionForm, section_id: sectionId },
+    );
+    setQuestionDialogOpen(true);
+  };
+
+  const openDocumentForm = (document?: OnboardingDocument) => {
+    setDocumentForm(
+      document
+        ? {
+            id: document.id,
+            title: document.title,
+            description: document.description ?? "",
+            link_url: document.link_url ?? "",
+            document_type: document.document_type ?? "Tài liệu",
+            sort_order: document.sort_order ?? 0,
+            is_active: document.is_active,
+          }
+        : emptyDocumentForm,
+    );
+    setDocumentDialogOpen(true);
+  };
+
+  const saveCard = async () => {
+    if (!cardForm.title.trim() || !cardForm.section_id) {
+      toast.error("Nhập tiêu đề và chọn section");
       return;
     }
-
-    const payload: TablesUpdate<"intro_sections"> = {
-      icon: introForm.icon.trim() || null,
-      title: introForm.title.trim(),
-      summary: introForm.summary.trim() || null,
-      content: introForm.content.trim() || null,
-      image_url: introForm.image_url.trim() || null,
-      link_url: introForm.link_url.trim() || null,
-      sort_order: Number(introForm.sort_order) || 0,
-      is_active: introForm.is_active,
+    const payload: TablesUpdate<"onboarding_cards"> = {
+      section_id: cardForm.section_id,
+      icon: cardForm.icon.trim() || null,
+      title: cardForm.title.trim(),
+      summary: cardForm.summary.trim() || null,
+      content: cardForm.content.trim() || null,
+      image_url: cardForm.image_url.trim() || null,
+      link_url: cardForm.link_url.trim() || null,
+      sort_order: Number(cardForm.sort_order) || 0,
+      is_active: cardForm.is_active,
       updated_by: profile?.id,
     };
 
-    const query = introForm.id
-      ? supabase.from("intro_sections").update(payload).eq("id", introForm.id)
-      : supabase.from("intro_sections").insert({
+    const result = cardForm.id
+      ? await supabase.from("onboarding_cards").update(payload).eq("id", cardForm.id)
+      : await supabase.from("onboarding_cards").insert({
           ...payload,
-          section_key: `intro-${Date.now()}-${introForm.title
-            .trim()
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")}`,
-        } as TablesInsert<"intro_sections">);
+          created_by: profile?.id,
+        } as TablesInsert<"onboarding_cards">);
+    if (result.error) {
+      toast.error(result.error.message);
+      return;
+    }
+    toast.success("Đã lưu thẻ onboarding");
+    setCardDialogOpen(false);
+    invalidate();
+  };
 
-    const { error } = await query;
+  const deleteCard = async (id: string) => {
+    const { error } = await supabase.from("onboarding_cards").delete().eq("id", id);
     if (error) {
       toast.error(error.message);
       return;
     }
-
-    toast.success("Đã lưu thẻ giới thiệu");
-    setIntroDialogOpen(false);
-    resetIntroForm();
-    qc.invalidateQueries({ queryKey: ["resources-intro-sections"] });
+    toast.success("Đã xóa thẻ onboarding");
+    invalidate();
   };
 
-  const deleteIntroSection = async (id: string) => {
-    const { error } = await supabase.from("intro_sections").delete().eq("id", id);
+  const saveQuestion = async () => {
+    if (!questionForm.question_text.trim() || !questionForm.section_id) {
+      toast.error("Nhập nội dung câu hỏi");
+      return;
+    }
+    const options = questionForm.optionsText
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (questionForm.question_type !== "text" && options.length === 0) {
+      toast.error("Nhập ít nhất một lựa chọn");
+      return;
+    }
+
+    const payload: TablesUpdate<"onboarding_questions"> = {
+      section_id: questionForm.section_id,
+      question_text: questionForm.question_text.trim(),
+      question_type: questionForm.question_type,
+      options,
+      sort_order: Number(questionForm.sort_order) || 0,
+      is_active: questionForm.is_active,
+      updated_by: profile?.id,
+    };
+
+    const result = questionForm.id
+      ? await supabase.from("onboarding_questions").update(payload).eq("id", questionForm.id)
+      : await supabase.from("onboarding_questions").insert({
+          ...payload,
+          created_by: profile?.id,
+        } as TablesInsert<"onboarding_questions">);
+    if (result.error) {
+      toast.error(result.error.message);
+      return;
+    }
+    toast.success("Đã lưu câu hỏi");
+    setQuestionDialogOpen(false);
+    invalidate();
+  };
+
+  const deleteQuestion = async (id: string) => {
+    const { error } = await supabase.from("onboarding_questions").delete().eq("id", id);
     if (error) {
       toast.error(error.message);
       return;
     }
-
-    toast.success("Đã xóa thẻ giới thiệu");
-    qc.invalidateQueries({ queryKey: ["resources-intro-sections"] });
+    toast.success("Đã xóa câu hỏi");
+    invalidate();
   };
 
-  const editIntroSection = (intro: IntroSection) => {
-    setIntroForm({
-      id: intro.id,
-      icon: intro.icon ?? "🚀",
-      title: intro.title,
-      summary: intro.summary ?? "",
-      content: intro.content ?? "",
-      image_url: intro.image_url ?? "",
-      link_url: intro.link_url ?? "",
-      sort_order: intro.sort_order ?? 0,
-      is_active: intro.is_active,
+  const saveDocument = async () => {
+    if (!documentForm.title.trim()) {
+      toast.error("Nhập tiêu đề tài liệu");
+      return;
+    }
+    const payload: TablesUpdate<"onboarding_documents"> = {
+      title: documentForm.title.trim(),
+      description: documentForm.description.trim() || null,
+      link_url: documentForm.link_url.trim() || null,
+      document_type: documentForm.document_type.trim() || null,
+      sort_order: Number(documentForm.sort_order) || 0,
+      is_active: documentForm.is_active,
+      updated_by: profile?.id,
+    };
+
+    const result = documentForm.id
+      ? await supabase.from("onboarding_documents").update(payload).eq("id", documentForm.id)
+      : await supabase.from("onboarding_documents").insert({
+          ...payload,
+          created_by: profile?.id,
+        } as TablesInsert<"onboarding_documents">);
+    if (result.error) {
+      toast.error(result.error.message);
+      return;
+    }
+    toast.success("Đã lưu tài liệu");
+    setDocumentDialogOpen(false);
+    invalidate();
+  };
+
+  const deleteDocument = async (id: string) => {
+    const { error } = await supabase.from("onboarding_documents").delete().eq("id", id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Đã xóa tài liệu");
+    invalidate();
+  };
+
+  const completeCard = async (card: OnboardingCard) => {
+    if (!profile?.id) return;
+    const { error } = await supabase.from("onboarding_card_progress").upsert(
+      {
+        profile_id: profile.id,
+        card_id: card.id,
+        accepted_commitment: true,
+        completed_at: new Date().toISOString(),
+      },
+      { onConflict: "profile_id,card_id" },
+    );
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Đã ghi nhận cam kết");
+    setSelectedCard(null);
+    invalidate();
+  };
+
+  const submitSectionAnswers = async (section: OnboardingSection) => {
+    if (!profile?.id) return false;
+    const sectionQuestions = questionsBySection.get(section.id) ?? [];
+    const draft = answerDrafts[section.id] ?? {};
+    const missing = sectionQuestions.some((question) => {
+      const value = draft[question.id];
+      return Array.isArray(value) ? value.length === 0 : !String(value ?? "").trim();
     });
-    setIntroDialogOpen(true);
+    if (missing) {
+      toast.warning("Bạn còn câu hỏi chưa trả lời. Kiểm tra lại rồi nộp lại nhé.");
+      return false;
+    }
+
+    const { error } = await supabase.from("onboarding_answers").upsert(
+      {
+        profile_id: profile.id,
+        section_id: section.id,
+        answers: draft as Json,
+        completed_at: new Date().toISOString(),
+      },
+      { onConflict: "profile_id,section_id" },
+    );
+    if (error) {
+      toast.error(error.message);
+      return false;
+    }
+    toast.success("Đã hoàn thành câu hỏi section");
+    setQuizSection(null);
+    invalidate();
+    return true;
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex h-full min-h-0 items-center justify-center">
+        <div className="rounded-3xl border bg-card px-8 py-7 text-center shadow-sm">
+          <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
+          <div className="mt-3 text-sm font-semibold">Đang tải hướng dẫn tân thủ...</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            Đang đồng bộ lộ trình và tiến độ.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-full min-h-0 items-center justify-center">
+        <div className="max-w-md rounded-3xl border bg-card p-7 text-center shadow-sm">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
+            <X className="h-5 w-5" />
+          </div>
+          <h2 className="mt-4 text-lg font-bold">Không tải được onboarding</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {error instanceof Error ? error.message : "Có lỗi khi tải dữ liệu hướng dẫn tân thủ."}
+          </p>
+          <Button className="mt-5 rounded-full" onClick={() => refetch()}>
+            Tải lại
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex h-full min-h-0 max-w-7xl flex-col gap-4 overflow-hidden">
-      <div className="shrink-0 rounded-2xl border bg-background/95 p-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="shrink-0 overflow-hidden rounded-3xl border bg-background/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85">
+        <div className="flex flex-wrap items-center justify-between gap-4 p-5">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Giới thiệu & Tài nguyên</h1>
-            <p className="text-sm text-muted-foreground">
-              Giới thiệu, hướng dẫn và quy trình chung của hệ thống.
-            </p>
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700">
+                <GraduationCap className="h-5 w-5" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight">Hướng dẫn tân thủ</h1>
+                <p className="text-sm text-muted-foreground">
+                  Lộ trình onboarding, đào tạo và văn bản cần đọc cho nhân sự mới.
+                </p>
+              </div>
+            </div>
           </div>
-          {isAdmin && (
-            <Dialog open={introDialogOpen} onOpenChange={setIntroDialogOpen}>
-              <DialogTrigger asChild>
-                <Button onClick={resetIntroForm}>
-                  <Plus className="mr-2 h-4 w-4" /> Thẻ giới thiệu
-                </Button>
-              </DialogTrigger>
-              <IntroSectionDialog
-                form={introForm}
-                setForm={setIntroForm}
-                onSave={saveIntroSection}
-                onCancel={() => setIntroDialogOpen(false)}
-              />
-            </Dialog>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              className={cn(
+                "rounded-full px-4 py-2 text-sm shadow-sm",
+                certificateReady
+                  ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100"
+                  : "bg-indigo-100 text-indigo-700 hover:bg-indigo-100",
+              )}
+            >
+              {certificateReady ? (
+                <>
+                  <Award className="mr-1.5 h-4 w-4" /> Đã được chứng nhận
+                </>
+              ) : (
+                `${completedCards}/${totalCards}`
+              )}
+            </Badge>
+            {isAdmin && (
+              <Button variant="outline" onClick={() => openDocumentForm()}>
+                <Plus className="mr-2 h-4 w-4" /> Tài liệu
+              </Button>
+            )}
+          </div>
+        </div>
+        <div className="h-1.5 bg-muted">
+          <div
+            className={cn(
+              "h-full transition-all",
+              certificateReady ? "bg-emerald-500" : "bg-indigo-500",
+            )}
+            style={{ width: `${progressPercent}%` }}
+          />
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-        <section className="rounded-3xl border bg-slate-950 p-5 text-white shadow-sm md:p-7">
-          <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
+        {sections.map((section, index) => {
+          const sectionCards = learningCardsBySection.get(section.id) ?? [];
+          const sectionQuestions = questionsBySection.get(section.id) ?? [];
+          const unlocked = visibility.sectionUnlocked.get(section.id) === true;
+          const sectionCompletedCount = sectionCards.filter(
+            (card) => progressByCard.get(card.id)?.completed_at,
+          ).length;
+          const sectionCardsComplete =
+            sectionCards.length > 0 && sectionCompletedCount === sectionCards.length;
+          const quizDone = sectionQuestions.length === 0 || answerBySection.has(section.id);
+          const sectionComplete = sectionCardsComplete && quizDone;
+          const sectionPercent =
+            sectionCards.length > 0
+              ? Math.round((sectionCompletedCount / sectionCards.length) * 100)
+              : 0;
+          return (
+            <section
+              key={section.id}
+              className={cn(
+                "overflow-hidden rounded-3xl border bg-card shadow-sm",
+                isEmployee && !unlocked && "bg-muted/30",
+              )}
+            >
+              <div className="border-b bg-gradient-to-br from-background via-background to-muted/35 p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-background shadow-sm ring-1 ring-border">
+                        <SectionIcon index={index} />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold">{section.title}</h2>
+                        <p className="mt-0.5 text-sm text-muted-foreground">
+                          {section.description ?? "Click vào từng thẻ để xem chi tiết"}
+                        </p>
+                      </div>
+                      <SectionStatusBadge
+                        locked={isEmployee && !unlocked}
+                        complete={sectionComplete}
+                        unlocked={unlocked}
+                      />
+                    </div>
+                    <div className="mt-4 flex max-w-xl items-center gap-3">
+                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className={cn(
+                            "h-full rounded-full transition-all",
+                            sectionComplete ? "bg-emerald-500" : "bg-indigo-500",
+                          )}
+                          style={{ width: `${sectionPercent}%` }}
+                        />
+                      </div>
+                      <span className="text-xs font-semibold text-muted-foreground">
+                        {sectionCompletedCount}/{sectionCards.length || 0}
+                      </span>
+                    </div>
+                  </div>
+                  {isAdmin && (
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openQuestionForm(section.id)}
+                      >
+                        <Plus className="mr-2 h-4 w-4" /> Câu hỏi
+                      </Button>
+                      <Button size="sm" onClick={() => openCardForm(section.id)}>
+                        <Plus className="mr-2 h-4 w-4" /> Thêm thẻ
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-5">
+                {sectionCards.length ? (
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    {sectionCards.map((card, cardIndex) => {
+                      const completed = !!progressByCard.get(card.id)?.completed_at;
+                      const cardUnlocked = visibility.cardUnlocked.get(card.id) === true;
+                      return (
+                        <OnboardingCardItem
+                          key={card.id}
+                          card={card}
+                          step={cardIndex + 1}
+                          locked={isEmployee && !cardUnlocked}
+                          completed={completed}
+                          canEdit={isAdmin}
+                          onOpen={() => {
+                            if (isEmployee && !cardUnlocked) {
+                              toast.warning("Bạn cần hoàn thành thẻ trước đó");
+                              return;
+                            }
+                            setSelectedCard(card);
+                          }}
+                          onEdit={() => openCardForm(section.id, card)}
+                          onDelete={() => deleteCard(card.id)}
+                        />
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <EmptyState text="Chưa có thẻ giới thiệu." />
+                )}
+
+                {isEmployee &&
+                  unlocked &&
+                  sectionQuestions.length > 0 &&
+                  sectionCardsComplete &&
+                  !answerBySection.has(section.id) && (
+                    <QuizCta section={section} onClick={() => setQuizSection(section)} />
+                  )}
+
+                {!isEmployee && (
+                  <SectionQuiz
+                    questions={sectionQuestions}
+                    answered={answerBySection.has(section.id)}
+                    isAdmin={isAdmin}
+                    onEditQuestion={(question) => openQuestionForm(section.id, question)}
+                    onDeleteQuestion={(questionId) => deleteQuestion(questionId)}
+                  />
+                )}
+              </div>
+            </section>
+          );
+        })}
+
+        <section className="rounded-3xl border bg-card p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-2xl font-extrabold tracking-tight">Giới thiệu</h2>
-              <p className="mt-1 text-sm text-white/60">Click vào từng thẻ để xem chi tiết</p>
+              <div className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-blue-600" />
+                <h2 className="text-xl font-bold">Văn bản & Tài liệu</h2>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Văn bản công bố, quy định, cơ chế và link tham khảo.
+              </p>
             </div>
-            {introSections.length > 8 && (
-              <Button
-                variant="secondary"
-                className="rounded-full"
-                onClick={() => setShowAllIntro((current) => !current)}
-              >
-                {showAllIntro ? "Thu gọn" : "Xem thêm"}
+            {isAdmin && (
+              <Button onClick={() => openDocumentForm()}>
+                <Plus className="mr-2 h-4 w-4" /> Thêm tài liệu
               </Button>
             )}
           </div>
 
-          {isLoading ? (
-            <div className="flex min-h-56 items-center justify-center text-sm text-white/60">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Đang tải giới thiệu...
-            </div>
-          ) : visibleIntroSections.length ? (
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {visibleIntroSections.map((intro) => (
-                <IntroCard
-                  key={intro.id}
-                  intro={intro}
+          {documents.length ? (
+            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {documents.map((document) => (
+                <DocumentCard
+                  key={document.id}
+                  document={document}
                   canEdit={isAdmin}
-                  onOpen={() => setSelectedIntro(intro)}
-                  onEdit={() => editIntroSection(intro)}
-                  onDelete={() => deleteIntroSection(intro.id)}
+                  onEdit={() => openDocumentForm(document)}
+                  onDelete={() => deleteDocument(document.id)}
                 />
               ))}
             </div>
           ) : (
-            <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-sm text-white/60">
-              Chưa có thẻ giới thiệu.
-            </div>
+            <EmptyState text="Chưa có tài nguyên." />
           )}
         </section>
 
-        <IntroDetailDialog
-          intro={selectedIntro}
-          onOpenChange={(open) => !open && setSelectedIntro(null)}
-        />
+        {canViewProgress && (
+          <section className="rounded-3xl border bg-card p-5 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold">Tiến độ onboarding</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Theo dõi số thẻ đã hoàn thành và trạng thái chứng chỉ của nhân sự.
+                </p>
+              </div>
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                <Input
+                  className="h-10 sm:w-64"
+                  value={progressSearch}
+                  onChange={(event) => setProgressSearch(event.target.value)}
+                  placeholder="Tìm nhân sự..."
+                />
+                <Select value={progressStatus} onValueChange={setProgressStatus}>
+                  <SelectTrigger className="h-10 sm:w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tất cả trạng thái</SelectItem>
+                    <SelectItem value="Chưa bắt đầu">Chưa bắt đầu</SelectItem>
+                    <SelectItem value="Đang học">Đang học</SelectItem>
+                    <SelectItem value="Hoàn thành">Hoàn thành</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {visibleProgressRows.length ? (
+              <div className="mt-4 overflow-hidden rounded-2xl border">
+                <div className="hidden grid-cols-[1fr_120px_160px_140px] bg-muted/60 px-4 py-3 text-sm font-semibold text-muted-foreground md:grid">
+                  <span>Nhân sự</span>
+                  <span>Tiến độ</span>
+                  <span>% hoàn thành</span>
+                  <span>Trạng thái</span>
+                </div>
+                <div className="divide-y">
+                  {visibleProgressRows.map((row) => (
+                    <div
+                      key={row.id}
+                      className="grid gap-3 px-4 py-3 text-sm md:grid-cols-[1fr_120px_160px_140px] md:items-center"
+                    >
+                      <div>
+                        <div className="font-semibold">{row.name}</div>
+                        <div className="text-xs text-muted-foreground">@{row.username}</div>
+                      </div>
+                      <span className="font-semibold">
+                        {row.completed}/{totalCards}
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className={cn(
+                              "h-full rounded-full",
+                              row.complete ? "bg-emerald-500" : "bg-indigo-500",
+                            )}
+                            style={{ width: `${row.percent}%` }}
+                          />
+                        </div>
+                        <span className="w-10 text-right font-medium">{row.percent}%</span>
+                      </div>
+                      <Badge
+                        className={cn(
+                          "w-fit rounded-full",
+                          row.complete
+                            ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100"
+                            : row.completed === 0
+                              ? "bg-slate-100 text-slate-700 hover:bg-slate-100"
+                              : "bg-amber-100 text-amber-700 hover:bg-amber-100",
+                        )}
+                      >
+                        {row.complete && <Award className="mr-1 h-3 w-3" />}
+                        {row.status}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <EmptyState text="Chưa có dữ liệu tiến độ." />
+            )}
+          </section>
+        )}
       </div>
+
+      <CardDetailDialog
+        card={selectedCard}
+        completed={!!selectedCard && !!progressByCard.get(selectedCard.id)?.completed_at}
+        employeeMode={isEmployee}
+        onComplete={completeCard}
+        onOpenChange={(open) => !open && setSelectedCard(null)}
+      />
+      <QuizModal
+        section={quizSection}
+        questions={quizSection ? (questionsBySection.get(quizSection.id) ?? []) : []}
+        draft={quizSection ? (answerDrafts[quizSection.id] ?? {}) : {}}
+        onDraftChange={(nextDraft) => {
+          if (!quizSection) return;
+          setAnswerDrafts((current) => ({ ...current, [quizSection.id]: nextDraft }));
+        }}
+        onSubmit={() => (quizSection ? submitSectionAnswers(quizSection) : Promise.resolve(false))}
+        onOpenChange={(open) => !open && setQuizSection(null)}
+      />
+      <CardFormDialog
+        open={cardDialogOpen}
+        onOpenChange={setCardDialogOpen}
+        form={cardForm}
+        sections={sections}
+        setForm={setCardForm}
+        onSave={saveCard}
+      />
+      <QuestionFormDialog
+        open={questionDialogOpen}
+        onOpenChange={setQuestionDialogOpen}
+        form={questionForm}
+        sections={sections}
+        setForm={setQuestionForm}
+        onSave={saveQuestion}
+      />
+      <DocumentFormDialog
+        open={documentDialogOpen}
+        onOpenChange={setDocumentDialogOpen}
+        form={documentForm}
+        setForm={setDocumentForm}
+        onSave={saveDocument}
+      />
     </div>
   );
 }
 
-function IntroSectionDialog({
-  form,
-  setForm,
-  onSave,
-  onCancel,
-}: {
-  form: IntroFormState;
-  setForm: (form: IntroFormState) => void;
-  onSave: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <DialogContent className="max-w-3xl">
-      <DialogHeader>
-        <DialogTitle>{form.id ? "Sửa thẻ giới thiệu" : "Thêm thẻ giới thiệu"}</DialogTitle>
-      </DialogHeader>
-      <div className="grid gap-3 md:grid-cols-[120px_1fr_140px]">
-        <Field label="Icon/emoji">
-          <Input
-            value={form.icon}
-            onChange={(event) => setForm({ ...form, icon: event.target.value })}
-            placeholder="🚀"
-          />
-        </Field>
-        <Field label="Tiêu đề">
-          <Input
-            value={form.title}
-            onChange={(event) => setForm({ ...form, title: event.target.value })}
-            placeholder="Giới thiệu & Hướng dẫn"
-          />
-        </Field>
-        <Field label="Thứ tự">
-          <Input
-            type="number"
-            value={form.sort_order}
-            onChange={(event) => setForm({ ...form, sort_order: Number(event.target.value) || 0 })}
-          />
-        </Field>
-        <div className="md:col-span-3">
-          <Label>Mô tả ngắn</Label>
-          <Textarea
-            className="mt-1 min-h-20"
-            value={form.summary}
-            onChange={(event) => setForm({ ...form, summary: event.target.value })}
-            placeholder="Mô tả ngắn hiển thị trên thẻ"
-          />
-        </div>
-        <Field label="Ảnh URL">
-          <Input
-            value={form.image_url}
-            onChange={(event) => setForm({ ...form, image_url: event.target.value })}
-            placeholder="https://..."
-          />
-        </Field>
-        <Field label="Link URL">
-          <Input
-            value={form.link_url}
-            onChange={(event) => setForm({ ...form, link_url: event.target.value })}
-            placeholder="https://..."
-          />
-        </Field>
-        <label className="flex items-center gap-2 pt-6 text-sm">
-          <Checkbox
-            checked={form.is_active}
-            onCheckedChange={(value) => setForm({ ...form, is_active: !!value })}
-          />
-          Đang hiển thị
-        </label>
-        <div className="md:col-span-3">
-          <Label>Nội dung mô tả chi tiết</Label>
-          <Textarea
-            className="mt-1 min-h-40"
-            value={form.content}
-            onChange={(event) => setForm({ ...form, content: event.target.value })}
-            placeholder="Nội dung chi tiết khi mở popup"
-          />
-        </div>
-        <div className="flex justify-end gap-2 md:col-span-3">
-          <Button variant="outline" onClick={onCancel}>
-            <X className="mr-2 h-4 w-4" /> Hủy
-          </Button>
-          <Button onClick={onSave}>
-            <Save className="mr-2 h-4 w-4" /> Lưu
-          </Button>
-        </div>
-      </div>
-    </DialogContent>
-  );
-}
-
-function IntroCard({
-  intro,
+function OnboardingCardItem({
+  card,
+  step,
+  locked,
+  completed,
   canEdit,
   onOpen,
   onEdit,
   onDelete,
 }: {
-  intro: IntroSection;
+  card: OnboardingCard;
+  step: number;
+  locked: boolean;
+  completed: boolean;
   canEdit: boolean;
   onOpen: () => void;
   onEdit: () => void;
@@ -336,115 +1054,870 @@ function IntroCard({
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") onOpen();
       }}
-      className="group flex min-h-56 flex-col rounded-[28px] border border-white/10 bg-white/[0.08] p-5 text-left shadow-sm transition duration-200 hover:-translate-y-1 hover:bg-white/[0.12] hover:shadow-xl"
+      className={cn(
+        "group relative flex min-h-52 flex-col overflow-hidden rounded-3xl border bg-background p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md",
+        locked && "bg-muted/40 opacity-70 hover:translate-y-0 hover:border-border hover:shadow-sm",
+        completed && "border-emerald-200 bg-emerald-50/40",
+      )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 text-3xl shadow-inner">
-          {intro.icon ?? "🚀"}
-        </div>
-        {canEdit && (
-          <div className="flex gap-1 opacity-80 transition group-hover:opacity-100">
-            {!intro.is_active && (
-              <Badge variant="secondary" className="border-white/10 bg-white/10 text-white">
-                Ẩn
-              </Badge>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 rounded-full text-white/70 hover:bg-white/10 hover:text-white"
-              onClick={(event) => {
-                event.stopPropagation();
-                onEdit();
-              }}
-            >
-              <Pencil className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 rounded-full text-white/70 hover:bg-red-500/15 hover:text-red-200"
-              onClick={(event) => {
-                event.stopPropagation();
-                onDelete();
-              }}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
+      <div
+        className={cn(
+          "absolute inset-x-0 top-0 h-1",
+          completed ? "bg-emerald-500" : locked ? "bg-muted" : "bg-indigo-500",
         )}
+      />
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div
+            className={cn(
+              "flex h-12 w-12 items-center justify-center rounded-2xl text-2xl shadow-sm",
+              completed
+                ? "bg-emerald-100 text-emerald-700"
+                : locked
+                  ? "bg-muted text-muted-foreground"
+                  : "bg-indigo-100 text-indigo-700",
+            )}
+          >
+            {locked ? <Lock className="h-5 w-5" /> : (card.icon ?? "🚀")}
+          </div>
+          <Badge variant="secondary" className="rounded-full">
+            Bước {step}
+          </Badge>
+        </div>
+        <div className="flex items-center gap-1">
+          {completed && (
+            <Badge className="rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+              <CheckCircle2 className="mr-1 h-3 w-3" /> Xong
+            </Badge>
+          )}
+          {canEdit && (
+            <>
+              {!card.is_active && <Badge variant="secondary">Ẩn</Badge>}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-full"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onEdit();
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDelete();
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </>
+          )}
+        </div>
       </div>
-      <div className="mt-8 flex flex-1 flex-col">
-        <h3 className="line-clamp-2 text-xl font-extrabold tracking-tight text-white">
-          {intro.title}
-        </h3>
-        <p className="mt-3 line-clamp-3 text-sm leading-6 text-white/60">
-          {intro.summary ?? intro.content ?? "Click để xem chi tiết."}
+      <div className="mt-6 flex flex-1 flex-col">
+        <h3 className="line-clamp-2 text-lg font-bold tracking-tight">{card.title}</h3>
+        <p className="mt-3 line-clamp-3 text-sm leading-6 text-muted-foreground">
+          {card.summary ?? card.content ?? "Click để xem chi tiết."}
         </p>
-        <div className="mt-auto flex items-center gap-2 pt-6 text-sm font-semibold text-violet-300">
-          Xem chi tiết
-          <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+        <div
+          className={cn(
+            "mt-auto flex items-center gap-2 pt-5 text-sm font-semibold",
+            locked ? "text-muted-foreground" : completed ? "text-emerald-700" : "text-primary",
+          )}
+        >
+          {locked ? "Đang khóa" : completed ? "Đã đọc" : "Xem chi tiết"}
+          {!locked && <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />}
         </div>
       </div>
     </div>
   );
 }
 
-function IntroDetailDialog({
-  intro,
+function CardDetailDialog({
+  card,
+  completed,
+  employeeMode,
+  onComplete,
   onOpenChange,
 }: {
-  intro: IntroSection | null;
+  card: OnboardingCard | null;
+  completed: boolean;
+  employeeMode: boolean;
+  onComplete: (card: OnboardingCard) => void;
   onOpenChange: (open: boolean) => void;
 }) {
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const [reachedEnd, setReachedEnd] = useState(false);
+  const [accepted, setAccepted] = useState(false);
+
+  useEffect(() => {
+    setReachedEnd(false);
+    setAccepted(false);
+    window.requestAnimationFrame(() => {
+      const node = contentRef.current;
+      if (node && node.scrollHeight <= node.clientHeight + 4) setReachedEnd(true);
+    });
+  }, [card?.id]);
+
+  const checkScrollEnd = () => {
+    const node = contentRef.current;
+    if (!node) return;
+    if (node.scrollTop + node.clientHeight >= node.scrollHeight - 8) {
+      setReachedEnd(true);
+    }
+  };
+
   return (
-    <Dialog open={!!intro} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col gap-0 overflow-hidden rounded-3xl border-slate-700 bg-slate-950 p-0 text-white shadow-2xl [&>button]:rounded-full [&>button]:text-white/70 [&>button]:opacity-100 [&>button:hover]:bg-white/10 [&>button:hover]:text-white">
-        {intro && (
+    <Dialog open={!!card} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col gap-0 overflow-hidden rounded-3xl p-0 [&>button]:rounded-full">
+        {card && (
           <>
-            <DialogHeader className="shrink-0 border-b border-white/10 bg-slate-950/95 px-6 py-5 pr-14 text-left">
-              <DialogTitle className="flex items-center gap-3 text-2xl font-extrabold">
-                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-2xl">
-                  {intro.icon ?? "🚀"}
+            <DialogHeader className="shrink-0 border-b bg-background/95 px-6 py-5 pr-14 text-left">
+              <DialogTitle className="flex items-center gap-3 text-xl font-bold md:text-2xl">
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-2xl">
+                  {card.icon ?? "🚀"}
                 </span>
-                {intro.title}
+                {card.title}
               </DialogTitle>
             </DialogHeader>
-            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.28)_transparent]">
-              {intro.image_url && (
+            <div
+              ref={contentRef}
+              onScroll={checkScrollEnd}
+              className="min-h-0 flex-1 overflow-y-auto px-6 py-6 [scrollbar-width:thin]"
+            >
+              {card.image_url && (
                 <div className="mb-6 flex justify-center">
                   <img
-                    src={intro.image_url}
-                    alt={intro.title}
-                    className="aspect-square w-full max-w-sm rounded-2xl border border-white/10 object-cover shadow-lg"
+                    src={card.image_url}
+                    alt={card.title}
+                    className="aspect-square w-full max-w-sm rounded-2xl border object-cover shadow-sm"
                   />
                 </div>
               )}
-              {intro.summary && (
-                <p className="mb-5 text-base font-medium leading-8 text-white/85">
-                  {intro.summary}
+              {card.summary && (
+                <p className="mb-5 text-base font-medium leading-8 text-foreground">
+                  {card.summary}
                 </p>
               )}
-              <div className="whitespace-pre-line text-sm leading-8 text-white/70">
-                {intro.content ?? "Chưa có nội dung chi tiết."}
+              <div className="whitespace-pre-line rounded-2xl bg-muted/25 p-5 text-sm leading-8 text-muted-foreground">
+                {card.content ?? "Chưa có nội dung chi tiết."}
               </div>
             </div>
-            {intro.link_url && (
-              <div className="shrink-0 border-t border-white/10 bg-slate-950/95 px-6 py-4">
-                <Button
-                  asChild
-                  className="ml-auto flex w-fit rounded-full bg-violet-500 text-white hover:bg-violet-400"
-                >
-                  <a href={intro.link_url} target="_blank" rel="noreferrer">
-                    Mở liên kết <ExternalLink className="ml-2 h-4 w-4" />
-                  </a>
-                </Button>
+            <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4">
+              <div className="flex w-full flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  {employeeMode && !completed && (
+                    <div>
+                      <label className="flex items-center gap-2 text-sm font-medium">
+                        <Checkbox
+                          checked={accepted}
+                          disabled={!reachedEnd}
+                          onCheckedChange={(value) => setAccepted(!!value)}
+                        />
+                        Tôi cam kết đã hiểu
+                      </label>
+                      {!reachedEnd && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Cuộn đến cuối nội dung để xác nhận.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {employeeMode && completed && (
+                    <Badge className="rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                      Đã hoàn thành
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  {card.link_url && (
+                    <Button variant="outline" asChild>
+                      <a href={card.link_url} target="_blank" rel="noreferrer">
+                        Mở liên kết <ExternalLink className="ml-2 h-4 w-4" />
+                      </a>
+                    </Button>
+                  )}
+                  {employeeMode && !completed && (
+                    <Button disabled={!reachedEnd || !accepted} onClick={() => onComplete(card)}>
+                      Đồng ý
+                    </Button>
+                  )}
+                </div>
               </div>
-            )}
+            </DialogFooter>
           </>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function QuizCta({ section, onClick }: { section: OnboardingSection; onClick: () => void }) {
+  return (
+    <div className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700">
+            <HelpCircle className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-indigo-950">Bạn đã hoàn thành nội dung section</h3>
+            <p className="mt-1 text-sm text-indigo-700/80">
+              Làm câu hỏi: {section.title} để mở khóa section tiếp theo.
+            </p>
+          </div>
+        </div>
+        <Button className="rounded-full" onClick={onClick}>
+          Làm câu hỏi: {section.title}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function QuizModal({
+  section,
+  questions,
+  draft,
+  onDraftChange,
+  onSubmit,
+  onOpenChange,
+}: {
+  section: OnboardingSection | null;
+  questions: OnboardingQuestion[];
+  draft: AnswerDraft;
+  onDraftChange: (draft: AnswerDraft) => void;
+  onSubmit: () => Promise<boolean>;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [submitting, setSubmitting] = useState(false);
+  const answeredCount = questions.filter((question) => {
+    const value = draft[question.id];
+    return Array.isArray(value) ? value.length > 0 : !!String(value ?? "").trim();
+  }).length;
+  const progress = questions.length ? Math.round((answeredCount / questions.length) * 100) : 0;
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try {
+      await onSubmit();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!section} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[85vh] max-w-3xl flex-col gap-0 overflow-hidden rounded-3xl p-0 [&>button]:rounded-full">
+        {section && (
+          <>
+            <DialogHeader className="shrink-0 border-b bg-background/95 px-6 py-5 pr-14 text-left">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700">
+                  <HelpCircle className="h-5 w-5" />
+                </div>
+                <div>
+                  <DialogTitle className="text-xl font-bold">Câu hỏi: {section.title}</DialogTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Trả lời đầy đủ để mở khóa phần tiếp theo.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 flex items-center gap-3">
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-indigo-500 transition-all"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <span className="text-xs font-semibold text-muted-foreground">
+                  {answeredCount}/{questions.length}
+                </span>
+              </div>
+            </DialogHeader>
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-6 [scrollbar-width:thin]">
+              {questions.length ? (
+                questions.map((question, index) => (
+                  <div key={question.id} className="rounded-2xl border bg-muted/20 p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <Badge variant="secondary" className="rounded-full">
+                        Câu {index + 1}/{questions.length}
+                      </Badge>
+                      <Badge className="rounded-full bg-background text-foreground hover:bg-background">
+                        {question.question_type === "text"
+                          ? "Tự luận"
+                          : question.question_type === "multiple_choice"
+                            ? "Một lựa chọn"
+                            : "Nhiều lựa chọn"}
+                      </Badge>
+                    </div>
+                    <QuestionAnswer
+                      question={question}
+                      value={draft[question.id]}
+                      onChange={(value) => onDraftChange({ ...draft, [question.id]: value })}
+                    />
+                  </div>
+                ))
+              ) : (
+                <EmptyState text="Section này chưa có câu hỏi." />
+              )}
+            </div>
+            <DialogFooter className="shrink-0 border-t bg-background/95 px-6 py-4">
+              <div className="flex w-full flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Nếu chưa đạt, bạn có thể chỉnh lại câu trả lời và nộp lại.
+                </p>
+                <Button
+                  className="rounded-full"
+                  disabled={submitting || questions.length === 0}
+                  onClick={handleSubmit}
+                >
+                  {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Nộp câu trả lời
+                </Button>
+              </div>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SectionQuiz({
+  questions,
+  answered,
+  isAdmin,
+  onEditQuestion,
+  onDeleteQuestion,
+}: {
+  questions: OnboardingQuestion[];
+  answered: boolean;
+  isAdmin: boolean;
+  onEditQuestion: (question: OnboardingQuestion) => void;
+  onDeleteQuestion: (questionId: string) => void;
+}) {
+  if (!questions.length) return null;
+
+  return (
+    <div className="mt-5 rounded-2xl border bg-muted/20 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="flex items-center gap-2 font-semibold">
+            <HelpCircle className="h-4 w-4 text-primary" />
+            Câu hỏi cuối section
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Employee cần hoàn thành phần này để mở section tiếp theo.
+          </p>
+        </div>
+        {answered && (
+          <Badge className="rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+            Đã hoàn thành
+          </Badge>
+        )}
+      </div>
+
+      {isAdmin && (
+        <div className="mt-3 space-y-2">
+          {questions.map((question) => (
+            <div
+              key={question.id}
+              className="flex items-center justify-between gap-3 rounded-xl border bg-background px-3 py-2 text-sm"
+            >
+              <span className="line-clamp-1">{question.question_text}</span>
+              <div className="flex gap-1">
+                {!question.is_active && <Badge variant="secondary">Ẩn</Badge>}
+                <Button variant="ghost" size="icon" onClick={() => onEditQuestion(question)}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => onDeleteQuestion(question.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!isAdmin && (
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          {questions.map((question) => (
+            <div key={question.id} className="rounded-xl border bg-background px-3 py-2 text-sm">
+              <div className="font-medium">{question.question_text}</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {question.question_type === "text"
+                  ? "Câu trả lời tự luận"
+                  : getQuestionOptions(question).join(", ")}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QuestionAnswer({
+  question,
+  value,
+  onChange,
+}: {
+  question: OnboardingQuestion;
+  value: string | string[] | undefined;
+  onChange: (value: string | string[]) => void;
+}) {
+  const options = getQuestionOptions(question);
+  if (question.question_type === "multiple_choice") {
+    return (
+      <Field label={question.question_text}>
+        <Select value={typeof value === "string" ? value : ""} onValueChange={onChange}>
+          <SelectTrigger>
+            <SelectValue placeholder="Chọn câu trả lời" />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+    );
+  }
+  if (question.question_type === "checkbox") {
+    const values = Array.isArray(value) ? value : [];
+    return (
+      <Field label={question.question_text}>
+        <div className="space-y-2 rounded-xl border bg-background p-3">
+          {options.map((option) => (
+            <label key={option} className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={values.includes(option)}
+                onCheckedChange={(checked) => {
+                  onChange(
+                    checked ? [...values, option] : values.filter((item) => item !== option),
+                  );
+                }}
+              />
+              {option}
+            </label>
+          ))}
+        </div>
+      </Field>
+    );
+  }
+  return (
+    <Field label={question.question_text}>
+      <Textarea
+        className="min-h-24"
+        value={typeof value === "string" ? value : ""}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Nhập câu trả lời"
+      />
+    </Field>
+  );
+}
+
+function DocumentCard({
+  document,
+  canEdit,
+  onEdit,
+  onDelete,
+}: {
+  document: OnboardingDocument;
+  canEdit: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="rounded-3xl border bg-background p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-100 text-blue-700">
+          <FileText className="h-5 w-5" />
+        </div>
+        <div className="flex items-center gap-1">
+          <Badge variant="secondary" className="rounded-full">
+            {document.document_type ?? "Tài liệu"}
+          </Badge>
+          {canEdit && (
+            <>
+              {!document.is_active && <Badge variant="secondary">Ẩn</Badge>}
+              <Button variant="ghost" size="icon" onClick={onEdit}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={onDelete}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+      <h3 className="mt-5 line-clamp-2 text-lg font-bold">{document.title}</h3>
+      <p className="mt-2 line-clamp-3 min-h-14 text-sm leading-6 text-muted-foreground">
+        {document.description ?? "Chưa có mô tả."}
+      </p>
+      {document.link_url && (
+        <Button variant="outline" className="mt-4 w-full rounded-full bg-background" asChild>
+          <a href={document.link_url} target="_blank" rel="noreferrer">
+            Mở <ExternalLink className="ml-2 h-4 w-4" />
+          </a>
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function CardFormDialog({
+  open,
+  onOpenChange,
+  form,
+  sections,
+  setForm,
+  onSave,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  form: CardFormState;
+  sections: OnboardingSection[];
+  setForm: (form: CardFormState) => void;
+  onSave: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{form.id ? "Sửa thẻ onboarding" : "Thêm thẻ onboarding"}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 md:grid-cols-[120px_1fr_150px]">
+          <Field label="Icon/emoji">
+            <Input
+              value={form.icon}
+              onChange={(event) => setForm({ ...form, icon: event.target.value })}
+            />
+          </Field>
+          <Field label="Tiêu đề">
+            <Input
+              value={form.title}
+              onChange={(event) => setForm({ ...form, title: event.target.value })}
+            />
+          </Field>
+          <Field label="Section">
+            <Select
+              value={form.section_id}
+              onValueChange={(value) => setForm({ ...form, section_id: value })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Chọn section" />
+              </SelectTrigger>
+              <SelectContent>
+                {sections.map((section) => (
+                  <SelectItem key={section.id} value={section.id}>
+                    {section.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <div className="md:col-span-3">
+            <Label>Mô tả ngắn</Label>
+            <Textarea
+              className="mt-1 min-h-20"
+              value={form.summary}
+              onChange={(event) => setForm({ ...form, summary: event.target.value })}
+            />
+          </div>
+          <Field label="Ảnh URL">
+            <Input
+              value={form.image_url}
+              onChange={(event) => setForm({ ...form, image_url: event.target.value })}
+            />
+          </Field>
+          <Field label="Link URL">
+            <Input
+              value={form.link_url}
+              onChange={(event) => setForm({ ...form, link_url: event.target.value })}
+            />
+          </Field>
+          <Field label="Thứ tự">
+            <Input
+              type="number"
+              value={form.sort_order}
+              onChange={(event) =>
+                setForm({ ...form, sort_order: Number(event.target.value) || 0 })
+              }
+            />
+          </Field>
+          <label className="flex items-center gap-2 text-sm md:col-span-3">
+            <Checkbox
+              checked={form.is_active}
+              onCheckedChange={(value) => setForm({ ...form, is_active: !!value })}
+            />
+            Đang hiển thị
+          </label>
+          <div className="md:col-span-3">
+            <Label>Nội dung chi tiết</Label>
+            <Textarea
+              className="mt-1 min-h-40"
+              value={form.content}
+              onChange={(event) => setForm({ ...form, content: event.target.value })}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <X className="mr-2 h-4 w-4" /> Hủy
+          </Button>
+          <Button onClick={onSave}>
+            <Save className="mr-2 h-4 w-4" /> Lưu
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function QuestionFormDialog({
+  open,
+  onOpenChange,
+  form,
+  sections,
+  setForm,
+  onSave,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  form: QuestionFormState;
+  sections: OnboardingSection[];
+  setForm: (form: QuestionFormState) => void;
+  onSave: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{form.id ? "Sửa câu hỏi" : "Thêm câu hỏi"}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <Field label="Section">
+            <Select
+              value={form.section_id}
+              onValueChange={(value) => setForm({ ...form, section_id: value })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Chọn section" />
+              </SelectTrigger>
+              <SelectContent>
+                {sections.map((section) => (
+                  <SelectItem key={section.id} value={section.id}>
+                    {section.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Câu hỏi">
+            <Textarea
+              className="min-h-24"
+              value={form.question_text}
+              onChange={(event) => setForm({ ...form, question_text: event.target.value })}
+            />
+          </Field>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Loại câu hỏi">
+              <Select
+                value={form.question_type}
+                onValueChange={(value) =>
+                  setForm({ ...form, question_type: value as QuestionType })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="text">Text</SelectItem>
+                  <SelectItem value="multiple_choice">Multiple choice</SelectItem>
+                  <SelectItem value="checkbox">Checkbox</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Thứ tự">
+              <Input
+                type="number"
+                value={form.sort_order}
+                onChange={(event) =>
+                  setForm({ ...form, sort_order: Number(event.target.value) || 0 })
+                }
+              />
+            </Field>
+          </div>
+          {form.question_type !== "text" && (
+            <Field label="Lựa chọn, mỗi dòng một đáp án">
+              <Textarea
+                className="min-h-28"
+                value={form.optionsText}
+                onChange={(event) => setForm({ ...form, optionsText: event.target.value })}
+              />
+            </Field>
+          )}
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={form.is_active}
+              onCheckedChange={(value) => setForm({ ...form, is_active: !!value })}
+            />
+            Đang hiển thị
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Hủy
+          </Button>
+          <Button onClick={onSave}>Lưu</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DocumentFormDialog({
+  open,
+  onOpenChange,
+  form,
+  setForm,
+  onSave,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  form: DocumentFormState;
+  setForm: (form: DocumentFormState) => void;
+  onSave: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{form.id ? "Sửa tài liệu" : "Thêm tài liệu"}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <Field label="Tiêu đề">
+            <Input
+              value={form.title}
+              onChange={(event) => setForm({ ...form, title: event.target.value })}
+            />
+          </Field>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Loại tài liệu">
+              <Input
+                value={form.document_type}
+                onChange={(event) => setForm({ ...form, document_type: event.target.value })}
+              />
+            </Field>
+            <Field label="Thứ tự">
+              <Input
+                type="number"
+                value={form.sort_order}
+                onChange={(event) =>
+                  setForm({ ...form, sort_order: Number(event.target.value) || 0 })
+                }
+              />
+            </Field>
+          </div>
+          <Field label="Link URL">
+            <Input
+              value={form.link_url}
+              onChange={(event) => setForm({ ...form, link_url: event.target.value })}
+            />
+          </Field>
+          <Field label="Mô tả ngắn">
+            <Textarea
+              className="min-h-24"
+              value={form.description}
+              onChange={(event) => setForm({ ...form, description: event.target.value })}
+            />
+          </Field>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={form.is_active}
+              onCheckedChange={(value) => setForm({ ...form, is_active: !!value })}
+            />
+            Đang hiển thị
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Hủy
+          </Button>
+          <Button onClick={onSave}>Lưu</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SectionIcon({ index }: { index: number }) {
+  const classes = "h-5 w-5";
+  if (index === 0) return <BookOpenCheck className={cn(classes, "text-indigo-600")} />;
+  if (index === 1) return <GraduationCap className={cn(classes, "text-emerald-600")} />;
+  return <CheckCircle2 className={cn(classes, "text-violet-600")} />;
+}
+
+function SectionStatusBadge({
+  locked,
+  complete,
+  unlocked,
+}: {
+  locked: boolean;
+  complete: boolean;
+  unlocked: boolean;
+}) {
+  if (complete) {
+    return (
+      <Badge className="rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+        <CheckCircle2 className="mr-1 h-3 w-3" /> Hoàn thành
+      </Badge>
+    );
+  }
+  if (locked) {
+    return (
+      <Badge variant="secondary" className="rounded-full">
+        <Lock className="mr-1 h-3 w-3" /> Đang khóa
+      </Badge>
+    );
+  }
+  if (unlocked) {
+    return (
+      <Badge className="rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-100">
+        Đang mở
+      </Badge>
+    );
+  }
+  return null;
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="mt-5 rounded-2xl border border-dashed bg-muted/20 p-8 text-center">
+      <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-background text-muted-foreground shadow-sm">
+        <FileText className="h-5 w-5" />
+      </div>
+      <div className="mt-3 text-sm font-medium text-muted-foreground">{text}</div>
+    </div>
   );
 }
 
@@ -455,4 +1928,20 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <div className="mt-1">{children}</div>
     </div>
   );
+}
+
+function getQuestionOptions(question: OnboardingQuestion) {
+  return Array.isArray(question.options)
+    ? question.options.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function groupBy<T extends Record<string, unknown>>(items: T[], key: keyof T) {
+  const map = new Map<string, T[]>();
+  items.forEach((item) => {
+    const value = String(item[key] ?? "");
+    if (!map.has(value)) map.set(value, []);
+    map.get(value)!.push(item);
+  });
+  return map;
 }
