@@ -34,36 +34,60 @@ const sheetRows = [
 ] as const;
 
 type SheetRowLabel = (typeof sheetRows)[number];
+type MetricKey =
+  | "ads_cost"
+  | "mess"
+  | "cp_mess"
+  | "data"
+  | "cp_data"
+  | "closed_orders"
+  | "close_rate"
+  | "daily_revenue"
+  | "avg_order"
+  | "cost_per_revenue_day"
+  | "total_orders"
+  | "total_revenue"
+  | "cost_per_total_revenue"
+  | "recovered_revenue";
 
-const sheetValueTone: Partial<Record<SheetRowLabel, "green" | "bright" | "red">> = {
-  "CP/MESS": "green",
-  "CP/Data": "green",
-  "Tỉ lệ chốt": "bright",
-  "TB Đơn": "green",
-  "CP/DS": "red",
-  "CP / Tổng DS": "red",
-  "Doanh số chốt lại": "green",
+const staticMetricTone: Partial<Record<MetricKey, "green" | "red">> = {
+  cp_mess: "green",
+  cp_data: "green",
+  avg_order: "green",
+  recovered_revenue: "green",
 };
 
 export const ReportSheetImageTemplate = forwardRef<HTMLDivElement, { data: ReportSheetImageData }>(
   function ReportSheetImageTemplate({ data }, ref) {
     const c = calculateReportMetrics(data);
     const recovered = data.recovered_revenue ?? c.recovered;
-    const rows: Array<{ label: SheetRowLabel; value: string }> = [
-      { label: "Chi Phí Ads", value: fmtVnd(data.ads_cost) },
-      { label: "MESS", value: fmtInt(data.mess_count) },
-      { label: "CP/MESS", value: fmtVnd(c.cp_mess) },
-      { label: "Data", value: fmtInt(data.data_count) },
-      { label: "CP/Data", value: fmtVnd(c.cp_data) },
-      { label: "Đơn chốt DATA trong ngày", value: fmtInt(data.closed_orders) },
-      { label: "Tỉ lệ chốt", value: sheetPercent(c.conv_rate, 0) },
-      { label: "DOANH SỐ DATA trong ngày", value: fmtVnd(data.daily_data_revenue) },
-      { label: "TB Đơn", value: fmtVnd(c.avg_order) },
-      { label: "CP/DS", value: sheetPercent(c.cp_daily_pct, 2) },
-      { label: "Tổng Đơn Chốt", value: fmtInt(data.total_orders) },
-      { label: "Tổng Doanh Số", value: fmtVnd(data.total_revenue) },
-      { label: "CP / Tổng DS", value: sheetPercent(c.cp_total_pct, 2) },
-      { label: "Doanh số chốt lại", value: fmtVnd(recovered) },
+    const rows: Array<{ key: MetricKey; label: SheetRowLabel; value: string }> = [
+      { key: "ads_cost", label: "Chi Phí Ads", value: fmtVnd(data.ads_cost) },
+      { key: "mess", label: "MESS", value: fmtInt(data.mess_count) },
+      { key: "cp_mess", label: "CP/MESS", value: fmtVnd(c.cp_mess) },
+      { key: "data", label: "Data", value: fmtInt(data.data_count) },
+      { key: "cp_data", label: "CP/Data", value: fmtVnd(c.cp_data) },
+      {
+        key: "closed_orders",
+        label: "Đơn chốt DATA trong ngày",
+        value: fmtInt(data.closed_orders),
+      },
+      { key: "close_rate", label: "Tỉ lệ chốt", value: sheetPercent(c.conv_rate, 0) },
+      {
+        key: "daily_revenue",
+        label: "DOANH SỐ DATA trong ngày",
+        value: fmtVnd(data.daily_data_revenue),
+      },
+      { key: "avg_order", label: "TB Đơn", value: fmtVnd(c.avg_order) },
+      { key: "cost_per_revenue_day", label: "CP/DS", value: sheetPercent(c.cp_daily_pct, 2) },
+      { key: "total_orders", label: "Tổng Đơn Chốt", value: fmtInt(data.total_orders) },
+      { key: "total_revenue", label: "Tổng Doanh Số", value: fmtVnd(data.total_revenue) },
+      {
+        key: "cost_per_total_revenue",
+        label: "CP / Tổng DS",
+        value: sheetPercent(c.cp_total_pct, 2),
+      },
+      { key: "recovered_revenue", label: "Doanh số chốt lại", value: fmtVnd(recovered) },
     ];
     const dateLabel = data.dateLabel ?? (data.reportDate ? formatDateVN(data.reportDate) : "—");
     const titleLine = normalizeSheetHeaderLine(
@@ -100,7 +124,7 @@ export const ReportSheetImageTemplate = forwardRef<HTMLDivElement, { data: Repor
               </div>
               <div
                 className={`flex items-center justify-end border-b-2 border-r-2 border-black px-2 text-right ${sheetCellToneClass(
-                  sheetValueTone[row.label],
+                  getMetricTone(row.key, row.value),
                 )}`}
               >
                 {row.value}
@@ -113,11 +137,29 @@ export const ReportSheetImageTemplate = forwardRef<HTMLDivElement, { data: Repor
   },
 );
 
-function sheetCellToneClass(tone: "green" | "bright" | "red" | undefined) {
-  if (tone === "green") return "bg-[#b7d7a8]";
-  if (tone === "bright") return "bg-[#62ef45]";
-  if (tone === "red") return "bg-[#ef2f25] text-[#6b1110]";
+function sheetCellToneClass(tone: "green" | "red" | undefined) {
+  if (tone === "green") return "bg-[#63F13A]";
+  if (tone === "red") return "bg-[#FF2A23] text-[#6b1110]";
   return "bg-[#fff4cf]";
+}
+
+function getMetricTone(metricKey: MetricKey, value: string): "green" | "red" | undefined {
+  const percent = getPercentValue(value);
+  if (metricKey === "close_rate") {
+    if (percent == null) return undefined;
+    return percent <= 40 ? "red" : "green";
+  }
+  if (metricKey === "cost_per_revenue_day" || metricKey === "cost_per_total_revenue") {
+    if (percent == null) return undefined;
+    return percent <= 55 ? "green" : "red";
+  }
+  return staticMetricTone[metricKey];
+}
+
+function getPercentValue(value: string) {
+  const normalized = value.replace("%", "").replace(",", ".").trim();
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function sheetPercent(v: number | null | undefined, digits: number) {
