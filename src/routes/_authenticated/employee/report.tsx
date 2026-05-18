@@ -30,6 +30,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock3,
+  FolderOpen,
   Loader2,
   Save,
   Send,
@@ -37,6 +38,7 @@ import {
 import { toast } from "sonner";
 import { SubmittedReportCard, type SubmittedReportData } from "@/components/SubmittedReportCard";
 import { isReconciliationSlot } from "@/lib/reportAudit";
+import { chooseReportImageDirectory } from "@/utils/reportImageStorage";
 
 export const Route = createFileRoute("/_authenticated/employee/report")({
   component: EmployeeReport,
@@ -816,6 +818,16 @@ function SlotForm({
 
           {!locked && (
             <div className="flex flex-wrap justify-end gap-2 rounded-lg border bg-card/95 p-2 shadow-sm backdrop-blur">
+              <Button
+                size="icon"
+                variant="outline"
+                title="Chọn thư mục lưu ảnh báo cáo"
+                aria-label="Chọn thư mục lưu ảnh báo cáo"
+                onClick={() => void chooseReportImageDirectory()}
+                disabled={saving}
+              >
+                <FolderOpen className="h-4 w-4" />
+              </Button>
               <Button size="sm" variant="secondary" onClick={() => save("draft")} disabled={saving}>
                 <Save className="mr-2 h-4 w-4" /> Lưu nháp
               </Button>

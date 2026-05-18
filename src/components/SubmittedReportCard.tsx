@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { toPng } from "html-to-image";
 import { CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Camera, Download, X } from "lucide-react";
+import { Camera } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
@@ -14,7 +14,7 @@ import {
   formatDateTimeVN,
   calculateReportMetrics,
 } from "@/lib/reports";
-import { saveReportDataUrlToPreferredFolder } from "@/lib/reportScreenshotStorage";
+import { saveReportImage } from "@/utils/reportImageStorage";
 
 export interface SubmittedReportData {
   fullName: string;
@@ -56,10 +56,9 @@ export function SubmittedReportCard({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
-  const [preview, setPreview] = useState<string | null>(null);
   const c = calc(data);
   const recoveredNeg = c.recovered < 0;
-  const exportFilename = reportExportFilename(data.slotName, data.reportDate);
+  const exportFilename = reportExportFilename(data.fullName, data.slotName, data.reportDate);
 
   const handleCapture = async () => {
     if (!ref.current) return;
@@ -70,24 +69,13 @@ export function SubmittedReportCard({
         pixelRatio: 2,
         backgroundColor: "#ffffff",
       });
-      if (await saveReportDataUrlToPreferredFolder(exportFilename, dataUrl)) {
-        return;
-      }
-      setPreview(dataUrl);
+      const blob = await (await fetch(dataUrl)).blob();
+      await saveReportImage(blob, exportFilename);
     } catch {
       toast.error("Chụp màn hình thất bại");
     } finally {
       setBusy(false);
     }
-  };
-
-  const downloadPreview = () => {
-    if (!preview) return;
-    const link = document.createElement("a");
-    link.download = exportFilename;
-    link.href = preview;
-    link.click();
-    toast.success("Đã tải ảnh báo cáo");
   };
 
   const Row = ({ label, value, danger }: { label: string; value: string; danger?: boolean }) => (
@@ -204,37 +192,27 @@ export function SubmittedReportCard({
           </div>
         </DialogContent>
       </Dialog>
-
-      <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}>
-        <DialogContent className="max-w-2xl border-0 bg-slate-950 p-0 text-white shadow-2xl">
-          <DialogHeader className="border-b border-white/10 px-4 py-3">
-            <DialogTitle className="text-sm">Preview ảnh báo cáo</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 p-4">
-            {preview && (
-              <div className="max-h-[70vh] overflow-auto rounded-lg bg-white p-2">
-                <img src={preview} alt="Report preview" className="mx-auto max-w-full rounded" />
-              </div>
-            )}
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button variant="secondary" size="sm" onClick={downloadPreview}>
-                <Download className="mr-2 h-4 w-4" />
-                Tải ảnh
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setPreview(null)}>
-                <X className="mr-2 h-4 w-4" />
-                Đóng
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }
 
-function reportExportFilename(slotName: string, reportDate: string) {
-  const hhmm = slotName.replace(/\D/g, "").padEnd(4, "0").slice(0, 4) || "0000";
-  const [year, month, day] = reportDate.split("-");
-  return `${hhmm}_${day}${month}${year}.png`;
+function reportExportFilename(employeeName: string, slotName: string, reportDate: string) {
+  return `report-${slugify(employeeName)}-${reportDate}-${slugifySlot(slotName)}.png`;
+}
+
+function slugify(value: string) {
+  return (
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/đ/g, "d")
+      .replace(/Đ/g, "D")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "marketing"
+  );
+}
+
+function slugifySlot(value: string) {
+  return value.toLowerCase().replace(/\s+/g, "").replace(":", "h");
 }
