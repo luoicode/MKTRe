@@ -146,7 +146,7 @@ function LoginPage() {
       <div className="w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center">
           <img src="/favicon_main.png" alt="MKTRe" className="h-16 w-16 rounded-2xl object-cover" />
-          <h1 className="text-2xl font-bold tracking-tight">Marketing Report</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Workspace MIZ</h1>
           <p className="mt-1 text-sm text-muted-foreground">Hệ thống nội bộ</p>
         </div>
 

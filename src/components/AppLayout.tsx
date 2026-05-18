@@ -193,7 +193,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <img src="/favicon_main.png" alt="MKTRe" className="h-full w-full object-cover" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-sidebar-foreground">MKTRe</p>
+            <p className="text-sm font-semibold text-sidebar-foreground">Workspace MIZ</p>
             <p className="text-xs text-sidebar-foreground/60">Báo cáo nội bộ</p>
           </div>
         </div>
@@ -325,7 +325,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <Button variant="ghost" size="icon" onClick={() => setOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
-          <span className="text-sm font-semibold">MKTRe</span>
+          <span className="text-sm font-semibold">Workspace MIZ</span>
           <div className="flex items-center gap-1">
             <NotificationsBell />
             {UserMenu}
