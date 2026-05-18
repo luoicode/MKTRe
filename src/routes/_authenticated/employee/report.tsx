@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -314,12 +314,14 @@ async function ensureReportSlotNotification(
 
 export function EmployeeReport() {
   const { profile, role } = useAuth();
+  const navigate = useNavigate();
   const { data: slots } = useSlots();
   const [date] = useState(todayStr());
   const [now, setNow] = useState(() => new Date());
   const [activeSlot, setActiveSlot] = useState<string | undefined>();
   const [submitted, setSubmitted] = useState<SubmittedReportData | null>(null);
   const [reportNotificationKeys, setReportNotificationKeys] = useState<Set<string>>(new Set());
+  const [checkingIn, setCheckingIn] = useState(false);
   const qc = useQueryClient();
   const entrySlots = useMemo(() => buildEntrySlots(slots, date), [slots, date]);
   const todaySlots = entrySlots.filter((s) => s.group === "today");
@@ -336,6 +338,42 @@ export function EmployeeReport() {
         .in("report_date", [date, addDays(date, -1)]);
       if (error) throw error;
       return data ?? [];
+    },
+  });
+  const shouldGateReport = !!profile && (role === "employee" || role === "leader");
+  const {
+    data: attendanceGate,
+    isLoading: attendanceGateLoading,
+    refetch: refetchAttendanceGate,
+  } = useQuery({
+    queryKey: ["report-attendance-gate", profile?.id, date],
+    enabled: shouldGateReport,
+    queryFn: async () => {
+      const [attendanceResult, leaveResult] = await Promise.all([
+        supabase
+          .from("attendance_records")
+          .select("status")
+          .eq("user_id", profile!.id)
+          .eq("attendance_date", date)
+          .maybeSingle(),
+        supabase
+          .from("leave_requests")
+          .select("id")
+          .eq("user_id", profile!.id)
+          .eq("status", "approved")
+          .lte("start_date", date)
+          .gte("end_date", date)
+          .limit(1),
+      ]);
+      if (attendanceResult.error) throw attendanceResult.error;
+      if (leaveResult.error) throw leaveResult.error;
+
+      const attendanceStatus = attendanceResult.data?.status;
+      const hasApprovedLeave =
+        attendanceStatus === "approved_leave" || (leaveResult.data ?? []).length > 0;
+      return {
+        unlocked: attendanceStatus === "present" || hasApprovedLeave,
+      };
     },
   });
   const { data: exportContext } = useQuery({
@@ -445,134 +483,196 @@ export function EmployeeReport() {
     setSubmitted(payload);
   };
 
+  const handleCheckInNow = async () => {
+    if (!profile) return;
+    setCheckingIn(true);
+    const { error } = await supabase.from("attendance_records").upsert(
+      {
+        user_id: profile.id,
+        attendance_date: date,
+        status: "present",
+        checked_in_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,attendance_date" },
+    );
+    setCheckingIn(false);
+    if (error) {
+      toast.error(`Không thể điểm danh: ${error.message}`);
+      return;
+    }
+    toast.success("Đã điểm danh hôm nay");
+    await refetchAttendanceGate();
+    qc.invalidateQueries({ queryKey: ["attendance"] });
+  };
+
+  const openLeaveRequest = () => {
+    void navigate({ to: role === "leader" ? "/leader/attendance" : "/employee/attendance" });
+  };
+
+  const reportLocked = shouldGateReport && attendanceGate?.unlocked !== true;
+
   return (
-    <div className="w-full min-w-0 space-y-3 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden">
-      <div className="shrink-0">
-        <h1 className="text-xl font-bold tracking-tight md:text-2xl">Báo cáo của bạn</h1>
-        <p className="text-sm text-muted-foreground">
-          Hôm nay: {formatDateVN(date)}
-          {activeEntry && (
-            <>
-              {" "}
-              · Đang nhập: {activeEntry.groupLabel} ({formatDateVN(activeEntry.reportDate)})
-            </>
-          )}
-        </p>
+    <div className="relative h-full min-h-0 w-full">
+      <div
+        className={`w-full min-w-0 space-y-3 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden ${
+          reportLocked ? "pointer-events-none select-none blur-sm" : ""
+        }`}
+        aria-hidden={reportLocked}
+      >
+        <div className="shrink-0">
+          <h1 className="text-xl font-bold tracking-tight md:text-2xl">Báo cáo của bạn</h1>
+          <p className="text-sm text-muted-foreground">
+            Hôm nay: {formatDateVN(date)}
+            {activeEntry && (
+              <>
+                {" "}
+                · Đang nhập: {activeEntry.groupLabel} ({formatDateVN(activeEntry.reportDate)})
+              </>
+            )}
+          </p>
+        </div>
+
+        {!slots ? (
+          <div className="flex justify-center py-10 md:min-h-0 md:flex-1 md:items-center">
+            <Loader2 className="h-6 w-6 animate-spin" />
+          </div>
+        ) : (
+          <Tabs
+            value={activeSlot}
+            onValueChange={(v) => {
+              setActiveSlot(v);
+              setSubmitted(null);
+            }}
+            className="md:flex md:min-h-0 md:flex-1 md:flex-col"
+          >
+            <div className="grid shrink-0 gap-2 md:grid-cols-[1fr_200px]">
+              <Card>
+                <CardHeader className="px-3 py-2">
+                  <CardTitle className="text-base">Hôm nay</CardTitle>
+                  <CardDescription>11h55, 16h55, 21h00</CardDescription>
+                </CardHeader>
+                <CardContent className="px-3 pb-3 pt-0">
+                  <TabsList className="grid h-auto w-full grid-cols-1 gap-1 bg-muted/50 p-1 sm:grid-cols-3">
+                    {todaySlots.map((s) => {
+                      const visual = slotVisual(
+                        s,
+                        now,
+                        reportBySlotDate.get(`${s.reportDate}:${s.id}`),
+                      );
+                      const Icon = visual.icon;
+                      return (
+                        <TabsTrigger
+                          key={s.id}
+                          value={s.id}
+                          className={`h-auto items-start justify-start gap-2 border py-1.5 text-left ${visual.className}`}
+                        >
+                          <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+                          <span className="min-w-0">
+                            <span className="block font-semibold">{s.slot_name}</span>
+                            <span
+                              className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] ${visual.badge}`}
+                            >
+                              {visual.label}
+                            </span>
+                          </span>
+                        </TabsTrigger>
+                      );
+                    })}
+                  </TabsList>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="px-3 py-2">
+                  <CardTitle className="text-base">Hôm trước</CardTitle>
+                  <CardDescription>{formatDateVN(addDays(date, -1))}</CardDescription>
+                </CardHeader>
+                <CardContent className="px-3 pb-3 pt-0">
+                  <TabsList className="grid h-auto w-full grid-cols-1 bg-muted/50 p-1">
+                    {previousDaySlots.map((s) => {
+                      const visual = slotVisual(
+                        s,
+                        now,
+                        reportBySlotDate.get(`${s.reportDate}:${s.id}`),
+                      );
+                      const Icon = visual.icon;
+                      return (
+                        <TabsTrigger
+                          key={s.id}
+                          value={s.id}
+                          className={`h-auto items-start justify-start gap-2 border py-1.5 text-left ${visual.className}`}
+                        >
+                          <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+                          <span className="min-w-0">
+                            <span className="block font-semibold">{s.slot_name}</span>
+                            <span
+                              className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] ${visual.badge}`}
+                            >
+                              {visual.label}
+                            </span>
+                          </span>
+                        </TabsTrigger>
+                      );
+                    })}
+                  </TabsList>
+                </CardContent>
+              </Card>
+            </div>
+            {entrySlots.map((s) => (
+              <TabsContent
+                key={s.id}
+                value={s.id}
+                className="mt-3 md:min-h-0 md:flex-1 md:overflow-hidden data-[state=active]:md:block data-[state=inactive]:md:hidden"
+              >
+                {profile && activeSlot === s.id && (
+                  <SlotForm
+                    profileId={profile.id}
+                    fullName={profile.full_name}
+                    slotId={s.id}
+                    slotName={s.slot_name}
+                    date={s.reportDate}
+                    entrySlot={s}
+                    now={now}
+                    groupLabel={s.groupLabel}
+                    teamName={exportContext?.teamName ?? null}
+                    onSaved={() => qc.invalidateQueries({ queryKey: ["my-reports"] })}
+                    onSubmitted={handleSubmitted}
+                  />
+                )}
+              </TabsContent>
+            ))}
+          </Tabs>
+        )}
+
+        {submitted && <SubmittedReportCard data={submitted} onClose={() => setSubmitted(null)} />}
       </div>
 
-      {!slots ? (
-        <div className="flex justify-center py-10 md:min-h-0 md:flex-1 md:items-center">
-          <Loader2 className="h-6 w-6 animate-spin" />
+      {reportLocked ? (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/50 p-4 backdrop-blur-[2px]">
+          <Card className="w-full max-w-md border-primary/20 shadow-xl">
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-1 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                {attendanceGateLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Clock3 className="h-5 w-5" />
+                )}
+              </div>
+              <CardTitle>Bạn cần điểm danh trước</CardTitle>
+              <CardDescription>Vui lòng điểm danh hôm nay để mở khóa nhập báo cáo.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2 sm:flex-row">
+              <Button className="flex-1" onClick={handleCheckInNow} disabled={checkingIn}>
+                {checkingIn ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Điểm danh ngay
+              </Button>
+              <Button variant="outline" className="flex-1" onClick={openLeaveRequest}>
+                Xin nghỉ phép
+              </Button>
+            </CardContent>
+          </Card>
         </div>
-      ) : (
-        <Tabs
-          value={activeSlot}
-          onValueChange={(v) => {
-            setActiveSlot(v);
-            setSubmitted(null);
-          }}
-          className="md:flex md:min-h-0 md:flex-1 md:flex-col"
-        >
-          <div className="grid shrink-0 gap-2 md:grid-cols-[1fr_200px]">
-            <Card>
-              <CardHeader className="px-3 py-2">
-                <CardTitle className="text-base">Hôm nay</CardTitle>
-                <CardDescription>11h55, 16h55, 21h00</CardDescription>
-              </CardHeader>
-              <CardContent className="px-3 pb-3 pt-0">
-                <TabsList className="grid h-auto w-full grid-cols-1 gap-1 bg-muted/50 p-1 sm:grid-cols-3">
-                  {todaySlots.map((s) => {
-                    const visual = slotVisual(
-                      s,
-                      now,
-                      reportBySlotDate.get(`${s.reportDate}:${s.id}`),
-                    );
-                    const Icon = visual.icon;
-                    return (
-                      <TabsTrigger
-                        key={s.id}
-                        value={s.id}
-                        className={`h-auto items-start justify-start gap-2 border py-1.5 text-left ${visual.className}`}
-                      >
-                        <Icon className="mt-0.5 h-4 w-4 shrink-0" />
-                        <span className="min-w-0">
-                          <span className="block font-semibold">{s.slot_name}</span>
-                          <span
-                            className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] ${visual.badge}`}
-                          >
-                            {visual.label}
-                          </span>
-                        </span>
-                      </TabsTrigger>
-                    );
-                  })}
-                </TabsList>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="px-3 py-2">
-                <CardTitle className="text-base">Hôm trước</CardTitle>
-                <CardDescription>{formatDateVN(addDays(date, -1))}</CardDescription>
-              </CardHeader>
-              <CardContent className="px-3 pb-3 pt-0">
-                <TabsList className="grid h-auto w-full grid-cols-1 bg-muted/50 p-1">
-                  {previousDaySlots.map((s) => {
-                    const visual = slotVisual(
-                      s,
-                      now,
-                      reportBySlotDate.get(`${s.reportDate}:${s.id}`),
-                    );
-                    const Icon = visual.icon;
-                    return (
-                      <TabsTrigger
-                        key={s.id}
-                        value={s.id}
-                        className={`h-auto items-start justify-start gap-2 border py-1.5 text-left ${visual.className}`}
-                      >
-                        <Icon className="mt-0.5 h-4 w-4 shrink-0" />
-                        <span className="min-w-0">
-                          <span className="block font-semibold">{s.slot_name}</span>
-                          <span
-                            className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] ${visual.badge}`}
-                          >
-                            {visual.label}
-                          </span>
-                        </span>
-                      </TabsTrigger>
-                    );
-                  })}
-                </TabsList>
-              </CardContent>
-            </Card>
-          </div>
-          {entrySlots.map((s) => (
-            <TabsContent
-              key={s.id}
-              value={s.id}
-              className="mt-3 md:min-h-0 md:flex-1 md:overflow-hidden data-[state=active]:md:block data-[state=inactive]:md:hidden"
-            >
-              {profile && activeSlot === s.id && (
-                <SlotForm
-                  profileId={profile.id}
-                  fullName={profile.full_name}
-                  slotId={s.id}
-                  slotName={s.slot_name}
-                  date={s.reportDate}
-                  entrySlot={s}
-                  now={now}
-                  groupLabel={s.groupLabel}
-                  teamName={exportContext?.teamName ?? null}
-                  onSaved={() => qc.invalidateQueries({ queryKey: ["my-reports"] })}
-                  onSubmitted={handleSubmitted}
-                />
-              )}
-            </TabsContent>
-          ))}
-        </Tabs>
-      )}
-
-      {submitted && <SubmittedReportCard data={submitted} onClose={() => setSubmitted(null)} />}
+      ) : null}
     </div>
   );
 }

@@ -41,6 +41,7 @@ interface TaskDetailsModalProps {
   task: TaskDetailsTask | null;
   currentProfileId?: string;
   canManage: boolean;
+  canReview: boolean;
   onOpenChange: (open: boolean) => void;
   onEdit: (task: TaskDetailsTask) => void;
   onDelete: (taskId: string) => void;
@@ -54,6 +55,7 @@ export function TaskDetailsModal({
   task,
   currentProfileId,
   canManage,
+  canReview,
   onOpenChange,
   onEdit,
   onDelete,
@@ -207,7 +209,7 @@ export function TaskDetailsModal({
               <CheckCircle2 className="mr-2 h-4 w-4" /> Đã hoàn thành
             </Badge>
           )}
-          {canManage && status === "pending_review" && (
+          {canReview && status === "pending_review" && (
             <Button onClick={() => onReview(task)}>
               <ShieldCheck className="mr-2 h-4 w-4" /> Duyệt
             </Button>
