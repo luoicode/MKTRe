@@ -40,18 +40,7 @@ export async function chooseReportImageDirectory() {
 
 export async function saveReportImage(blob: Blob, filename: string) {
   const safeFilename = sanitizeFilename(filename);
-  const copiedToClipboard = await copyReportImageToClipboard(blob);
   const saveResult = await persistReportImage(blob, safeFilename);
-
-  if (copiedToClipboard && saveResult.saved) {
-    toast.success("Đã copy và lưu ảnh báo cáo");
-    return true;
-  }
-
-  if (copiedToClipboard) {
-    toast.success("Đã copy ảnh báo cáo vào clipboard");
-    return true;
-  }
 
   if (saveResult.saved && saveResult.message) {
     toast.success(saveResult.message);
@@ -69,14 +58,11 @@ async function persistReportImage(blob: Blob, safeFilename: string) {
     };
   }
 
-  let handle = cachedDirectoryHandle ?? (await getStoredDirectoryHandle());
+  const handle = cachedDirectoryHandle ?? (await getStoredDirectoryHandle());
   if (!handle || !(await ensureWritePermission(handle))) {
-    const selected = await chooseReportImageDirectory();
-    if (!selected) return { saved: false };
-    handle = cachedDirectoryHandle ?? (await getStoredDirectoryHandle());
+    downloadBlob(blob, safeFilename);
+    return { saved: true, message: "Đã tải ảnh báo cáo" };
   }
-
-  if (!handle) return { saved: false };
 
   try {
     await saveBlobToDirectory(handle, safeFilename, blob);
@@ -89,7 +75,7 @@ async function persistReportImage(blob: Blob, safeFilename: string) {
   }
 }
 
-async function copyReportImageToClipboard(blob: Blob) {
+export async function copyReportImageToClipboard(blob: Blob) {
   if (
     typeof navigator === "undefined" ||
     !navigator.clipboard?.write ||

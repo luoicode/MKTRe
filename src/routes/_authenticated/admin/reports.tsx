@@ -133,6 +133,25 @@ function AdminReports() {
           filename={teamReportExportFilename(now, normalizedRange.to, selectedTeamName)}
           screenshotMode={screenshot}
           onToggleScreenshot={() => setScreenshot((value) => !value)}
+          sheetData={
+            totals
+              ? {
+                  reportType: "team",
+                  reportDate: normalizedRange.to,
+                  dateLabel,
+                  title: selectedTeamName,
+                  channel: "FACEBOOK",
+                  ads_cost: totals.ads_cost,
+                  mess_count: totals.mess_count,
+                  data_count: totals.data_count,
+                  closed_orders: totals.closed_orders,
+                  daily_data_revenue: totals.daily_data_revenue,
+                  total_orders: totals.total_orders,
+                  total_revenue: totals.total_revenue,
+                  recovered_revenue: totals.recovered_revenue,
+                }
+              : undefined
+          }
         />
       </div>
 

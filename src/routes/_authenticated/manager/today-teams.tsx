@@ -208,6 +208,21 @@ function ManagerTodayTeams() {
           filename={`today-teams-${normalizedRange.from}-${normalizedRange.to}.png`}
           screenshotMode={screenshot}
           onToggleScreenshot={() => setScreenshot((v) => !v)}
+          sheetData={{
+            reportType: "team",
+            reportDate: normalizedRange.to,
+            dateLabel,
+            title: "Tất cả team",
+            channel: "FACEBOOK",
+            ads_cost: grand.ads,
+            mess_count: grand.mess,
+            data_count: grand.data,
+            closed_orders: grand.closed,
+            daily_data_revenue: grand.dailyRev,
+            total_orders: grand.orders,
+            total_revenue: grand.rev,
+            recovered_revenue: grand.recovered,
+          }}
         />
       </div>
 

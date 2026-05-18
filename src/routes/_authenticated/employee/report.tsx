@@ -338,6 +338,29 @@ export function EmployeeReport() {
       return data ?? [];
     },
   });
+  const { data: exportContext } = useQuery({
+    queryKey: ["report-export-context", profile?.id],
+    enabled: !!profile,
+    queryFn: async () => {
+      const { data: membership, error: membershipError } = await supabase
+        .from("team_memberships")
+        .select("team_id")
+        .eq("user_id", profile!.id)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+      if (membershipError) throw membershipError;
+      if (!membership?.team_id) return { teamName: null as string | null };
+
+      const { data: team, error: teamError } = await supabase
+        .from("teams")
+        .select("name")
+        .eq("id", membership.team_id)
+        .maybeSingle();
+      if (teamError) throw teamError;
+      return { teamName: team?.name ?? null };
+    },
+  });
   const reportBySlotDate = useMemo(
     () =>
       new Map(
@@ -357,12 +380,13 @@ export function EmployeeReport() {
       setActiveSlot(getAutoSlot(entrySlots, now));
       return;
     }
+    if (submitted) return;
     const next = getAutoSlot(entrySlots, now);
     if (shouldAutoAdvance(activeEntry, entrySlots, next, now)) {
       setActiveSlot(next);
       setSubmitted(null);
     }
-  }, [entrySlots, activeSlot, activeEntry, now]);
+  }, [entrySlots, activeSlot, activeEntry, now, submitted]);
 
   useEffect(() => {
     if (!profile || (role !== "employee" && role !== "leader") || !slotReports) return;
@@ -419,11 +443,6 @@ export function EmployeeReport() {
 
   const handleSubmitted = (payload: SubmittedReportData) => {
     setSubmitted(payload);
-    const ordered = payload.reportDate === date ? todaySlots : previousDaySlots;
-    const idx = ordered.findIndex((s) => s.id === activeSlot);
-    if (idx >= 0 && idx < ordered.length - 1) {
-      setActiveSlot(ordered[idx + 1].id);
-    }
   };
 
   return (
@@ -543,6 +562,7 @@ export function EmployeeReport() {
                   entrySlot={s}
                   now={now}
                   groupLabel={s.groupLabel}
+                  teamName={exportContext?.teamName ?? null}
                   onSaved={() => qc.invalidateQueries({ queryKey: ["my-reports"] })}
                   onSubmitted={handleSubmitted}
                 />
@@ -598,6 +618,7 @@ function SlotForm({
   entrySlot,
   now,
   groupLabel,
+  teamName,
   onSaved,
   onSubmitted,
 }: {
@@ -609,6 +630,7 @@ function SlotForm({
   entrySlot: ReportEntrySlot;
   now: Date;
   groupLabel: string;
+  teamName?: string | null;
   onSaved: () => void;
   onSubmitted: (d: SubmittedReportData) => void;
 }) {
@@ -751,9 +773,9 @@ function SlotForm({
     }
     if (status === "submitted") {
       const nowIso = new Date().toISOString();
-      toast.success("Đã gửi báo cáo thành công");
       onSubmitted({
         fullName,
+        teamName,
         reportDate: date,
         slotName,
         scopeLabel: isReconciliation ? "Chỉnh hôm trước" : "Hôm nay",
