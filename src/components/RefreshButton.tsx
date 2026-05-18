@@ -14,7 +14,7 @@ export function RefreshButton({
       type="button"
       variant="outline"
       size="icon"
-      className="h-9 w-9 shrink-0"
+      className="h-10 w-10 shrink-0"
       onClick={onRefresh}
       disabled={isRefreshing}
       title="Làm mới dữ liệu"

@@ -117,9 +117,12 @@ export function AnalyticsDashboard({
             · Doanh thu, ads, KPI và hiệu suất theo khoảng ngày.
           </p>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2 md:mt-0">
-          <DateRangeFilter value={range} onChange={setRange} />
-          <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
+        <div className="mt-3 md:mt-0">
+          <DateRangeFilter
+            value={range}
+            onChange={setRange}
+            trailingControl={<RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />}
+          />
         </div>
       </PageHeader>
 

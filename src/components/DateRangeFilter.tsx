@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -18,10 +18,12 @@ import {
 export function DateRangeFilter({
   value,
   onChange,
+  trailingControl,
   className = "",
 }: {
   value: DateRangeValue;
   onChange: (value: DateRangeValue) => void;
+  trailingControl?: ReactNode;
   className?: string;
 }) {
   const [preset, setPreset] = useState<DatePreset>(value.preset);
@@ -64,18 +66,23 @@ export function DateRangeFilter({
     <div className={className || "flex flex-wrap items-end gap-2"}>
       <div className="min-w-36 space-y-1">
         <Label className="text-xs">Thời gian</Label>
-        <Select value={preset} onValueChange={(next) => changePreset(next as DatePreset)}>
-          <SelectTrigger className="h-9">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="today">Hôm nay</SelectItem>
-            <SelectItem value="yesterday">Hôm qua</SelectItem>
-            <SelectItem value="week">Tuần này</SelectItem>
-            <SelectItem value="month">Tháng này</SelectItem>
-            <SelectItem value="custom">Tùy chỉnh</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <div className="min-w-36 flex-1">
+            <Select value={preset} onValueChange={(next) => changePreset(next as DatePreset)}>
+              <SelectTrigger className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="today">Hôm nay</SelectItem>
+                <SelectItem value="yesterday">Hôm qua</SelectItem>
+                <SelectItem value="week">Tuần này</SelectItem>
+                <SelectItem value="month">Tháng này</SelectItem>
+                <SelectItem value="custom">Tùy chỉnh</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {trailingControl}
+        </div>
       </div>
 
       {preset === "custom" && (
