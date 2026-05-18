@@ -40,30 +40,72 @@ export async function chooseReportImageDirectory() {
 
 export async function saveReportImage(blob: Blob, filename: string) {
   const safeFilename = sanitizeFilename(filename);
+  const copiedToClipboard = await copyReportImageToClipboard(blob);
+  const saveResult = await persistReportImage(blob, safeFilename);
 
+  if (copiedToClipboard && saveResult.saved) {
+    toast.success("Đã copy và lưu ảnh báo cáo");
+    return true;
+  }
+
+  if (copiedToClipboard) {
+    toast.success("Đã copy ảnh báo cáo vào clipboard");
+    return true;
+  }
+
+  if (saveResult.saved && saveResult.message) {
+    toast.success(saveResult.message);
+  }
+
+  return saveResult.saved;
+}
+
+async function persistReportImage(blob: Blob, safeFilename: string) {
   if (!supportsDirectoryPicker()) {
     downloadBlob(blob, safeFilename);
-    toast.success("Trình duyệt không hỗ trợ lưu thư mục cố định, ảnh đã được tải xuống.");
-    return true;
+    return {
+      saved: true,
+      message: "Trình duyệt không hỗ trợ lưu thư mục cố định, ảnh đã được tải xuống.",
+    };
   }
 
   let handle = cachedDirectoryHandle ?? (await getStoredDirectoryHandle());
   if (!handle || !(await ensureWritePermission(handle))) {
     const selected = await chooseReportImageDirectory();
-    if (!selected) return false;
+    if (!selected) return { saved: false };
     handle = cachedDirectoryHandle ?? (await getStoredDirectoryHandle());
   }
 
-  if (!handle) return false;
+  if (!handle) return { saved: false };
 
   try {
     await saveBlobToDirectory(handle, safeFilename, blob);
     cachedDirectoryHandle = handle;
-    toast.success("Đã lưu ảnh báo cáo");
-    return true;
+    return { saved: true, message: "Đã lưu ảnh báo cáo" };
   } catch (error) {
-    if (isAbortError(error)) return false;
+    if (isAbortError(error)) return { saved: false };
     toast.error("Không lưu được ảnh báo cáo");
+    return { saved: false };
+  }
+}
+
+async function copyReportImageToClipboard(blob: Blob) {
+  if (
+    typeof navigator === "undefined" ||
+    !navigator.clipboard?.write ||
+    typeof ClipboardItem === "undefined"
+  ) {
+    return false;
+  }
+
+  try {
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        "image/png": blob,
+      }),
+    ]);
+    return true;
+  } catch {
     return false;
   }
 }

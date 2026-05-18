@@ -67,6 +67,7 @@ const empty: FormState = {
 
 interface ReportEntrySlot extends ReportSlot {
   reportDate: string;
+  dueDate: string;
   group: "today" | "previous_day";
   groupLabel: string;
 }
@@ -98,6 +99,7 @@ function buildEntrySlots(slots: ReportSlot[] | undefined, baseDate: string): Rep
       return {
         ...slot,
         reportDate: previous ? addDays(baseDate, -1) : baseDate,
+        dueDate: baseDate,
         group: previous ? ("previous_day" as const) : ("today" as const),
         groupLabel: previous ? "Hôm trước" : "Hôm nay",
       };
@@ -132,7 +134,7 @@ type SlotTimingState = "upcoming" | "due" | "overdue";
 function slotDateTime(slot: ReportEntrySlot) {
   const raw = slot.slot_time || slot.slot_name;
   const [hh = "0", mm = "0"] = raw.replace("h", ":").split(":");
-  const [year, month, day] = slot.reportDate.split("-").map(Number);
+  const [year, month, day] = slot.dueDate.split("-").map(Number);
   return new Date(year, month - 1, day, Number(hh), Number(mm), 0, 0);
 }
 
@@ -195,10 +197,11 @@ async function ensureReportSlotNotification(
     message: string;
   },
 ) {
-  const dedupeKey = `${item.type}:${profileId}:${item.slot.reportDate}:${item.slot.id}`;
+  const dedupeKey = `${item.type}:${profileId}:${item.slot.dueDate}:${item.slot.id}`;
   const metadata = {
     dedupe_key: dedupeKey,
     report_date: item.slot.reportDate,
+    due_date: item.slot.dueDate,
     slot_id: item.slot.id,
     slot_time: item.slot.slot_time,
   };
@@ -224,6 +227,7 @@ async function ensureReportSlotNotification(
     .eq("type", item.type)
     .contains("metadata", {
       report_date: item.slot.reportDate,
+      due_date: item.slot.dueDate,
       slot_id: item.slot.id,
       slot_time: item.slot.slot_time,
     })

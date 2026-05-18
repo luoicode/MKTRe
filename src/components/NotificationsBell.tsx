@@ -487,13 +487,14 @@ function notificationDedupeKey(row: NotificationRow | VirtualNotification) {
     if (typeof dedupeKey === "string" && dedupeKey) return `dedupe:${dedupeKey}`;
 
     const reportDate = metadata.report_date;
+    const dueDate = metadata.due_date;
     const slotId = metadata.slot_id;
     const slotTime = metadata.slot_time;
     if (
       typeof reportDate === "string" &&
       (typeof slotId === "string" || typeof slotTime === "string")
     ) {
-      return `report:${row.target_profile_id ?? row.user_id ?? ""}:${row.type ?? row.kind ?? ""}:${reportDate}:${slotId ?? slotTime}`;
+      return `report:${row.target_profile_id ?? row.user_id ?? ""}:${row.type ?? row.kind ?? ""}:${dueDate ?? reportDate}:${slotId ?? slotTime}`;
     }
   }
   return `id:${row.id}`;
@@ -583,13 +584,14 @@ async function buildEmployeeReminderNotifications(
   );
   const missingSlots = (slots ?? []).filter((slot) => {
     const reportDate = isPreviousDaySlot(slot) ? addDays(date, -1) : date;
-    const timing = slotTimingState(slot, reportDate, now);
+    const timing = slotTimingState(slot, date, now);
     if (timing !== "due" && timing !== "overdue") return false;
     return !submitted.has(`${reportDate}:${slot.id}`);
   });
   for (const slot of missingSlots) {
     const reportDate = isPreviousDaySlot(slot) ? addDays(date, -1) : date;
-    const timing = slotTimingState(slot, reportDate, now);
+    const dueDate = date;
+    const timing = slotTimingState(slot, dueDate, now);
     const type = timing === "due" ? "report_slot_due" : "report_slot_overdue";
     if (hasReportSlotNotification(existingNotifications, type, reportDate, slot.id)) continue;
     notifications.push({
@@ -608,12 +610,13 @@ async function buildEmployeeReminderNotifications(
       is_read: false,
       entity_type: "report",
       metadata: {
-        dedupe_key: `${type}:${profileId}:${reportDate}:${slot.id}`,
+        dedupe_key: `${type}:${profileId}:${dueDate}:${slot.id}`,
         report_date: reportDate,
+        due_date: dueDate,
         slot_id: slot.id,
         slot_time: slot.slot_time,
       },
-      created_at: `${reportDate}T${slot.slot_time}`,
+      created_at: `${dueDate}T${slot.slot_time}`,
     });
   }
 
@@ -659,11 +662,11 @@ function isPreviousDaySlot(slot: { slot_name: string; slot_time: string }) {
 
 function slotTimingState(
   slot: { slot_name: string; slot_time: string },
-  reportDate: string,
+  dueDate: string,
   now: Date,
 ) {
   const [hh = "0", mm = "0"] = slot.slot_time.replace("h", ":").split(":");
-  const [year, month, day] = reportDate.split("-").map(Number);
+  const [year, month, day] = dueDate.split("-").map(Number);
   const slotAt = new Date(year, month - 1, day, Number(hh), Number(mm), 0, 0);
   const diffMinutes = (now.getTime() - slotAt.getTime()) / 60_000;
   if (diffMinutes < -30) return "upcoming";

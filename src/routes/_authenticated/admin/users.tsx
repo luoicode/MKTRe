@@ -46,6 +46,7 @@ interface UserRow {
   full_name: string;
   username: string;
   email: string;
+  phone: string | null;
   status: UserStatus;
   role?: AppRole | null;
   activeTeamId?: string | null;
@@ -104,6 +105,10 @@ function normalizeInternalLoginPreview(value: string) {
   const raw = value.trim().toLowerCase();
   const localPart = raw.includes("@") ? raw.split("@")[0] : raw;
   return localPart.replace(/\s+/g, "").replace(/[^a-z0-9._-]/g, "_");
+}
+
+function normalizePhone(value: string) {
+  return value.trim() || null;
 }
 
 function AdminUsers() {
@@ -170,6 +175,7 @@ function AdminUsers() {
     return (
       u.full_name.toLowerCase().includes(s) ||
       u.username.toLowerCase().includes(s) ||
+      (u.phone ?? "").toLowerCase().includes(s) ||
       roleLabel(u.role).toLowerCase().includes(s) ||
       (u.activeTeamName ?? "").toLowerCase().includes(s)
     );
@@ -221,6 +227,7 @@ function AdminUsers() {
                   <TableRow>
                     <TableHead>Tên</TableHead>
                     <TableHead>Tài khoản đăng nhập</TableHead>
+                    <TableHead>Số điện thoại</TableHead>
                     <TableHead>Vai trò</TableHead>
                     <TableHead>Team</TableHead>
                     <TableHead>Trạng thái</TableHead>
@@ -232,6 +239,7 @@ function AdminUsers() {
                     <TableRow key={u.id}>
                       <TableCell className="font-medium">{u.full_name}</TableCell>
                       <TableCell>{u.username}</TableCell>
+                      <TableCell>{u.phone?.trim() || "—"}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{roleLabel(u.role)}</Badge>
                       </TableCell>
@@ -250,7 +258,7 @@ function AdminUsers() {
                   ))}
                   {filtered.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground py-6">
+                      <TableCell colSpan={7} className="text-center text-muted-foreground py-6">
                         Không có user
                       </TableCell>
                     </TableRow>
@@ -291,6 +299,7 @@ function CreateUserDialog({
   const initial = {
     full_name: "",
     username: "",
+    phone: "",
     password: "",
     role: "employee",
     status: "active",
@@ -319,6 +328,15 @@ function CreateUserDialog({
         status: form.status,
       })) as { profile?: { id?: string } };
       if (result.profile?.id) {
+        const phone = normalizePhone(form.phone);
+        if (phone) {
+          const { error: phoneError } = await supabase
+            .from("profiles")
+            .update({ phone })
+            .eq("id", result.profile.id);
+          if (phoneError) throw phoneError;
+        }
+
         if ((form.role === "employee" || form.role === "leader") && form.team_id) {
           const { error: membershipError } = await supabase.from("team_memberships").insert({
             user_id: result.profile.id,
@@ -388,6 +406,15 @@ function CreateUserDialog({
             type="text"
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })}
+          />
+        </div>
+        <div>
+          <Label>Số điện thoại</Label>
+          <Input
+            value={form.phone}
+            onChange={(e) => setForm({ ...form, phone: e.target.value })}
+            placeholder="vd: 0987654321"
+            inputMode="tel"
           />
         </div>
         <div>
@@ -467,6 +494,7 @@ function EditUserDialog({
   const [form, setForm] = useState({
     full_name: user.full_name,
     username: user.username,
+    phone: user.phone ?? "",
     role: user.role ?? ("employee" as AppRole),
     status: user.status,
     team_id: user.activeTeamId ?? "",
@@ -516,7 +544,12 @@ function EditUserDialog({
     try {
       const { error: profileError } = await supabase
         .from("profiles")
-        .update({ full_name: fullName, username, status: form.status })
+        .update({
+          full_name: fullName,
+          username,
+          phone: normalizePhone(form.phone),
+          status: form.status,
+        })
         .eq("id", user.id);
       if (profileError) throw profileError;
 
@@ -595,6 +628,15 @@ function EditUserDialog({
             value={form.username}
             onChange={(e) => setForm({ ...form, username: e.target.value })}
             placeholder="vd: test"
+          />
+        </div>
+        <div>
+          <Label>Số điện thoại</Label>
+          <Input
+            value={form.phone}
+            onChange={(e) => setForm({ ...form, phone: e.target.value })}
+            placeholder="vd: 0987654321"
+            inputMode="tel"
           />
         </div>
         <div>
