@@ -6,8 +6,9 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
 import { Toaster } from "@/components/ui/sonner";
-import { AuthProvider } from "@/lib/auth";
+import { AuthProvider, useAuth } from "@/lib/auth";
 import appCss from "../styles.css?url";
 
 function NotFoundComponent() {
@@ -84,9 +85,27 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <AuthNotificationCacheIsolation queryClient={queryClient} />
         <Outlet />
         <Toaster richColors position="top-right" />
       </AuthProvider>
     </QueryClientProvider>
   );
+}
+
+function AuthNotificationCacheIsolation({ queryClient }: { queryClient: QueryClient }) {
+  const { profile, user } = useAuth();
+  const identity = profile?.id ?? user?.id ?? null;
+  const previousIdentity = useRef<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    if (previousIdentity.current !== undefined && previousIdentity.current !== identity) {
+      queryClient.removeQueries({ queryKey: ["notifications"] });
+      queryClient.removeQueries({ queryKey: ["notifications-workspace"] });
+      if (typeof document !== "undefined") document.title = "MKTRe";
+    }
+    previousIdentity.current = identity;
+  }, [identity, queryClient]);
+
+  return null;
 }

@@ -305,7 +305,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div className="h-full min-h-0 bg-background md:h-screen md:overflow-hidden">
+    <div className="h-full min-h-0 w-full min-w-0 bg-background md:h-screen md:overflow-hidden">
       <aside className="fixed left-0 top-0 z-30 hidden h-screen w-64 overflow-hidden border-r border-sidebar-border bg-sidebar md:flex">
         {SidebarInner}
       </aside>
@@ -335,8 +335,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <NotificationsBell />
           {UserMenu}
         </header>
-        <main className="flex-1 overflow-x-hidden p-4 md:min-h-0 md:overflow-hidden md:p-8">
-          {children}
+        <main className="min-w-0 flex-1 overflow-x-hidden md:min-h-0 md:overflow-hidden">
+          <div className="w-full min-w-0 px-4 py-4 md:h-full md:min-h-0 md:overflow-y-auto md:overflow-x-hidden md:px-6 md:py-6 xl:px-8">
+            <div className="h-auto min-h-0 w-full min-w-0 md:h-full">{children}</div>
+          </div>
         </main>
       </div>
     </div>

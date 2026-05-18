@@ -14,6 +14,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
+import { notificationTypeBadgeClass, notificationTypeLabel } from "@/lib/notifications";
 import { todayStr } from "@/lib/reports";
 import { playNotification } from "@/utils/playNotification";
 import { Button } from "@/components/ui/button";
@@ -36,7 +37,10 @@ export function NotificationsBell() {
   }, [qc]);
 
   useEffect(() => {
-    if (!profileId) return;
+    if (!profileId) {
+      setVirtualReadIds(new Set());
+      return;
+    }
     const raw = window.localStorage.getItem(`mktre-virtual-notification-reads:${profileId}`);
     setVirtualReadIds(new Set(raw ? (JSON.parse(raw) as string[]) : []));
   }, [profileId]);
@@ -45,19 +49,20 @@ export function NotificationsBell() {
     queryKey: ["notifications", profileId, role],
     enabled: !!profileId,
     queryFn: async () => {
+      const recipientFilter = `target_profile_id.eq.${profileId},user_id.eq.${profileId}`;
       const { data: notifications, error } = await supabase
         .from("notifications")
         .select(
           "id, target_profile_id, actor_profile_id, user_id, title, message, body, type, kind, scope, severity, is_read, entity_type, entity_id, metadata, created_at",
         )
-        .eq("target_profile_id", profileId!)
+        .or(recipientFilter)
         .order("created_at", { ascending: false })
         .limit(15);
       if (error) throw error;
       const { count: unreadCount, error: unreadError } = await supabase
         .from("notifications")
         .select("id", { count: "exact", head: true })
-        .eq("target_profile_id", profileId!)
+        .or(recipientFilter)
         .eq("is_read", false);
       if (unreadError) throw unreadError;
       const virtualNotifications =
@@ -98,6 +103,7 @@ export function NotificationsBell() {
           (payload) => {
             if (payload.eventType === "INSERT") {
               const incoming = payload.new as NotificationRow;
+              if (!notificationBelongsToProfile(incoming, profileId)) return;
               let duplicateSkipped = false;
               let shouldPlay =
                 incoming.target_profile_id === profileId &&
@@ -167,8 +173,14 @@ export function NotificationsBell() {
 
   const allNotifications = useMemo(
     () =>
-      dedupeNotifications([...(data?.virtualNotifications ?? []), ...(data?.notifications ?? [])]),
-    [data],
+      profileId
+        ? dedupeNotifications(
+            [...(data?.virtualNotifications ?? []), ...(data?.notifications ?? [])].filter(
+              (notification) => notificationBelongsToProfile(notification, profileId),
+            ),
+          )
+        : [],
+    [data, profileId],
   );
 
   const unread = useMemo(() => {
@@ -196,8 +208,8 @@ export function NotificationsBell() {
       const { error } = await supabase
         .from("notifications")
         .update({ is_read: true })
-        .eq("target_profile_id", profile.id)
-        .in("id", unreadRows);
+        .in("id", unreadRows)
+        .or(`target_profile_id.eq.${profile.id},user_id.eq.${profile.id}`);
       if (error) {
         toast.error(error.message);
         return;
@@ -250,7 +262,7 @@ export function NotificationsBell() {
       .from("notifications")
       .update({ is_read: true })
       .eq("id", notification.id)
-      .eq("target_profile_id", profile.id);
+      .or(`target_profile_id.eq.${profile.id},user_id.eq.${profile.id}`);
     if (error) {
       toast.error(error.message);
       return;
@@ -287,7 +299,7 @@ export function NotificationsBell() {
         .from("notifications")
         .update({ is_read: true })
         .eq("id", notification.id)
-        .eq("target_profile_id", profile.id);
+        .or(`target_profile_id.eq.${profile.id},user_id.eq.${profile.id}`);
       if (error) {
         toast.error(error.message);
         return;
@@ -365,7 +377,9 @@ export function NotificationsBell() {
                         </div>
                       </div>
                     </div>
-                    <Badge variant={isUnread ? "default" : "outline"}>{n.type ?? n.kind}</Badge>
+                    <Badge className={notificationTypeBadgeClass(n)}>
+                      {notificationTypeLabel(n)}
+                    </Badge>
                   </div>
                   {(n.message ?? n.body) && (
                     <p className="mt-1 text-sm text-muted-foreground">{n.message ?? n.body}</p>
@@ -442,6 +456,15 @@ function isVirtualNotification(
   row: NotificationRow | VirtualNotification,
 ): row is VirtualNotification {
   return "virtual" in row && row.virtual;
+}
+
+function notificationBelongsToProfile(
+  row: NotificationRow | VirtualNotification,
+  profileId: string,
+) {
+  return (
+    row.target_profile_id === profileId || (!row.target_profile_id && row.user_id === profileId)
+  );
 }
 
 function dedupeNotifications(rows: Array<NotificationRow | VirtualNotification>) {

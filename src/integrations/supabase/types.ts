@@ -243,7 +243,12 @@ export type Database = {
           created_at: string;
           id: string;
           profile_id: string;
+          review_note: string | null;
+          reviewed_at: string | null;
+          reviewed_by: string | null;
           section_id: string;
+          status: string;
+          submitted_at: string | null;
           updated_at: string;
         };
         Insert: {
@@ -252,7 +257,12 @@ export type Database = {
           created_at?: string;
           id?: string;
           profile_id: string;
+          review_note?: string | null;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
           section_id: string;
+          status?: string;
+          submitted_at?: string | null;
           updated_at?: string;
         };
         Update: {
@@ -261,13 +271,25 @@ export type Database = {
           created_at?: string;
           id?: string;
           profile_id?: string;
+          review_note?: string | null;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
           section_id?: string;
+          status?: string;
+          submitted_at?: string | null;
           updated_at?: string;
         };
         Relationships: [
           {
             foreignKeyName: "onboarding_answers_profile_id_fkey";
             columns: ["profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "onboarding_answers_reviewed_by_fkey";
+            columns: ["reviewed_by"];
             isOneToOne: false;
             referencedRelation: "profiles";
             referencedColumns: ["id"];

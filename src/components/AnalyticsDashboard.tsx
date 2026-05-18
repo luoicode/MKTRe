@@ -27,6 +27,7 @@ import { kpiPercent, kpiStatus, kpiStatusLabel } from "@/lib/kpi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
+import { PageContent, PageHeader, PageShell, ScrollArea } from "@/components/layout/PageShell";
 import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib/dateRange";
 
 export function AnalyticsDashboard({
@@ -77,8 +78,8 @@ export function AnalyticsDashboard({
   const status = kpiStatus(kpiCompletion);
 
   return (
-    <div className="space-y-3 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden">
-      <div className="shrink-0 flex-wrap items-end justify-between gap-3 md:flex">
+    <PageShell className="gap-3">
+      <PageHeader className="flex-wrap items-end justify-between gap-3 md:flex">
         <div>
           <h1 className="text-xl font-bold tracking-tight md:text-2xl">Dashboard</h1>
           <p className="text-sm text-muted-foreground">
@@ -95,14 +96,14 @@ export function AnalyticsDashboard({
         <div className="mt-3 md:mt-0">
           <DateRangeFilter value={range} onChange={setRange} />
         </div>
-      </div>
+      </PageHeader>
 
       {isLoading ? (
-        <div className="flex justify-center py-12 md:min-h-0 md:flex-1 md:items-center">
+        <PageContent className="flex justify-center py-12 md:items-center">
           <Loader2 className="h-7 w-7 animate-spin" />
-        </div>
+        </PageContent>
       ) : (
-        <div className="space-y-3 md:min-h-0 md:flex-1 md:overflow-hidden">
+        <ScrollArea className="space-y-3 md:pr-2">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <Stat
               icon={TrendingUp}
@@ -183,9 +184,9 @@ export function AnalyticsDashboard({
               </CardContent>
             </Card>
           )}
-        </div>
+        </ScrollArea>
       )}
-    </div>
+    </PageShell>
   );
 }
 

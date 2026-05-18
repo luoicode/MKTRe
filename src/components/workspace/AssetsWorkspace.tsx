@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { PageHeader, PageShell, ScrollArea } from "@/components/layout/PageShell";
 import { toast } from "sonner";
 
 type Asset = Tables<"assets">;
@@ -390,8 +391,8 @@ export function AssetsWorkspace() {
   };
 
   return (
-    <div className="flex h-auto min-h-0 flex-col md:h-full md:overflow-hidden">
-      <div className="shrink-0 space-y-4 pb-4">
+    <PageShell>
+      <PageHeader className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
@@ -487,9 +488,9 @@ export function AssetsWorkspace() {
             )}
           </CardContent>
         </Card>
-      </div>
+      </PageHeader>
 
-      <div className="min-h-0 flex-1 overflow-visible md:overflow-y-auto md:pr-2">
+      <ScrollArea className="md:pr-2">
         {isLoading ? (
           <div className="flex justify-center py-12">
             <Loader2 className="h-6 w-6 animate-spin" />
@@ -521,7 +522,7 @@ export function AssetsWorkspace() {
             </CardContent>
           </Card>
         )}
-      </div>
+      </ScrollArea>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
@@ -726,7 +727,7 @@ export function AssetsWorkspace() {
         }
         onOpenChange={(open) => !open && setDetailAsset(null)}
       />
-    </div>
+    </PageShell>
   );
 }
 

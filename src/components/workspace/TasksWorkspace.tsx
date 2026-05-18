@@ -48,14 +48,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { TaskDetailsModal, type TaskDetailsTask } from "@/components/workspace/TaskDetailsModal";
 
 type TeamRow = Pick<Tables<"teams">, "id" | "name">;
 type UserRow = Pick<Tables<"profiles">, "id" | "full_name" | "username" | "avatar_url">;
 type MembershipRow = Pick<Tables<"team_memberships">, "team_id" | "user_id" | "role_in_team">;
-type TaskRow = Tables<"tasks"> & {
-  profiles: UserRow | null;
-  teams: TeamRow | null;
-};
+type TaskRow = TaskDetailsTask;
 type TemplateRow = Tables<"daily_task_templates">;
 type OnboardingTemplateRow = Tables<"onboarding_task_templates">;
 type CompletionRow = Tables<"task_completions">;
@@ -178,6 +176,8 @@ export function TasksWorkspace() {
     is_active: true,
   });
   const [editingTask, setEditingTask] = useState<TaskRow | null>(null);
+  const [selectedTask, setSelectedTask] = useState<TaskRow | null>(null);
+  const [taskDetailsOpen, setTaskDetailsOpen] = useState(false);
   const [editTaskForm, setEditTaskForm] = useState({
     title: "",
     description: "",
@@ -247,7 +247,11 @@ export function TasksWorkspace() {
       if (tasksError) throw tasksError;
 
       const taskProfileIds = Array.from(
-        new Set((rawTasks ?? []).map((row) => row.assigned_to).filter(Boolean)),
+        new Set(
+          (rawTasks ?? [])
+            .flatMap((row) => [row.assigned_to, row.assigned_by, row.created_by])
+            .filter((id): id is string => Boolean(id)),
+        ),
       );
       const { data: taskProfiles } = taskProfileIds.length
         ? await supabase
@@ -269,6 +273,8 @@ export function TasksWorkspace() {
         .map((row) => ({
           ...row,
           profiles: profileMap.get(row.assigned_to) ?? null,
+          assignedByProfile:
+            profileMap.get(row.assigned_by ?? "") ?? profileMap.get(row.created_by ?? "") ?? null,
           teams: row.team_id ? (teamMap.get(row.team_id) ?? null) : null,
         }));
 
@@ -813,6 +819,7 @@ export function TasksWorkspace() {
   };
 
   const startEditTask = (row: TaskRow) => {
+    setTaskDetailsOpen(false);
     setEditingTask(row);
     setEditTaskForm({
       title: row.title ?? "",
@@ -867,8 +874,32 @@ export function TasksWorkspace() {
       return;
     }
     toast.success("Đã xóa task");
+    if (selectedTask?.id === id) {
+      setTaskDetailsOpen(false);
+      setSelectedTask(null);
+    }
     await qc.invalidateQueries({ queryKey: ["tasks-workspace"] });
     await refetch();
+  };
+
+  const openTaskDetails = (row: TaskRow) => {
+    setSelectedTask(row);
+    setTaskDetailsOpen(true);
+  };
+
+  const openTaskSubmitReview = (row: TaskRow) => {
+    setTaskDetailsOpen(false);
+    setCompletionTarget({
+      type: "task",
+      id: row.id,
+      title: row.title,
+      teamId: row.team_id,
+    });
+  };
+
+  const openTaskReview = (row: TaskRow) => {
+    setTaskDetailsOpen(false);
+    setReviewTarget({ type: "task", task: row });
   };
 
   const reviewItem = async (approved: boolean) => {
@@ -1027,8 +1058,17 @@ export function TasksWorkspace() {
     return (
       <div
         key={item.id}
+        role="button"
+        tabIndex={0}
+        onClick={() => openTaskDetails(item)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openTaskDetails(item);
+          }
+        }}
         className={cn(
-          "overflow-hidden rounded-[1.35rem] border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md",
+          "cursor-pointer overflow-hidden rounded-[1.35rem] border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/30",
           deadlineState === "overdue" ? "border-red-200" : "border-slate-200",
         )}
       >
@@ -1045,12 +1085,24 @@ export function TasksWorkspace() {
               )}
             </div>
             {canAssign ? (
-              <CardActionsMenu
-                onEdit={() => startEditTask(item)}
-                onDelete={() => deleteTask(item.id)}
-              />
+              <div onClick={(event) => event.stopPropagation()}>
+                <CardActionsMenu
+                  onView={() => openTaskDetails(item)}
+                  onEdit={() => startEditTask(item)}
+                  onDelete={() => deleteTask(item.id)}
+                />
+              </div>
             ) : (
-              <MoreHorizontal className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" />
+              <button
+                type="button"
+                className="mt-0.5 rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openTaskDetails(item);
+                }}
+              >
+                <MoreHorizontal className="h-5 w-5 shrink-0" />
+              </button>
             )}
           </div>
 
@@ -1114,7 +1166,7 @@ export function TasksWorkspace() {
             </div>
           )}
 
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-2 flex flex-wrap gap-2" onClick={(event) => event.stopPropagation()}>
             {item.assigned_to === profile?.id && status === "todo" && (
               <Button
                 size="sm"
@@ -1440,8 +1492,28 @@ export function TasksWorkspace() {
     </div>
   );
 
+  const currentSelectedTask = selectedTask
+    ? (data?.tasks.find((item) => item.id === selectedTask.id) ?? selectedTask)
+    : null;
+
   return (
     <div className="space-y-4 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden md:pr-2">
+      <TaskDetailsModal
+        open={taskDetailsOpen}
+        task={currentSelectedTask}
+        currentProfileId={profile?.id}
+        canManage={canAssign}
+        onOpenChange={(open) => {
+          setTaskDetailsOpen(open);
+          if (!open) setSelectedTask(null);
+        }}
+        onEdit={startEditTask}
+        onDelete={deleteTask}
+        onStatusChange={updateTaskStatus}
+        onSubmitReview={openTaskSubmitReview}
+        onReview={openTaskReview}
+      />
+
       <Dialog open={!!completionTarget} onOpenChange={(open) => !open && setCompletionTarget(null)}>
         <DialogContent>
           <DialogHeader>
@@ -1994,7 +2066,15 @@ function TeamSelect({
   );
 }
 
-function CardActionsMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+function CardActionsMenu({
+  onView,
+  onEdit,
+  onDelete,
+}: {
+  onView?: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -2006,7 +2086,15 @@ function CardActionsMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: (
           <MoreHorizontal className="h-5 w-5" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-36 rounded-2xl border bg-white p-1.5 shadow-lg">
+      <DropdownMenuContent align="end" className="w-40 rounded-2xl border bg-white p-1.5 shadow-lg">
+        {onView && (
+          <DropdownMenuItem
+            onClick={onView}
+            className="cursor-pointer rounded-xl text-sm font-medium hover:bg-slate-50 focus:bg-slate-50"
+          >
+            <FileText className="mr-2 h-4 w-4 text-slate-600" /> Chi tiết
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem
           onClick={onEdit}
           className="cursor-pointer rounded-xl text-sm font-medium hover:bg-sky-50 focus:bg-sky-50"

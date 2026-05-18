@@ -70,7 +70,7 @@ function LeaderDailyReport() {
   const missing = (data?.rows ?? []).filter((r) => !r.countedInTotal);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-2 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden">
+    <div className="w-full min-w-0 space-y-2 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden">
       <div className="screenshot-hide shrink-0 gap-2 md:flex md:flex-wrap md:items-end md:justify-between">
         <div className="flex flex-wrap items-end gap-2">
           <DateRangeFilter value={range} onChange={setRange} />

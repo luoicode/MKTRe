@@ -1,0 +1,67 @@
+import type { Json } from "@/integrations/supabase/types";
+
+export type NotificationLike = {
+  type?: string | null;
+  kind?: string | null;
+  severity?: string | null;
+  metadata?: Json | null;
+};
+
+const notificationTypeLabelMap: Record<string, string> = {
+  announcement: "Thông báo",
+  checklist_new: "Checklist mới",
+  checklist_pending: "Checklist cần làm",
+  kpi_personal_low: "KPI cá nhân",
+  kpi_team_low: "KPI team",
+  onboarding_approved: "Onboarding đã được duyệt",
+  onboarding_rejected: "Yêu cầu làm lại onboarding",
+  onboarding_review: "Chờ duyệt onboarding",
+  onboarding_review_pending: "Chờ duyệt onboarding",
+  report_missing: "Chưa báo cáo",
+  report_slot_due: "Đến giờ báo cáo",
+  report_slot_overdue: "Quá giờ báo cáo",
+  task_approved: "Task đã duyệt",
+  task_assigned: "Nhiệm vụ mới",
+  task_overdue: "Task quá hạn",
+  task_rejected: "Task cần làm lại",
+  task_review: "Chờ duyệt task",
+};
+
+export function notificationTypeKey(notification: NotificationLike) {
+  return (notification.type ?? notification.kind ?? "notification").trim();
+}
+
+export function notificationTypeLabel(notification: NotificationLike) {
+  const key = notificationTypeKey(notification);
+  if (notificationTypeLabelMap[key]) return notificationTypeLabelMap[key];
+  return key
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+export function notificationTypeBadgeClass(notification: NotificationLike) {
+  const key = notificationTypeKey(notification);
+  if (key.includes("onboarding")) {
+    return "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-50";
+  }
+  if (notification.severity === "error" || key.includes("overdue") || key.includes("rejected")) {
+    return "border-red-200 bg-red-50 text-red-700 hover:bg-red-50";
+  }
+  if (
+    notification.severity === "warning" ||
+    key.includes("review") ||
+    key.includes("pending") ||
+    key.includes("due")
+  ) {
+    return "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50";
+  }
+  if (notification.severity === "success" || key.includes("approved")) {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50";
+  }
+  if (key.includes("task")) {
+    return "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-50";
+  }
+  return "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-50";
+}

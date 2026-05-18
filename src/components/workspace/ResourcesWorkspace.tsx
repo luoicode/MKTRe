@@ -13,7 +13,10 @@ import {
   Lock,
   Pencil,
   Plus,
+  RotateCcw,
   Save,
+  Send,
+  ShieldCheck,
   Trash2,
   X,
 } from "lucide-react";
@@ -51,9 +54,11 @@ type OnboardingQuestion = Tables<"onboarding_questions">;
 type OnboardingAnswer = Tables<"onboarding_answers">;
 type OnboardingDocument = Tables<"onboarding_documents">;
 type ProfileRow = Tables<"profiles">;
+type TeamMembership = Pick<Tables<"team_memberships">, "team_id" | "user_id" | "is_active">;
 
 type QuestionType = "text" | "multiple_choice" | "checkbox";
 type AnswerDraft = Record<string, string | string[]>;
+type OnboardingAnswerStatus = "locked" | "open" | "submitted" | "approved" | "rejected";
 
 type CardFormState = {
   id: string;
@@ -144,6 +149,7 @@ export function ResourcesWorkspace() {
   const [questionForm, setQuestionForm] = useState<QuestionFormState>(emptyQuestionForm);
   const [documentForm, setDocumentForm] = useState<DocumentFormState>(emptyDocumentForm);
   const [answerDrafts, setAnswerDrafts] = useState<Record<string, AnswerDraft>>({});
+  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
   const [progressSearch, setProgressSearch] = useState("");
   const [progressStatus, setProgressStatus] = useState("all");
 
@@ -190,6 +196,7 @@ export function ResourcesWorkspace() {
         allAnswersResult,
         profilesResult,
         rolesResult,
+        membershipsResult,
       ] = await Promise.all([
         sectionsQuery,
         cardsQuery,
@@ -214,6 +221,12 @@ export function ResourcesWorkspace() {
         canViewProgress
           ? supabase.from("user_roles").select("user_id, role").eq("role", "employee")
           : Promise.resolve({ data: [], error: null }),
+        canViewProgress
+          ? supabase
+              .from("team_memberships")
+              .select("team_id, user_id, is_active")
+              .eq("is_active", true)
+          : Promise.resolve({ data: [], error: null }),
       ]);
 
       const firstError =
@@ -226,7 +239,8 @@ export function ResourcesWorkspace() {
         allProgressResult.error ??
         allAnswersResult.error ??
         profilesResult.error ??
-        rolesResult.error;
+        rolesResult.error ??
+        membershipsResult.error;
       if (firstError) throw firstError;
 
       return {
@@ -240,6 +254,7 @@ export function ResourcesWorkspace() {
         allAnswers: (allAnswersResult.data ?? []) as OnboardingAnswer[],
         profiles: (profilesResult.data ?? []) as ProfileRow[],
         employeeRoleIds: new Set((rolesResult.data ?? []).map((row) => row.user_id)),
+        memberships: (membershipsResult.data ?? []) as TeamMembership[],
       };
     },
   });
@@ -278,6 +293,10 @@ export function ResourcesWorkspace() {
     () => new Map(answers.map((item) => [item.section_id, item])),
     [answers],
   );
+  const profileById = useMemo(
+    () => new Map((data?.profiles ?? []).map((item) => [item.id, item])),
+    [data?.profiles],
+  );
 
   const cardsBySection = useMemo(() => groupBy(cards, "section_id"), [cards]);
   const questionsBySection = useMemo(() => groupBy(questions, "section_id"), [questions]);
@@ -302,7 +321,10 @@ export function ResourcesWorkspace() {
     completedCards === totalCards &&
     sections.every((section) => {
       const sectionQuestions = questionsBySection.get(section.id) ?? [];
-      return sectionQuestions.length === 0 || answerBySection.has(section.id);
+      return (
+        sectionQuestions.length === 0 ||
+        isSectionQuizApproved(section, answerBySection.get(section.id))
+      );
     });
 
   const visibility = useMemo(() => {
@@ -326,7 +348,9 @@ export function ResourcesWorkspace() {
       const previousCardsDone = previousCards.every(
         (card) => progressByCard.get(card.id)?.completed_at,
       );
-      const previousQuizDone = previousQuestions.length === 0 || answerBySection.has(previous.id);
+      const previousQuizDone =
+        previousQuestions.length === 0 ||
+        isSectionQuizApproved(previous, answerBySection.get(previous.id));
       sectionUnlocked.set(
         section.id,
         sectionUnlocked.get(previous.id) === true && previousCardsDone && previousQuizDone,
@@ -375,11 +399,12 @@ export function ResourcesWorkspace() {
         const completed = userProgress.filter(
           (row) => row.completed_at && activeCardIds.has(row.card_id),
         ).length;
-        const quizzesDone = questionSections.filter((section) =>
-          userAnswers.some(
-            (answer) => answer.section_id === section.id && sectionIds.has(answer.section_id),
-          ),
-        ).length;
+        const quizzesDone = questionSections.filter((section) => {
+          const answer = userAnswers.find(
+            (item) => item.section_id === section.id && sectionIds.has(item.section_id),
+          );
+          return isSectionQuizApproved(section, answer);
+        }).length;
         const percent = totalCards > 0 ? Math.round((completed / totalCards) * 100) : 0;
         const complete =
           totalCards > 0 && completed === totalCards && quizzesDone === questionSections.length;
@@ -395,6 +420,49 @@ export function ResourcesWorkspace() {
       })
       .sort((a, b) => b.percent - a.percent || a.name.localeCompare(b.name));
   }, [canViewProgress, data, learningCards, questionsBySection, sections, totalCards]);
+
+  const reviewRequests = useMemo(() => {
+    if (!canViewProgress || !data) return [];
+    const introSections = new Set(
+      sections.filter(isSectionReviewRequired).map((section) => section.id),
+    );
+    const leaderTeamIds = new Set(
+      data.memberships
+        .filter((membership) => membership.user_id === profile?.id)
+        .map((membership) => membership.team_id),
+    );
+    const scopedProfileIds =
+      role === "leader"
+        ? new Set(
+            data.memberships
+              .filter((membership) => leaderTeamIds.has(membership.team_id))
+              .map((membership) => membership.user_id),
+          )
+        : null;
+
+    return data.allAnswers
+      .filter((answer) => {
+        if (!introSections.has(answer.section_id)) return false;
+        if (getAnswerStatus(answer) !== "submitted") return false;
+        return !scopedProfileIds || scopedProfileIds.has(answer.profile_id);
+      })
+      .map((answer) => ({
+        answer,
+        section: sections.find((section) => section.id === answer.section_id),
+        employee: profileById.get(answer.profile_id),
+      }))
+      .filter(
+        (
+          item,
+        ): item is { answer: OnboardingAnswer; section: OnboardingSection; employee: ProfileRow } =>
+          !!item.section && !!item.employee,
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.answer.submitted_at ?? b.answer.completed_at).getTime() -
+          new Date(a.answer.submitted_at ?? a.answer.completed_at).getTime(),
+      );
+  }, [canViewProgress, data, profile?.id, profileById, role, sections]);
 
   const visibleProgressRows = useMemo(() => {
     const search = progressSearch.trim().toLowerCase();
@@ -616,6 +684,112 @@ export function ResourcesWorkspace() {
     invalidate();
   };
 
+  const notifyOnboardingReviewRequest = async (
+    answer: OnboardingAnswer,
+    section: OnboardingSection,
+  ) => {
+    if (!profile?.id || !data) return;
+    const teamIds = data.memberships
+      .filter((membership) => membership.user_id === profile.id)
+      .map((membership) => membership.team_id);
+    if (!teamIds.length) return;
+
+    const { data: teamMembers, error: membershipError } = await supabase
+      .from("team_memberships")
+      .select("user_id")
+      .in("team_id", teamIds)
+      .eq("is_active", true);
+    if (membershipError) {
+      console.debug("[MKTRe onboarding notification]", membershipError.message);
+      return;
+    }
+
+    const candidateIds = [...new Set((teamMembers ?? []).map((item) => item.user_id))].filter(
+      (id) => id !== profile.id,
+    );
+    if (!candidateIds.length) return;
+
+    const { data: leaderRoles, error: roleError } = await supabase
+      .from("user_roles")
+      .select("user_id")
+      .in("user_id", candidateIds)
+      .eq("role", "leader");
+    if (roleError) {
+      console.debug("[MKTRe onboarding notification]", roleError.message);
+      return;
+    }
+
+    const leaderIds = [...new Set((leaderRoles ?? []).map((item) => item.user_id))];
+    if (!leaderIds.length) return;
+
+    const notifications: TablesInsert<"notifications">[] = leaderIds.map((leaderId) => ({
+      target_profile_id: leaderId,
+      user_id: leaderId,
+      actor_profile_id: profile.id,
+      created_by: profile.id,
+      scope: "team",
+      target_scope: "team",
+      type: "onboarding_review",
+      kind: "onboarding_review",
+      entity_type: "onboarding_answer",
+      entity_id: answer.id,
+      title: "Duyệt onboarding",
+      message: `${profile.full_name} đã gửi duyệt section ${section.title}.`,
+      body: `${profile.full_name} đã gửi duyệt section ${section.title}.`,
+      severity: "warning",
+      is_read: false,
+      metadata: {
+        section_id: section.id,
+        section_title: section.title,
+        answer_id: answer.id,
+      } as Json,
+    }));
+
+    const { error } = await supabase.from("notifications").insert(notifications);
+    if (error) {
+      console.debug("[MKTRe onboarding notification]", error.message);
+    }
+  };
+
+  const notifyOnboardingReviewResult = async (
+    answer: OnboardingAnswer,
+    section: OnboardingSection,
+    approved: boolean,
+    note: string,
+  ) => {
+    if (!profile?.id) return;
+    const title = approved ? "Onboarding đã được duyệt" : "Cần làm lại onboarding";
+    const message = approved
+      ? `Section ${section.title} đã được duyệt. Bạn có thể học section tiếp theo.`
+      : `Section ${section.title} cần làm lại.${note ? ` Ghi chú: ${note}` : ""}`;
+    const { error } = await supabase.from("notifications").insert({
+      target_profile_id: answer.profile_id,
+      user_id: answer.profile_id,
+      actor_profile_id: profile.id,
+      created_by: profile.id,
+      scope: "personal",
+      target_scope: "personal",
+      type: approved ? "onboarding_approved" : "onboarding_rejected",
+      kind: approved ? "onboarding_approved" : "onboarding_rejected",
+      entity_type: "onboarding_answer",
+      entity_id: answer.id,
+      title,
+      message,
+      body: message,
+      severity: approved ? "success" : "error",
+      is_read: false,
+      metadata: {
+        section_id: section.id,
+        section_title: section.title,
+        answer_id: answer.id,
+        review_note: note || null,
+      } as Json,
+    } satisfies TablesInsert<"notifications">);
+    if (error) {
+      console.debug("[MKTRe onboarding notification]", error.message);
+    }
+  };
+
   const submitSectionAnswers = async (section: OnboardingSection) => {
     if (!profile?.id) return false;
     const sectionQuestions = questionsBySection.get(section.id) ?? [];
@@ -629,23 +803,75 @@ export function ResourcesWorkspace() {
       return false;
     }
 
-    const { error } = await supabase.from("onboarding_answers").upsert(
-      {
-        profile_id: profile.id,
-        section_id: section.id,
-        answers: draft as Json,
-        completed_at: new Date().toISOString(),
-      },
-      { onConflict: "profile_id,section_id" },
-    );
+    const now = new Date().toISOString();
+    const requiresReview = isEmployee && isSectionReviewRequired(section);
+    const { data: savedAnswer, error } = await supabase
+      .from("onboarding_answers")
+      .upsert(
+        {
+          profile_id: profile.id,
+          section_id: section.id,
+          answers: draft as Json,
+          completed_at: now,
+          submitted_at: now,
+          status: requiresReview ? "submitted" : "approved",
+          reviewed_by: null,
+          reviewed_at: null,
+          review_note: null,
+        },
+        { onConflict: "profile_id,section_id" },
+      )
+      .select("*")
+      .single();
     if (error) {
       toast.error(error.message);
       return false;
     }
-    toast.success("Đã hoàn thành câu hỏi section");
+    if (requiresReview && savedAnswer) {
+      await notifyOnboardingReviewRequest(savedAnswer as OnboardingAnswer, section);
+      toast.success("Đã gửi Leader duyệt. Section tiếp theo sẽ mở sau khi được duyệt.");
+    } else {
+      toast.success("Đã hoàn thành câu hỏi section");
+    }
     setQuizSection(null);
     invalidate();
     return true;
+  };
+
+  const reviewOnboardingAnswer = async (
+    answer: OnboardingAnswer,
+    section: OnboardingSection,
+    approved: boolean,
+  ) => {
+    if (!profile?.id) return;
+    const note = (reviewNotes[answer.id] ?? "").trim();
+    if (!approved && !note) {
+      toast.warning("Nhập ghi chú để nhân sự biết cần làm lại phần nào.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("onboarding_answers")
+      .update({
+        status: approved ? "approved" : "rejected",
+        reviewed_by: profile.id,
+        reviewed_at: new Date().toISOString(),
+        review_note: note || null,
+      } satisfies TablesUpdate<"onboarding_answers">)
+      .eq("id", answer.id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    await notifyOnboardingReviewResult(answer, section, approved, note);
+    setReviewNotes((current) => {
+      const next = { ...current };
+      delete next[answer.id];
+      return next;
+    });
+    toast.success(approved ? "Đã duyệt section onboarding" : "Đã yêu cầu làm lại section");
+    invalidate();
   };
 
   if (isLoading) {
@@ -682,7 +908,7 @@ export function ResourcesWorkspace() {
   }
 
   return (
-    <div className="mx-auto flex h-full min-h-0 max-w-7xl flex-col gap-4 overflow-hidden">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col gap-4 overflow-hidden">
       <div className="shrink-0 overflow-hidden rounded-3xl border bg-background/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85">
         <div className="flex flex-wrap items-center justify-between gap-4 p-5">
           <div>
@@ -737,13 +963,17 @@ export function ResourcesWorkspace() {
         {sections.map((section, index) => {
           const sectionCards = learningCardsBySection.get(section.id) ?? [];
           const sectionQuestions = questionsBySection.get(section.id) ?? [];
+          const sectionAnswer = answerBySection.get(section.id);
+          const answerStatus = getAnswerStatus(sectionAnswer);
+          const needsReview = isEmployee && isSectionReviewRequired(section);
           const unlocked = visibility.sectionUnlocked.get(section.id) === true;
           const sectionCompletedCount = sectionCards.filter(
             (card) => progressByCard.get(card.id)?.completed_at,
           ).length;
           const sectionCardsComplete =
             sectionCards.length > 0 && sectionCompletedCount === sectionCards.length;
-          const quizDone = sectionQuestions.length === 0 || answerBySection.has(section.id);
+          const quizDone =
+            sectionQuestions.length === 0 || isSectionQuizApproved(section, sectionAnswer);
           const sectionComplete = sectionCardsComplete && quizDone;
           const sectionPercent =
             sectionCards.length > 0
@@ -774,6 +1004,7 @@ export function ResourcesWorkspace() {
                         locked={isEmployee && !unlocked}
                         complete={sectionComplete}
                         unlocked={unlocked}
+                        answerStatus={needsReview ? answerStatus : undefined}
                       />
                     </div>
                     <div className="mt-4 flex max-w-xl items-center gap-3">
@@ -843,9 +1074,39 @@ export function ResourcesWorkspace() {
                   unlocked &&
                   sectionQuestions.length > 0 &&
                   sectionCardsComplete &&
-                  !answerBySection.has(section.id) && (
-                    <QuizCta section={section} onClick={() => setQuizSection(section)} />
+                  (!sectionAnswer || answerStatus === "rejected") && (
+                    <QuizCta
+                      section={section}
+                      reviewRequired={needsReview}
+                      rejectedNote={answerStatus === "rejected" ? sectionAnswer?.review_note : null}
+                      onClick={() => setQuizSection(section)}
+                    />
                   )}
+
+                {isEmployee && needsReview && answerStatus === "submitted" && (
+                  <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900">
+                    <div className="flex items-center gap-2 font-semibold">
+                      <ShieldCheck className="h-4 w-4" />
+                      Chờ Leader duyệt
+                    </div>
+                    <p className="mt-1 text-amber-800/80">
+                      Bạn đã gửi câu trả lời section này. Section tiếp theo sẽ mở sau khi Leader
+                      duyệt.
+                    </p>
+                  </div>
+                )}
+
+                {isEmployee && needsReview && answerStatus === "approved" && (
+                  <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm text-emerald-900">
+                    <div className="flex items-center gap-2 font-semibold">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Đã duyệt
+                    </div>
+                    <p className="mt-1 text-emerald-800/80">
+                      Section này đã được duyệt. Bạn có thể tiếp tục phần tiếp theo.
+                    </p>
+                  </div>
+                )}
 
                 {!isEmployee && (
                   <SectionQuiz
@@ -895,6 +1156,79 @@ export function ResourcesWorkspace() {
             <EmptyState text="Chưa có tài nguyên." />
           )}
         </section>
+
+        {canViewProgress && (
+          <section className="rounded-3xl border bg-card p-5 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-amber-600" />
+                  <h2 className="text-xl font-bold">Duyệt onboarding</h2>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Duyệt Section 1 trước khi nhân sự được mở khóa phần Đào tạo.
+                </p>
+              </div>
+              <Badge variant="secondary" className="rounded-full">
+                {reviewRequests.length} yêu cầu
+              </Badge>
+            </div>
+            {reviewRequests.length ? (
+              <div className="mt-4 grid gap-3">
+                {reviewRequests.map(({ answer, section, employee }) => (
+                  <div key={answer.id} className="rounded-2xl border bg-muted/20 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-semibold">{employee.full_name}</div>
+                        <div className="mt-1 text-sm text-muted-foreground">
+                          @{employee.username} · {section.title} · Gửi lúc{" "}
+                          {formatDateTime(answer.submitted_at ?? answer.completed_at)}
+                        </div>
+                      </div>
+                      <Badge className="rounded-full bg-amber-100 text-amber-700 hover:bg-amber-100">
+                        Chờ duyệt
+                      </Badge>
+                    </div>
+                    <AnswerPreview
+                      questions={questionsBySection.get(section.id) ?? []}
+                      answer={answer}
+                    />
+                    <Textarea
+                      className="mt-3 min-h-20"
+                      value={reviewNotes[answer.id] ?? ""}
+                      onChange={(event) =>
+                        setReviewNotes((current) => ({
+                          ...current,
+                          [answer.id]: event.target.value,
+                        }))
+                      }
+                      placeholder="Ghi chú duyệt hoặc lý do yêu cầu làm lại..."
+                    />
+                    <div className="mt-3 flex flex-wrap justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        className="rounded-full border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+                        onClick={() => reviewOnboardingAnswer(answer, section, false)}
+                      >
+                        <RotateCcw className="mr-2 h-4 w-4" />
+                        Yêu cầu làm lại
+                      </Button>
+                      <Button
+                        className="rounded-full bg-emerald-600 hover:bg-emerald-700"
+                        onClick={() => reviewOnboardingAnswer(answer, section, true)}
+                      >
+                        <ShieldCheck className="mr-2 h-4 w-4" />
+                        Duyệt section
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState text="Chưa có yêu cầu duyệt onboarding." />
+            )}
+          </section>
+        )}
 
         {canViewProgress && (
           <section className="rounded-3xl border bg-card p-5 shadow-sm">
@@ -999,6 +1333,11 @@ export function ResourcesWorkspace() {
         }}
         onSubmit={() => (quizSection ? submitSectionAnswers(quizSection) : Promise.resolve(false))}
         onOpenChange={(open) => !open && setQuizSection(null)}
+        submitLabel={
+          quizSection && isEmployee && isSectionReviewRequired(quizSection)
+            ? "Gửi Leader duyệt"
+            : "Nộp câu trả lời"
+        }
       />
       <CardFormDialog
         open={cardDialogOpen}
@@ -1257,7 +1596,17 @@ function CardDetailDialog({
   );
 }
 
-function QuizCta({ section, onClick }: { section: OnboardingSection; onClick: () => void }) {
+function QuizCta({
+  section,
+  reviewRequired,
+  rejectedNote,
+  onClick,
+}: {
+  section: OnboardingSection;
+  reviewRequired?: boolean;
+  rejectedNote?: string | null;
+  onClick: () => void;
+}) {
   return (
     <div className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1266,14 +1615,24 @@ function QuizCta({ section, onClick }: { section: OnboardingSection; onClick: ()
             <HelpCircle className="h-5 w-5" />
           </div>
           <div>
-            <h3 className="font-semibold text-indigo-950">Bạn đã hoàn thành nội dung section</h3>
+            <h3 className="font-semibold text-indigo-950">
+              {rejectedNote ? "Section cần làm lại" : "Bạn đã hoàn thành nội dung section"}
+            </h3>
             <p className="mt-1 text-sm text-indigo-700/80">
-              Làm câu hỏi: {section.title} để mở khóa section tiếp theo.
+              {reviewRequired
+                ? `Làm câu hỏi: ${section.title} rồi gửi Leader duyệt để mở khóa section tiếp theo.`
+                : `Làm câu hỏi: ${section.title} để mở khóa section tiếp theo.`}
             </p>
+            {rejectedNote && (
+              <p className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                Ghi chú Leader: {rejectedNote}
+              </p>
+            )}
           </div>
         </div>
         <Button className="rounded-full" onClick={onClick}>
-          Làm câu hỏi: {section.title}
+          {reviewRequired ? <Send className="mr-2 h-4 w-4" /> : null}
+          {reviewRequired ? `Gửi Leader duyệt` : `Làm câu hỏi: ${section.title}`}
         </Button>
       </div>
     </div>
@@ -1287,6 +1646,7 @@ function QuizModal({
   onDraftChange,
   onSubmit,
   onOpenChange,
+  submitLabel = "Nộp câu trả lời",
 }: {
   section: OnboardingSection | null;
   questions: OnboardingQuestion[];
@@ -1294,6 +1654,7 @@ function QuizModal({
   onDraftChange: (draft: AnswerDraft) => void;
   onSubmit: () => Promise<boolean>;
   onOpenChange: (open: boolean) => void;
+  submitLabel?: string;
 }) {
   const [submitting, setSubmitting] = useState(false);
   const answeredCount = questions.filter((question) => {
@@ -1378,7 +1739,7 @@ function QuizModal({
                   onClick={handleSubmit}
                 >
                   {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Nộp câu trả lời
+                  {submitLabel}
                 </Button>
               </div>
             </DialogFooter>
@@ -1877,15 +2238,71 @@ function SectionIcon({ index }: { index: number }) {
   return <CheckCircle2 className={cn(classes, "text-violet-600")} />;
 }
 
+function AnswerPreview({
+  questions,
+  answer,
+}: {
+  questions: OnboardingQuestion[];
+  answer: OnboardingAnswer;
+}) {
+  const answerRecord = isRecord(answer.answers) ? answer.answers : {};
+  return (
+    <div className="mt-3 rounded-2xl border bg-background p-3">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Câu trả lời
+      </div>
+      <div className="space-y-2">
+        {questions.length ? (
+          questions.map((question, index) => (
+            <div key={question.id} className="rounded-xl bg-muted/40 px-3 py-2 text-sm">
+              <div className="font-medium">
+                {index + 1}. {question.question_text}
+              </div>
+              <div className="mt-1 whitespace-pre-wrap text-muted-foreground">
+                {formatAnswerValue(answerRecord[question.id])}
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="text-sm text-muted-foreground">Section này chưa có câu hỏi.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SectionStatusBadge({
   locked,
   complete,
   unlocked,
+  answerStatus,
 }: {
   locked: boolean;
   complete: boolean;
   unlocked: boolean;
+  answerStatus?: OnboardingAnswerStatus;
 }) {
+  if (answerStatus === "submitted") {
+    return (
+      <Badge className="rounded-full bg-amber-100 text-amber-700 hover:bg-amber-100">
+        <ShieldCheck className="mr-1 h-3 w-3" /> Chờ duyệt
+      </Badge>
+    );
+  }
+  if (answerStatus === "rejected") {
+    return (
+      <Badge className="rounded-full bg-red-100 text-red-700 hover:bg-red-100">
+        <RotateCcw className="mr-1 h-3 w-3" /> Cần làm lại
+      </Badge>
+    );
+  }
+  if (answerStatus === "approved") {
+    return (
+      <Badge className="rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+        <ShieldCheck className="mr-1 h-3 w-3" /> Đã duyệt
+      </Badge>
+    );
+  }
   if (complete) {
     return (
       <Badge className="rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
@@ -1896,7 +2313,7 @@ function SectionStatusBadge({
   if (locked) {
     return (
       <Badge variant="secondary" className="rounded-full">
-        <Lock className="mr-1 h-3 w-3" /> Đang khóa
+        <Lock className="mr-1 h-3 w-3" /> Khoá
       </Badge>
     );
   }
@@ -1934,6 +2351,57 @@ function getQuestionOptions(question: OnboardingQuestion) {
   return Array.isArray(question.options)
     ? question.options.filter((item): item is string => typeof item === "string")
     : [];
+}
+
+function isSectionReviewRequired(section: OnboardingSection) {
+  return section.section_key === "intro" || section.sort_order === 1;
+}
+
+function getAnswerStatus(answer?: OnboardingAnswer | null): OnboardingAnswerStatus {
+  if (!answer) return "open";
+  const status = answer.status;
+  if (
+    status === "locked" ||
+    status === "open" ||
+    status === "submitted" ||
+    status === "approved" ||
+    status === "rejected"
+  ) {
+    return status;
+  }
+  return "approved";
+}
+
+function isSectionQuizApproved(section: OnboardingSection, answer?: OnboardingAnswer | null) {
+  if (!answer) return false;
+  const status = getAnswerStatus(answer);
+  if (isSectionReviewRequired(section)) return status === "approved";
+  return status === "approved";
+}
+
+function isRecord(value: Json): value is Record<string, Json> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function formatAnswerValue(value: Json | undefined) {
+  if (Array.isArray(value)) {
+    const values = value.filter((item): item is string => typeof item === "string");
+    return values.length ? values.join(", ") : "—";
+  }
+  if (typeof value === "string") return value.trim() || "—";
+  if (value === null || value === undefined) return "—";
+  return String(value);
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
 }
 
 function groupBy<T extends Record<string, unknown>>(items: T[], key: keyof T) {

@@ -36,6 +36,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { PageHeader, PageShell, ScrollArea } from "@/components/layout/PageShell";
 import { toast } from "sonner";
 
 type TeamRow = Pick<Tables<"teams">, "id" | "name">;
@@ -465,8 +466,8 @@ export function KpiWorkspace() {
   const personalStatus = kpiStatus(personalPercent);
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center justify-between gap-3 rounded-2xl border bg-background/95 p-4 shadow-sm">
+    <PageShell>
+      <PageHeader className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
             {role === "employee" || role === "leader" ? "KPI Cá Nhân" : "KPI"}
@@ -500,9 +501,9 @@ export function KpiWorkspace() {
             </Dialog>
           )}
         </div>
-      </div>
+      </PageHeader>
 
-      <div className="min-h-0 flex-1 overflow-y-auto py-4">
+      <ScrollArea className="py-1 md:pr-2">
         {isLoading ? (
           <div className="grid h-full place-items-center">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -560,8 +561,8 @@ export function KpiWorkspace() {
             )}
           </div>
         )}
-      </div>
-    </div>
+      </ScrollArea>
+    </PageShell>
   );
 }
 

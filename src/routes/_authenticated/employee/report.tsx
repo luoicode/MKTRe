@@ -381,7 +381,7 @@ export function EmployeeReport() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-3 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden">
+    <div className="w-full min-w-0 space-y-3 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden">
       <div className="shrink-0">
         <h1 className="text-xl font-bold tracking-tight md:text-2xl">Báo cáo của bạn</h1>
         <p className="text-sm text-muted-foreground">

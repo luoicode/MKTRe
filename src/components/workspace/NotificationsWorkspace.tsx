@@ -15,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Json, TablesInsert } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
 import { getLeaderTeamIds, getManagerTeamIds } from "@/lib/dailyAggregates";
+import { notificationTypeBadgeClass, notificationTypeLabel } from "@/lib/notifications";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +37,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { PageContent, PageHeader, PageShell } from "@/components/layout/PageShell";
 import { toast } from "sonner";
 
 type TargetScope = "system" | "team";
@@ -119,7 +121,8 @@ export function NotificationsWorkspace({ mode = "auto" }: { mode?: "auto" | "his
           .or(`actor_profile_id.eq.${profile!.id},created_by.eq.${profile!.id}`)
           .or("type.eq.announcement,kind.eq.announcement");
       } else {
-        notificationsQuery = notificationsQuery.eq("target_profile_id", profile!.id);
+        const recipientFilter = `target_profile_id.eq.${profile!.id},user_id.eq.${profile!.id}`;
+        notificationsQuery = notificationsQuery.or(recipientFilter);
         if (readFilter === "unread") {
           notificationsQuery = notificationsQuery.eq("is_read", false);
         } else if (readFilter === "read") {
@@ -295,7 +298,7 @@ export function NotificationsWorkspace({ mode = "auto" }: { mode?: "auto" | "his
       .from("notifications")
       .update({ is_read: true })
       .eq("id", notificationId)
-      .eq("target_profile_id", profile.id);
+      .or(`target_profile_id.eq.${profile.id},user_id.eq.${profile.id}`);
     if (error) {
       toast.error(error.message);
       return;
@@ -308,8 +311,8 @@ export function NotificationsWorkspace({ mode = "auto" }: { mode?: "auto" | "his
     const { error } = await supabase
       .from("notifications")
       .update({ is_read: true })
-      .eq("target_profile_id", profile.id)
-      .eq("is_read", false);
+      .eq("is_read", false)
+      .or(`target_profile_id.eq.${profile.id},user_id.eq.${profile.id}`);
     if (error) {
       toast.error(error.message);
       return;
@@ -330,8 +333,8 @@ export function NotificationsWorkspace({ mode = "auto" }: { mode?: "auto" | "his
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <PageShell>
+      <PageHeader className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{pageTitle}</h1>
           <p className="text-sm text-muted-foreground">
@@ -354,7 +357,7 @@ export function NotificationsWorkspace({ mode = "auto" }: { mode?: "auto" | "his
             </Button>
           )}
         </div>
-      </div>
+      </PageHeader>
 
       {canCreate && (
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -447,58 +450,60 @@ export function NotificationsWorkspace({ mode = "auto" }: { mode?: "auto" | "his
         </Dialog>
       )}
 
-      <Card>
-        <CardHeader className="gap-3 md:flex-row md:items-center md:justify-between">
-          <CardTitle>{isHistoryMode ? "Lịch sử thông báo" : "Thông báo gần đây"}</CardTitle>
-          {!isHistoryMode && (
-            <Select value={readFilter} onValueChange={onFilterChange}>
-              <SelectTrigger className="w-full md:w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tất cả</SelectItem>
-                <SelectItem value="unread">Chưa đọc</SelectItem>
-                <SelectItem value="read">Đã đọc</SelectItem>
-              </SelectContent>
-            </Select>
-          )}
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-          ) : data?.notifications.length ? (
-            <div className={"max-h-[520px] space-y-3 overflow-y-auto pr-2"}>
-              {data.notifications.map((n) =>
-                isHistoryMode ? (
-                  <SentNotificationCard key={n.id} notification={n as SentNotificationHistory} />
-                ) : (
-                  <NotificationCard
-                    key={n.id}
-                    notification={n}
-                    onOpen={() => openNotification(n)}
-                    onMarkRead={() => markOneRead(n.id)}
-                  />
-                ),
-              )}
-              {data.hasMore && (
-                <div className="flex justify-center pt-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
-                  >
-                    Tải thêm
-                  </Button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-              Chưa có thông báo.
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+      <PageContent className="overflow-hidden">
+        <Card className="flex h-full min-h-0 flex-col">
+          <CardHeader className="gap-3 md:flex-row md:items-center md:justify-between">
+            <CardTitle>{isHistoryMode ? "Lịch sử thông báo" : "Thông báo gần đây"}</CardTitle>
+            {!isHistoryMode && (
+              <Select value={readFilter} onValueChange={onFilterChange}>
+                <SelectTrigger className="w-full md:w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tất cả</SelectItem>
+                  <SelectItem value="unread">Chưa đọc</SelectItem>
+                  <SelectItem value="read">Đã đọc</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+          </CardHeader>
+          <CardContent className="min-h-0 flex-1">
+            {isLoading ? (
+              <Loader2 className="mx-auto h-6 w-6 animate-spin" />
+            ) : data?.notifications.length ? (
+              <div className={"max-h-[520px] space-y-3 overflow-y-auto pr-2"}>
+                {data.notifications.map((n) =>
+                  isHistoryMode ? (
+                    <SentNotificationCard key={n.id} notification={n as SentNotificationHistory} />
+                  ) : (
+                    <NotificationCard
+                      key={n.id}
+                      notification={n}
+                      onOpen={() => openNotification(n)}
+                      onMarkRead={() => markOneRead(n.id)}
+                    />
+                  ),
+                )}
+                {data.hasMore && (
+                  <div className="flex justify-center pt-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
+                    >
+                      Tải thêm
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                Chưa có thông báo.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </PageContent>
+    </PageShell>
   );
 }
 
@@ -643,8 +648,8 @@ function NotificationCard({
             </p>
           </div>
         </div>
-        <Badge variant={notification.is_read ? "outline" : "default"}>
-          {notification.type ?? notification.kind}
+        <Badge className={notificationTypeBadgeClass(notification)}>
+          {notificationTypeLabel(notification)}
         </Badge>
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
