@@ -23,6 +23,8 @@ import {
 import { ReportActions } from "@/components/ReportActions";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib/dateRange";
+import { RefreshButton } from "@/components/RefreshButton";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/manager/today-teams")({
   component: ManagerTodayTeams,
@@ -58,7 +60,7 @@ function ManagerTodayTeams() {
     return () => document.body.classList.remove("screenshot-mode");
   }, [screenshot]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["manager-today", profile?.id, normalizedRange.from, normalizedRange.to],
     enabled: !!profile,
     queryFn: async () => {
@@ -193,6 +195,10 @@ function ManagerTodayTeams() {
     a.click();
     URL.revokeObjectURL(url);
   };
+  const refreshData = async () => {
+    await refetch();
+    toast.success("Đã làm mới dữ liệu");
+  };
 
   return (
     <div className="w-full min-w-0 space-y-2 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden">
@@ -203,27 +209,30 @@ function ManagerTodayTeams() {
             <Download className="mr-2 h-4 w-4" /> Export CSV
           </Button>
         </div>
-        <ReportActions
-          targetRef={ref}
-          filename={`today-teams-${normalizedRange.from}-${normalizedRange.to}.png`}
-          screenshotMode={screenshot}
-          onToggleScreenshot={() => setScreenshot((v) => !v)}
-          sheetData={{
-            reportType: "team",
-            reportDate: normalizedRange.to,
-            dateLabel,
-            title: "Tất cả team",
-            channel: "FACEBOOK",
-            ads_cost: grand.ads,
-            mess_count: grand.mess,
-            data_count: grand.data,
-            closed_orders: grand.closed,
-            daily_data_revenue: grand.dailyRev,
-            total_orders: grand.orders,
-            total_revenue: grand.rev,
-            recovered_revenue: grand.recovered,
-          }}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
+          <ReportActions
+            targetRef={ref}
+            filename={`today-teams-${normalizedRange.from}-${normalizedRange.to}.png`}
+            screenshotMode={screenshot}
+            onToggleScreenshot={() => setScreenshot((v) => !v)}
+            sheetData={{
+              reportType: "team",
+              reportDate: normalizedRange.to,
+              dateLabel,
+              title: "Tất cả team",
+              channel: "FACEBOOK",
+              ads_cost: grand.ads,
+              mess_count: grand.mess,
+              data_count: grand.data,
+              closed_orders: grand.closed,
+              daily_data_revenue: grand.dailyRev,
+              total_orders: grand.orders,
+              total_revenue: grand.rev,
+              recovered_revenue: grand.recovered,
+            }}
+          />
+        </div>
       </div>
 
       {isLoading ? (

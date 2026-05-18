@@ -39,6 +39,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader, PageShell, ScrollArea } from "@/components/layout/PageShell";
+import { RefreshButton } from "@/components/RefreshButton";
 import { toast } from "sonner";
 
 type Asset = Tables<"assets">;
@@ -111,7 +112,7 @@ export function AssetsWorkspace() {
   const isEmployee = role === "employee";
   const canCreate = !!role && role !== null;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["assets-workspace", profile?.id, role],
     enabled: !!profile && !!role,
     queryFn: async () => {
@@ -258,6 +259,10 @@ export function AssetsWorkspace() {
 
   const allowedGroups = getAllowedGroups(role);
   const groupOptions = allowedGroups.length ? allowedGroups : ["personal"];
+  const refreshData = async () => {
+    await refetch();
+    toast.success("Đã làm mới dữ liệu");
+  };
 
   const openCreate = () => {
     const nextGroup =
@@ -405,12 +410,15 @@ export function AssetsWorkspace() {
               </p>
             </div>
           </div>
-          {canCreate && (
-            <Button onClick={openCreate}>
-              <Plus className="mr-2 h-4 w-4" />
-              Thêm tài sản
-            </Button>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
+            {canCreate && (
+              <Button onClick={openCreate}>
+                <Plus className="mr-2 h-4 w-4" />
+                Thêm tài sản
+              </Button>
+            )}
+          </div>
         </div>
 
         <Tabs value={tab} onValueChange={(value) => setTab(value as AssetGroup | typeof ALL)}>

@@ -132,17 +132,23 @@ export function TaskDetailsModal({
               label="Team"
               value={task.teams?.name ?? "Chưa gán team"}
             />
-            <DetailItem
-              icon={<UserRound className="h-4 w-4" />}
-              label="Người giao"
-              value={task.assignedByProfile?.full_name ?? "—"}
-            />
+            {task.assignedByProfile && (
+              <DetailItem
+                icon={<UserRound className="h-4 w-4" />}
+                label="Người giao"
+                value={task.assignedByProfile.full_name}
+              />
+            )}
           </section>
 
-          <section className="mt-5 grid w-full min-w-0 grid-cols-1 gap-3 lg:grid-cols-2">
-            <PersonBlock label="Người phụ trách" user={task.profiles} />
-            <PersonBlock label="Người giao" user={task.assignedByProfile ?? null} />
-          </section>
+          {(task.profiles || task.assignedByProfile) && (
+            <section className="mt-5 grid w-full min-w-0 grid-cols-1 gap-3 lg:grid-cols-2">
+              {task.profiles && <PersonBlock label="Người phụ trách" user={task.profiles} />}
+              {task.assignedByProfile && (
+                <PersonBlock label="Người giao" user={task.assignedByProfile} />
+              )}
+            </section>
+          )}
 
           {(task.completion_note || task.proof_url || task.review_feedback) && (
             <section className="mt-5 w-full min-w-0 space-y-3 rounded-2xl border bg-white p-4">
@@ -236,7 +242,7 @@ function DetailItem({ icon, label, value }: { icon: ReactNode; label: string; va
   );
 }
 
-function PersonBlock({ label, user }: { label: string; user: UserRow | null }) {
+function PersonBlock({ label, user }: { label: string; user: UserRow }) {
   return (
     <div className="flex min-w-0 items-center gap-3 rounded-2xl border bg-white p-4">
       <UserAvatar user={user} />
@@ -245,9 +251,9 @@ function PersonBlock({ label, user }: { label: string; user: UserRow | null }) {
           {label}
         </p>
         <p className="whitespace-normal break-words text-sm font-semibold text-slate-900">
-          {user?.full_name ?? "Chưa có dữ liệu"}
+          {user.full_name}
         </p>
-        {user?.username && (
+        {user.username && (
           <p className="whitespace-normal break-words text-xs text-slate-500">@{user.username}</p>
         )}
       </div>
@@ -255,19 +261,15 @@ function PersonBlock({ label, user }: { label: string; user: UserRow | null }) {
   );
 }
 
-function UserAvatar({ user }: { user: UserRow | null }) {
-  const avatarUrl = user?.avatar_url?.trim();
+function UserAvatar({ user }: { user: UserRow }) {
+  const avatarUrl = user.avatar_url?.trim();
   return (
     <Avatar className="h-10 w-10 shrink-0 overflow-hidden rounded-full border">
       {avatarUrl && (
-        <AvatarImage
-          src={avatarUrl}
-          alt={user?.full_name ?? "Avatar"}
-          className="h-full w-full object-cover"
-        />
+        <AvatarImage src={avatarUrl} alt={user.full_name} className="h-full w-full object-cover" />
       )}
       <AvatarFallback className="bg-slate-100 text-xs font-semibold text-slate-600">
-        {getInitials(user?.full_name)}
+        {getInitials(user.full_name)}
       </AvatarFallback>
     </Avatar>
   );

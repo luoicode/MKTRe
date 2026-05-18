@@ -27,6 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Plus, UserPlus, AlertTriangle, ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
 import { SearchableSelect, SearchableMultiSelect } from "@/components/SearchableSelect";
+import { RefreshButton } from "@/components/RefreshButton";
 
 export const Route = createFileRoute("/_authenticated/admin/teams")({ component: AdminTeams });
 
@@ -50,7 +51,12 @@ interface TeamWithMembershipLeader {
 
 function AdminTeams() {
   const qc = useQueryClient();
-  const { data: teams, isLoading } = useQuery({
+  const {
+    data: teams,
+    isLoading,
+    isFetching: isTeamsFetching,
+    refetch: refetchTeams,
+  } = useQuery({
     queryKey: ["teams-full"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -92,7 +98,11 @@ function AdminTeams() {
     },
   });
 
-  const { data: profiles } = useQuery({
+  const {
+    data: profiles,
+    isFetching: isProfilesFetching,
+    refetch: refetchProfiles,
+  } = useQuery({
     queryKey: ["all-profiles-with-role"],
     queryFn: async () => {
       const { data: ps } = await supabase
@@ -140,6 +150,10 @@ function AdminTeams() {
 
   const leaders = (profiles ?? []).filter((p) => p.role === "leader");
   const employees = (profiles ?? []).filter((p) => p.role === "employee");
+  const refreshData = async () => {
+    await Promise.all([refetchTeams(), refetchProfiles()]);
+    toast.success("Đã làm mới dữ liệu");
+  };
 
   return (
     <div className="space-y-6">
@@ -148,20 +162,26 @@ function AdminTeams() {
           <h1 className="text-2xl font-bold tracking-tight">Quản lý Team</h1>
           <p className="text-sm text-muted-foreground">Tạo team, gán Leader & nhân viên</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" /> Tạo team
-            </Button>
-          </DialogTrigger>
-          <CreateTeamDialog
-            leaders={leaders}
-            onClose={() => {
-              setOpen(false);
-              qc.invalidateQueries({ queryKey: ["teams-full"] });
-            }}
+        <div className="flex flex-wrap items-center gap-2">
+          <RefreshButton
+            isRefreshing={isTeamsFetching || isProfilesFetching}
+            onRefresh={refreshData}
           />
-        </Dialog>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" /> Tạo team
+              </Button>
+            </DialogTrigger>
+            <CreateTeamDialog
+              leaders={leaders}
+              onClose={() => {
+                setOpen(false);
+                qc.invalidateQueries({ queryKey: ["teams-full"] });
+              }}
+            />
+          </Dialog>
+        </div>
       </div>
 
       <Card>

@@ -9,6 +9,8 @@ import { fmtVndDong } from "@/lib/reports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { RefreshButton } from "@/components/RefreshButton";
+import { toast } from "sonner";
 
 type RankingEntry = Database["public"]["Functions"]["get_ranking_entries"]["Returns"][number];
 type RankingPeriod = "today" | "week" | "month";
@@ -42,7 +44,7 @@ export function RankingWorkspace() {
   const effectivePeriod = canUsePeriodFilter ? period : "today";
   const range = getPeriodRange(effectivePeriod);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["global-ranking", effectivePeriod, range.from, range.to],
     enabled: !!profile && !!role,
     queryFn: async () => {
@@ -67,6 +69,10 @@ export function RankingWorkspace() {
   const currentUserRank = marketingRows.find((row) => row.id === profile?.id)?.rank ?? null;
   const showCurrentUserRank = !!currentUserRank && currentUserRank > 10;
   const showRankTag = role === "employee" || role === "leader";
+  const refreshData = async () => {
+    await refetch();
+    toast.success("Đã làm mới dữ liệu");
+  };
 
   return (
     <div className="space-y-4 md:flex md:h-full md:min-h-0 md:flex-col md:gap-4 md:space-y-0 md:overflow-hidden">
@@ -82,27 +88,30 @@ export function RankingWorkspace() {
             </h1>
           </div>
 
-          {showRankTag ? (
-            <CurrentRankTag rank={currentUserRank} total={marketingRows.length} />
-          ) : canUsePeriodFilter ? (
-            <div className="inline-flex self-start rounded-2xl border bg-slate-50 p-1 lg:self-auto">
-              {(Object.keys(PERIOD_LABELS) as RankingPeriod[]).map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => setPeriod(item)}
-                  className={cn(
-                    "rounded-xl px-3 py-2 text-sm font-semibold transition-colors",
-                    period === item
-                      ? "bg-white text-primary shadow-sm"
-                      : "text-slate-500 hover:text-slate-900",
-                  )}
-                >
-                  {PERIOD_LABELS[item]}
-                </button>
-              ))}
-            </div>
-          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            {showRankTag ? (
+              <CurrentRankTag rank={currentUserRank} total={marketingRows.length} />
+            ) : canUsePeriodFilter ? (
+              <div className="inline-flex self-start rounded-2xl border bg-slate-50 p-1 lg:self-auto">
+                {(Object.keys(PERIOD_LABELS) as RankingPeriod[]).map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => setPeriod(item)}
+                    className={cn(
+                      "rounded-xl px-3 py-2 text-sm font-semibold transition-colors",
+                      period === item
+                        ? "bg-white text-primary shadow-sm"
+                        : "text-slate-500 hover:text-slate-900",
+                    )}
+                  >
+                    {PERIOD_LABELS[item]}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
+          </div>
         </div>
       </section>
 

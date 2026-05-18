@@ -33,6 +33,8 @@ import {
 } from "@/components/ui/select";
 import { Loader2, Plus, Edit } from "lucide-react";
 import { toast } from "sonner";
+import { RefreshButton } from "@/components/RefreshButton";
+import { UserAvatar } from "@/components/UserAvatar";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({ component: AdminUsers });
 
@@ -46,6 +48,7 @@ interface UserRow {
   full_name: string;
   username: string;
   email: string;
+  avatar_url: string | null;
   phone: string | null;
   status: UserStatus;
   role?: AppRole | null;
@@ -114,7 +117,7 @@ function normalizePhone(value: string) {
 function AdminUsers() {
   const qc = useQueryClient();
   const { profile } = useAuth();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["admin-users"],
     queryFn: async () => {
       const [{ data: profiles, error }, { data: teams, error: teamsError }] = await Promise.all([
@@ -169,12 +172,17 @@ function AdminUsers() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [search, setSearch] = useState("");
+  const refreshData = async () => {
+    await refetch();
+    toast.success("Đã làm mới dữ liệu");
+  };
   const filtered = users.filter((u) => {
     const s = search.trim().toLowerCase();
     if (!s) return true;
     return (
       u.full_name.toLowerCase().includes(s) ||
       u.username.toLowerCase().includes(s) ||
+      u.email.toLowerCase().includes(s) ||
       (u.phone ?? "").toLowerCase().includes(s) ||
       roleLabel(u.role).toLowerCase().includes(s) ||
       (u.activeTeamName ?? "").toLowerCase().includes(s)
@@ -188,21 +196,24 @@ function AdminUsers() {
           <h1 className="text-2xl font-bold tracking-tight">Quản lý người dùng</h1>
           <p className="text-sm text-muted-foreground">Tạo, cập nhật, vô hiệu hóa tài khoản</p>
         </div>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" /> Tạo user
-            </Button>
-          </DialogTrigger>
-          <CreateUserDialog
-            teams={teams}
-            adminProfileId={profile?.id ?? null}
-            onClose={() => {
-              setCreateOpen(false);
-              qc.invalidateQueries({ queryKey: ["admin-users"] });
-            }}
-          />
-        </Dialog>
+        <div className="flex flex-wrap items-center gap-2">
+          <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" /> Tạo user
+              </Button>
+            </DialogTrigger>
+            <CreateUserDialog
+              teams={teams}
+              adminProfileId={profile?.id ?? null}
+              onClose={() => {
+                setCreateOpen(false);
+                qc.invalidateQueries({ queryKey: ["admin-users"] });
+              }}
+            />
+          </Dialog>
+        </div>
       </div>
 
       <Card>
@@ -226,7 +237,6 @@ function AdminUsers() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Tên</TableHead>
-                    <TableHead>Tài khoản đăng nhập</TableHead>
                     <TableHead>Số điện thoại</TableHead>
                     <TableHead>Vai trò</TableHead>
                     <TableHead>Team</TableHead>
@@ -237,8 +247,15 @@ function AdminUsers() {
                 <TableBody>
                   {filtered.map((u) => (
                     <TableRow key={u.id}>
-                      <TableCell className="font-medium">{u.full_name}</TableCell>
-                      <TableCell>{u.username}</TableCell>
+                      <TableCell>
+                        <div className="flex min-w-[220px] items-center gap-3">
+                          <UserAvatar name={u.full_name} avatarUrl={u.avatar_url} size={40} />
+                          <div className="min-w-0">
+                            <p className="truncate font-medium">{u.full_name}</p>
+                            <p className="truncate text-xs text-muted-foreground">{u.email}</p>
+                          </div>
+                        </div>
+                      </TableCell>
                       <TableCell>{u.phone?.trim() || "—"}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{roleLabel(u.role)}</Badge>
@@ -258,7 +275,7 @@ function AdminUsers() {
                   ))}
                   {filtered.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-6">
+                      <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
                         Không có user
                       </TableCell>
                     </TableRow>

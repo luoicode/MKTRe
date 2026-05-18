@@ -30,6 +30,8 @@ import { Badge } from "@/components/ui/badge";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { PageContent, PageHeader, PageShell, ScrollArea } from "@/components/layout/PageShell";
 import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib/dateRange";
+import { RefreshButton } from "@/components/RefreshButton";
+import { toast } from "sonner";
 
 export function AnalyticsDashboard({
   scope,
@@ -40,7 +42,7 @@ export function AnalyticsDashboard({
   const [range, setRange] = useState<DateRangeValue>(() => initialDateRange("month"));
   const { from, to } = normalizeDateRange(range);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["analytics-dashboard", scope, profile?.id, from, to],
     enabled: scope === "admin" || !!profile,
     queryFn: async () => {
@@ -94,6 +96,10 @@ export function AnalyticsDashboard({
   );
   const kpiCompletion = kpiPercent(totals.total_revenue, kpiRevenueTarget);
   const status = kpiStatus(kpiCompletion);
+  const refreshData = async () => {
+    await refetch();
+    toast.success("Đã làm mới dữ liệu");
+  };
 
   return (
     <PageShell className="gap-3">
@@ -111,8 +117,9 @@ export function AnalyticsDashboard({
             · Doanh thu, ads, KPI và hiệu suất theo khoảng ngày.
           </p>
         </div>
-        <div className="mt-3 md:mt-0">
+        <div className="mt-3 flex flex-wrap items-center gap-2 md:mt-0">
           <DateRangeFilter value={range} onChange={setRange} />
+          <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
         </div>
       </PageHeader>
 

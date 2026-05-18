@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { TaskDetailsModal, type TaskDetailsTask } from "@/components/workspace/TaskDetailsModal";
+import { RefreshButton } from "@/components/RefreshButton";
 
 type TeamRow = Pick<Tables<"teams">, "id" | "name">;
 type UserRow = Pick<Tables<"profiles">, "id" | "full_name" | "username" | "avatar_url">;
@@ -187,7 +188,7 @@ export function TasksWorkspace() {
     status: "todo" as TaskStatus,
   });
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["tasks-workspace", role, profile?.id, date],
     enabled: !!profile && !!role,
     queryFn: async () => {
@@ -612,6 +613,10 @@ export function TasksWorkspace() {
     (data?.tasks.length ?? 0) > 0 && filteredTasks.length === 0 && filteredTemplates.length === 0
       ? "Không có task phù hợp với bộ lọc"
       : "Trống";
+  const refreshData = async () => {
+    await refetch();
+    toast.success("Đã làm mới dữ liệu");
+  };
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -1968,6 +1973,7 @@ export function TasksWorkspace() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
             {isEmployee && (
               <Badge className="rounded-full border-emerald-100 bg-white px-4 py-2 text-sm font-semibold text-emerald-600 shadow-sm">
                 <span className="mr-2 h-2.5 w-2.5 rounded-full bg-emerald-500" />

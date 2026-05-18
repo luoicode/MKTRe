@@ -27,6 +27,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { RefreshButton } from "@/components/RefreshButton";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/admin/reports")({ component: AdminReports });
 
@@ -54,7 +56,7 @@ function AdminReports() {
     return () => document.body.classList.remove("screenshot-mode");
   }, [screenshot]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["admin-team-summary-report", normalizedRange.from, normalizedRange.to, teamId],
     queryFn: async () => {
       const { data: teams, error: teamsError } = await supabase
@@ -105,6 +107,10 @@ function AdminReports() {
       : isSingleDay
         ? "BÁO CÁO TỔNG TEAM TRONG NGÀY"
         : "BÁO CÁO TỔNG TEAM THEO KHOẢNG NGÀY";
+  const refreshData = async () => {
+    await refetch();
+    toast.success("Đã làm mới dữ liệu");
+  };
 
   return (
     <div className="w-full min-w-0 space-y-2 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden">
@@ -128,31 +134,34 @@ function AdminReports() {
             </Select>
           </div>
         </div>
-        <ReportActions
-          targetRef={ref}
-          filename={teamReportExportFilename(now, normalizedRange.to, selectedTeamName)}
-          screenshotMode={screenshot}
-          onToggleScreenshot={() => setScreenshot((value) => !value)}
-          sheetData={
-            totals
-              ? {
-                  reportType: "team",
-                  reportDate: normalizedRange.to,
-                  dateLabel,
-                  title: selectedTeamName,
-                  channel: "FACEBOOK",
-                  ads_cost: totals.ads_cost,
-                  mess_count: totals.mess_count,
-                  data_count: totals.data_count,
-                  closed_orders: totals.closed_orders,
-                  daily_data_revenue: totals.daily_data_revenue,
-                  total_orders: totals.total_orders,
-                  total_revenue: totals.total_revenue,
-                  recovered_revenue: totals.recovered_revenue,
-                }
-              : undefined
-          }
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
+          <ReportActions
+            targetRef={ref}
+            filename={teamReportExportFilename(now, normalizedRange.to, selectedTeamName)}
+            screenshotMode={screenshot}
+            onToggleScreenshot={() => setScreenshot((value) => !value)}
+            sheetData={
+              totals
+                ? {
+                    reportType: "team",
+                    reportDate: normalizedRange.to,
+                    dateLabel,
+                    title: selectedTeamName,
+                    channel: "FACEBOOK",
+                    ads_cost: totals.ads_cost,
+                    mess_count: totals.mess_count,
+                    data_count: totals.data_count,
+                    closed_orders: totals.closed_orders,
+                    daily_data_revenue: totals.daily_data_revenue,
+                    total_orders: totals.total_orders,
+                    total_revenue: totals.total_revenue,
+                    recovered_revenue: totals.recovered_revenue,
+                  }
+                : undefined
+            }
+          />
+        </div>
       </div>
 
       {isLoading ? (

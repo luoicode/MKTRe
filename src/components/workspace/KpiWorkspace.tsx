@@ -37,6 +37,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { PageHeader, PageShell, ScrollArea } from "@/components/layout/PageShell";
+import { RefreshButton } from "@/components/RefreshButton";
 import { toast } from "sonner";
 
 type TeamRow = Pick<Tables<"teams">, "id" | "name">;
@@ -201,7 +202,7 @@ export function KpiWorkspace() {
   const currentPeriod = useMemo(() => normalizeKpiRange(periodRange), [periodRange]);
   const periodLabel = useMemo(() => kpiRangeLabel(currentPeriod), [currentPeriod]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["kpi-workspace", role, profile?.id, currentPeriod.from, currentPeriod.to],
     enabled: !!profile && !!role,
     queryFn: async () => {
@@ -464,6 +465,10 @@ export function KpiWorkspace() {
     Number(personalKpi?.revenue_target ?? 0),
   );
   const personalStatus = kpiStatus(personalPercent);
+  const refreshData = async () => {
+    await refetch();
+    toast.success("Đã làm mới dữ liệu");
+  };
 
   return (
     <PageShell>
@@ -477,6 +482,7 @@ export function KpiWorkspace() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
           {(role === "employee" || role === "leader") && (
             <Badge className={statusClass(personalStatus)}>
               <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
