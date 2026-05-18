@@ -11,7 +11,7 @@ const ADMIN_PASSWORD = "Dasnotri123";
 const ADMIN_FULLNAME = "System Admin";
 // Username may contain special chars not allowed in email local part. Sanitize.
 const sanitize = (u: string) => u.toLowerCase().replace(/[^a-z0-9._-]/g, "_");
-const ADMIN_EMAIL = `${sanitize(ADMIN_USERNAME)}@msrs.local`;
+const ADMIN_EMAIL = `${sanitize(ADMIN_USERNAME)}@mktre.local`;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });

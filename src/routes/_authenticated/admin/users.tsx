@@ -100,6 +100,12 @@ function roleLabel(role?: string | null) {
   return ROLE_LABELS[role as AppRole] ?? role;
 }
 
+function normalizeInternalLoginPreview(value: string) {
+  const raw = value.trim().toLowerCase();
+  const localPart = raw.includes("@") ? raw.split("@")[0] : raw;
+  return localPart.replace(/\s+/g, "").replace(/[^a-z0-9._-]/g, "_");
+}
+
 function AdminUsers() {
   const qc = useQueryClient();
   const { profile } = useAuth();
@@ -368,8 +374,13 @@ function CreateUserDialog({
           <Input
             value={form.username}
             onChange={(e) => setForm({ ...form, username: e.target.value })}
-            placeholder="vd: dangkhoa123"
+            placeholder="vd: test"
           />
+          <p className="mt-1 text-xs text-muted-foreground">
+            {normalizeInternalLoginPreview(form.username)
+              ? `Hệ thống sẽ tạo tài khoản đăng nhập: ${normalizeInternalLoginPreview(form.username)}`
+              : "Chỉ nhập tài khoản nội bộ, không nhập email thật."}
+          </p>
         </div>
         <div>
           <Label>Mật khẩu tạm thời</Label>
@@ -583,7 +594,7 @@ function EditUserDialog({
           <Input
             value={form.username}
             onChange={(e) => setForm({ ...form, username: e.target.value })}
-            placeholder="vd: dangkhoa123"
+            placeholder="vd: test"
           />
         </div>
         <div>

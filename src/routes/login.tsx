@@ -18,12 +18,37 @@ const ROLE_HOME: Record<AppRole, string> = {
   employee: "/employee/dashboard",
 };
 const INTERNAL_AUTH_DOMAIN = "mktre.local";
+const SUPPORTED_AUTH_DOMAINS = ["dasnotri.com"];
+const ALLOWED_AUTH_DOMAINS = new Set([INTERNAL_AUTH_DOMAIN, ...SUPPORTED_AUTH_DOMAINS]);
 
-function normalizeLoginEmail(value: string) {
+function normalizeLoginName(value: string) {
   const raw = value.trim().toLowerCase();
   const localPart = raw.includes("@") ? raw.split("@")[0] : raw;
-  const loginName = localPart.replace(/\s+/g, "").replace(/[^a-z0-9._-]/g, "_");
-  return loginName ? `${loginName}@${INTERNAL_AUTH_DOMAIN}` : "";
+  return localPart.replace(/\s+/g, "").replace(/[^a-z0-9._-]/g, "_");
+}
+
+function getLoginCandidates(value: string) {
+  const raw = value.trim().toLowerCase();
+  if (raw.includes("@")) {
+    const [localPart, domain, ...rest] = raw.split("@");
+    if (!localPart || !domain || rest.length > 0 || !ALLOWED_AUTH_DOMAINS.has(domain)) {
+      return {
+        candidates: [],
+        error: "Tài khoản đăng nhập không hợp lệ.",
+      };
+    }
+    return { candidates: [raw], error: null };
+  }
+
+  const loginName = normalizeLoginName(raw);
+  if (!loginName) return { candidates: [], error: null };
+
+  const candidates = [
+    `${loginName}@${INTERNAL_AUTH_DOMAIN}`,
+    ...SUPPORTED_AUTH_DOMAINS.map((domain) => `${loginName}@${domain}`),
+  ];
+
+  return { candidates: Array.from(new Set(candidates)), error: null };
 }
 
 function LoginPage() {
@@ -41,8 +66,12 @@ function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const loginValue = emailInput.trim();
-    const authEmail = normalizeLoginEmail(loginValue);
-    if (!authEmail || !password) {
+    const { candidates: loginCandidates, error: loginError } = getLoginCandidates(loginValue);
+    if (loginError) {
+      toast.error(loginError);
+      return;
+    }
+    if (!loginCandidates.length || !password) {
       toast.error("Vui lòng nhập đầy đủ tài khoản đăng nhập và mật khẩu.");
       return;
     }
@@ -50,18 +79,25 @@ function LoginPage() {
     if (import.meta.env.DEV) {
       console.info("[login] signInWithPassword payload", {
         input: loginValue,
-        email: authEmail,
+        candidates: loginCandidates,
         passwordLength: password.length,
         supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
       });
     }
-    const { data: authData, error } = await supabase.auth.signInWithPassword({
-      email: authEmail,
-      password,
-    });
-    if (error) {
+
+    let authData: Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>["data"] | null =
+      null;
+    for (const email of loginCandidates) {
+      const result = await supabase.auth.signInWithPassword({ email, password });
+      if (!result.error) {
+        authData = result.data;
+        break;
+      }
+    }
+
+    if (!authData?.user) {
       setSubmitting(false);
-      toast.error(error.message);
+      toast.error("Sai tài khoản hoặc mật khẩu");
       return;
     }
 
@@ -129,10 +165,14 @@ function LoginPage() {
                   autoComplete="username"
                   value={emailInput}
                   onChange={(e) => setEmailInput(e.target.value)}
-                  placeholder="vd: dangkhoa123"
+                  placeholder="vd: test"
                   disabled={submitting}
                   required
                 />
+                <p className="text-xs text-muted-foreground">
+                  Tài khoản mới dùng tên đăng nhập nội bộ. Tài khoản cũ có thể dùng đuôi
+                  @dasnotri.com.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Mật khẩu</Label>
