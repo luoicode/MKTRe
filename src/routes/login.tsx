@@ -158,7 +158,7 @@ function LoginPage() {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Tài khoản đăng nhập</Label>
+                <Label htmlFor="email">Email đăng nhập</Label>
                 <Input
                   id="email"
                   type="text"
@@ -169,10 +169,6 @@ function LoginPage() {
                   disabled={submitting}
                   required
                 />
-                <p className="text-xs text-muted-foreground">
-                  Tài khoản mới dùng tên đăng nhập nội bộ. Tài khoản cũ có thể dùng đuôi
-                  @dasnotri.com.
-                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Mật khẩu</Label>
