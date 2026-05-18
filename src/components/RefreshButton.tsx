@@ -5,16 +5,22 @@ import { cn } from "@/lib/utils";
 export function RefreshButton({
   isRefreshing,
   onRefresh,
-  label = "Làm mới",
 }: {
   isRefreshing: boolean;
   onRefresh: () => void | Promise<void>;
-  label?: string;
 }) {
   return (
-    <Button type="button" variant="outline" onClick={onRefresh} disabled={isRefreshing}>
-      <RefreshCw className={cn("mr-2 h-4 w-4", isRefreshing && "animate-spin")} />
-      {isRefreshing ? "Đang làm mới..." : label}
+    <Button
+      type="button"
+      variant="outline"
+      size="icon"
+      className="h-9 w-9 shrink-0"
+      onClick={onRefresh}
+      disabled={isRefreshing}
+      title="Làm mới dữ liệu"
+      aria-label="Làm mới dữ liệu"
+    >
+      <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
     </Button>
   );
 }

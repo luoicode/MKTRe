@@ -51,7 +51,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "MKTRe" },
+      { title: "Workspace MIZ" },
       { name: "description", content: "Hệ thống quản lý báo cáo Marketing/Sales nội bộ" },
     ],
     links: [
@@ -102,7 +102,7 @@ function AuthNotificationCacheIsolation({ queryClient }: { queryClient: QueryCli
     if (previousIdentity.current !== undefined && previousIdentity.current !== identity) {
       queryClient.removeQueries({ queryKey: ["notifications"] });
       queryClient.removeQueries({ queryKey: ["notifications-workspace"] });
-      if (typeof document !== "undefined") document.title = "MKTRe";
+      if (typeof document !== "undefined") document.title = "Workspace MIZ";
     }
     previousIdentity.current = identity;
   }, [identity, queryClient]);

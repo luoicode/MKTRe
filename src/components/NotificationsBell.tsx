@@ -22,7 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 
-const APP_TITLE = "MKTRe";
+const APP_TITLE = "Workspace MIZ";
 
 export function NotificationsBell() {
   const { profile, role } = useAuth();

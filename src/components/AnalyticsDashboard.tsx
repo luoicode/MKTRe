@@ -103,7 +103,7 @@ export function AnalyticsDashboard({
 
   return (
     <PageShell className="gap-3">
-      <PageHeader className="flex-wrap items-end justify-between gap-3 md:flex">
+      <PageHeader className="flex-wrap items-center justify-between gap-3 md:flex">
         <div>
           <h1 className="text-xl font-bold tracking-tight md:text-2xl">Tổng quan</h1>
           <p className="text-sm text-muted-foreground">
