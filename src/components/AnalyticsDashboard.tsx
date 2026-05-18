@@ -32,6 +32,13 @@ import { PageContent, PageHeader, PageShell, ScrollArea } from "@/components/lay
 import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib/dateRange";
 import { RefreshButton } from "@/components/RefreshButton";
 import { toast } from "sonner";
+import {
+  calculateSalaryEstimate,
+  type SalaryAttendanceRecord,
+  type SalaryEstimate,
+  type SalaryRole,
+  type SalaryRule,
+} from "@/lib/salary";
 
 export function AnalyticsDashboard({
   scope,
@@ -74,7 +81,49 @@ export function AnalyticsDashboard({
       else if (teamIds?.length) kpiQuery = kpiQuery.in("team_id", teamIds);
       const { data: kpis } = await kpiQuery;
 
-      return { reports, leaderPersonalReports, kpis: kpis ?? [], teamIds: teamIds ?? [] };
+      let leaderPersonalKpis: Pick<Tables<"kpi_targets">, "revenue_target">[] = [];
+      if (scope === "leader") {
+        const { data: personalKpis, error: personalKpisError } = await supabase
+          .from("kpi_targets")
+          .select("revenue_target")
+          .eq("user_id", profile!.id)
+          .lte("period_start", to)
+          .gte("period_end", from);
+        if (personalKpisError) throw personalKpisError;
+        leaderPersonalKpis = personalKpis ?? [];
+      }
+
+      let salaryRules: SalaryRule[] = [];
+      let salaryAttendance: SalaryAttendanceRecord[] = [];
+      const salaryUserId = scope === "employee" || scope === "leader" ? profile!.id : null;
+      if (salaryUserId) {
+        const [rulesResult, attendanceResult] = await Promise.all([
+          supabase
+            .from("salary_rules")
+            .select("role, revenue_min, revenue_max, base_salary, milestone_bonus, over_kpi_bonus")
+            .eq("is_active", true),
+          supabase
+            .from("attendance_records")
+            .select("attendance_date, status")
+            .eq("user_id", salaryUserId)
+            .gte("attendance_date", from)
+            .lte("attendance_date", to),
+        ]);
+        if (rulesResult.error) throw rulesResult.error;
+        if (attendanceResult.error) throw attendanceResult.error;
+        salaryRules = rulesResult.data ?? [];
+        salaryAttendance = attendanceResult.data ?? [];
+      }
+
+      return {
+        reports,
+        leaderPersonalReports,
+        kpis: kpis ?? [],
+        leaderPersonalKpis,
+        teamIds: teamIds ?? [],
+        salaryRules,
+        salaryAttendance,
+      };
     },
   });
 
@@ -94,8 +143,26 @@ export function AnalyticsDashboard({
       sum + Number(k.revenue_target ?? 0),
     0,
   );
+  const leaderPersonalKpiRevenueTarget = (data?.leaderPersonalKpis ?? []).reduce(
+    (sum: number, k: Pick<Tables<"kpi_targets">, "revenue_target">) =>
+      sum + Number(k.revenue_target ?? 0),
+    0,
+  );
   const kpiCompletion = kpiPercent(totals.total_revenue, kpiRevenueTarget);
   const status = kpiStatus(kpiCompletion);
+  const salaryRole: SalaryRole | null =
+    scope === "employee" ? "employee" : scope === "leader" ? "leader" : null;
+  const salaryEstimate = salaryRole
+    ? calculateSalaryEstimate({
+        rules: data?.salaryRules ?? [],
+        role: salaryRole,
+        revenue: scope === "leader" ? leaderPersonalTotals.total_revenue : totals.total_revenue,
+        kpiTarget: scope === "leader" ? leaderPersonalKpiRevenueTarget : kpiRevenueTarget,
+        attendanceRecords: data?.salaryAttendance ?? [],
+        from,
+        to,
+      })
+    : null;
   const refreshData = async () => {
     await refetch();
     toast.success("Đã làm mới dữ liệu");
@@ -139,6 +206,7 @@ export function AnalyticsDashboard({
               badge="Cá nhân"
             >
               <DashboardMetrics totals={leaderPersonalTotals} rates={leaderPersonalRates} />
+              <SalaryEstimateCard estimate={salaryEstimate} />
             </OverviewSection>
           ) : null}
 
@@ -178,6 +246,8 @@ export function AnalyticsDashboard({
               <Mini label="Chi Phí ADS/Tổng Doanh Số" value={formatPercent(rates.cp_revenue)} />
             </div>
           </OverviewSection>
+
+          {scope === "employee" ? <SalaryEstimateCard estimate={salaryEstimate} /> : null}
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between px-4 py-3">
@@ -342,6 +412,59 @@ function Mini({ label, value }: { label: string; value: string }) {
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-1 text-base font-semibold leading-tight">{value}</p>
     </div>
+  );
+}
+
+function SalaryEstimateCard({ estimate }: { estimate: SalaryEstimate | null }) {
+  if (!estimate) return null;
+
+  if (!estimate.rule) {
+    return (
+      <Card>
+        <CardHeader className="px-4 py-3">
+          <CardTitle className="text-base">Lương ước tính</CardTitle>
+        </CardHeader>
+        <CardContent className="px-4 pb-4 text-sm text-muted-foreground">
+          Chưa cấu hình lương
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border-emerald-100 bg-gradient-to-br from-white to-emerald-50/50">
+      <CardHeader className="flex flex-row items-start justify-between gap-3 px-4 py-3">
+        <div>
+          <CardTitle className="text-base">Lương ước tính</CardTitle>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Tạm tính theo ngày công và doanh thu trong bộ lọc hiện tại.
+          </p>
+        </div>
+        <Badge variant={estimate.kpiAchieved ? "default" : "secondary"}>
+          {estimate.kpiAchieved ? "Đạt KPI" : "Tạm tính"}
+        </Badge>
+      </CardHeader>
+      <CardContent className="space-y-3 px-4 pb-4">
+        {!estimate.hasCheckedInToday ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+            Bạn chưa điểm danh hôm nay
+          </div>
+        ) : null}
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Mini
+            label="Ngày công"
+            value={`${estimate.attendedDays}/${estimate.expectedWorkdays} ngày`}
+          />
+          <Mini label="Lương cứng" value={fmtVndDong(Math.round(estimate.baseSalaryProrated))} />
+          <Mini label="Thưởng mốc" value={fmtVndDong(estimate.milestoneBonus)} />
+          <Mini label="Thưởng KPI" value={fmtVndDong(estimate.overKpiBonus)} />
+          <Mini
+            label="Tổng tạm tính"
+            value={fmtVndDong(Math.round(estimate.totalEstimatedSalary))}
+          />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

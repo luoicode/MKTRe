@@ -17,6 +17,7 @@ import {
   Lock,
   Package,
   Bell,
+  CalendarCheck,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -57,6 +58,7 @@ const NAV: NavItem[] = [
   { to: "/admin/users", label: "Quản lý User", icon: Users, roles: ["admin"] },
   { to: "/admin/teams", label: "Quản lý Team", icon: UsersRound, roles: ["admin"] },
   { to: "/admin/tasks", label: "Checklist công việc", icon: CheckSquare, roles: ["admin"] },
+  { to: "/admin/attendance", label: "Điểm danh", icon: CalendarCheck, roles: ["admin"] },
   { to: "/admin/notifications", label: "Thông báo", icon: Bell, roles: ["admin"] },
   { to: "/admin/assets", label: "Tài sản", icon: Package, roles: ["admin"] },
   { to: "/admin/ranking", label: "Bảng xếp hạng", icon: Trophy, roles: ["admin"] },
@@ -66,6 +68,7 @@ const NAV: NavItem[] = [
   { to: "/manager/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["manager"] },
   { to: "/manager/kpi", label: "KPI", icon: Target, roles: ["manager"] },
   { to: "/manager/tasks", label: "Checklist công việc", icon: CheckSquare, roles: ["manager"] },
+  { to: "/manager/attendance", label: "Điểm danh", icon: CalendarCheck, roles: ["manager"] },
   { to: "/manager/notifications", label: "Thông báo", icon: Bell, roles: ["manager"] },
   { to: "/manager/assets", label: "Tài sản", icon: Package, roles: ["manager"] },
   { to: "/manager/ranking", label: "Bảng xếp hạng", icon: Trophy, roles: ["manager"] },
@@ -84,6 +87,7 @@ const NAV: NavItem[] = [
   { to: "/leader/report-slots", label: "Nhập báo cáo cá nhân", icon: FileText, roles: ["leader"] },
   { to: "/leader/daily-report", label: "Báo cáo tổng", icon: FileText, roles: ["leader"] },
   { to: "/leader/tasks", label: "Checklist công việc", icon: CheckSquare, roles: ["leader"] },
+  { to: "/leader/attendance", label: "Điểm danh", icon: CalendarCheck, roles: ["leader"] },
   { to: "/leader/assets", label: "Tài sản", icon: Package, roles: ["leader"] },
   { to: "/leader/ranking", label: "Bảng xếp hạng", icon: Trophy, roles: ["leader"] },
 
@@ -95,6 +99,7 @@ const NAV: NavItem[] = [
     roles: ["employee"],
   },
   { to: "/employee/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["employee"] },
+  { to: "/employee/attendance", label: "Điểm danh", icon: CalendarCheck, roles: ["employee"] },
   { to: "/employee/kpi", label: "KPI", icon: Target, roles: ["employee"] },
   { to: "/employee/report", label: "Nhập báo cáo", icon: FileText, roles: ["employee"] },
   { to: "/employee/tasks", label: "Checklist công việc", icon: CheckSquare, roles: ["employee"] },

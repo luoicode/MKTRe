@@ -129,6 +129,136 @@ export type Database = {
           },
         ];
       };
+      attendance_records: {
+        Row: {
+          attendance_date: string;
+          checked_in_at: string | null;
+          created_at: string;
+          id: string;
+          note: string | null;
+          status: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          attendance_date: string;
+          checked_in_at?: string | null;
+          created_at?: string;
+          id?: string;
+          note?: string | null;
+          status?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          attendance_date?: string;
+          checked_in_at?: string | null;
+          created_at?: string;
+          id?: string;
+          note?: string | null;
+          status?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "attendance_records_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      daily_checklist_completions: {
+        Row: {
+          completed_at: string;
+          completion_date: string;
+          created_at: string;
+          id: string;
+          note: string | null;
+          proof_url: string | null;
+          template_id: string;
+          user_id: string;
+        };
+        Insert: {
+          completed_at?: string;
+          completion_date: string;
+          created_at?: string;
+          id?: string;
+          note?: string | null;
+          proof_url?: string | null;
+          template_id: string;
+          user_id: string;
+        };
+        Update: {
+          completed_at?: string;
+          completion_date?: string;
+          created_at?: string;
+          id?: string;
+          note?: string | null;
+          proof_url?: string | null;
+          template_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "daily_checklist_completions_template_id_fkey";
+            columns: ["template_id"];
+            isOneToOne: false;
+            referencedRelation: "daily_checklist_templates";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "daily_checklist_completions_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      daily_checklist_templates: {
+        Row: {
+          created_at: string;
+          created_by: string | null;
+          description: string | null;
+          id: string;
+          is_active: boolean;
+          sort_order: number;
+          title: string;
+          updated_at: string;
+        };
+        Insert: {
+          created_at?: string;
+          created_by?: string | null;
+          description?: string | null;
+          id?: string;
+          is_active?: boolean;
+          sort_order?: number;
+          title: string;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          created_by?: string | null;
+          description?: string | null;
+          id?: string;
+          is_active?: boolean;
+          sort_order?: number;
+          title?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "daily_checklist_templates_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       daily_task_templates: {
         Row: {
           created_at: string;
@@ -722,6 +852,108 @@ export type Database = {
           },
           {
             foreignKeyName: "kpi_targets_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      salary_rules: {
+        Row: {
+          base_salary: number;
+          commission_rate_month: number | null;
+          commission_rate_year: number | null;
+          created_at: string;
+          id: string;
+          is_active: boolean;
+          milestone_bonus: number;
+          over_kpi_bonus: number;
+          revenue_max: number | null;
+          revenue_min: number;
+          role: string;
+          updated_at: string;
+        };
+        Insert: {
+          base_salary?: number;
+          commission_rate_month?: number | null;
+          commission_rate_year?: number | null;
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          milestone_bonus?: number;
+          over_kpi_bonus?: number;
+          revenue_max?: number | null;
+          revenue_min?: number;
+          role: string;
+          updated_at?: string;
+        };
+        Update: {
+          base_salary?: number;
+          commission_rate_month?: number | null;
+          commission_rate_year?: number | null;
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          milestone_bonus?: number;
+          over_kpi_bonus?: number;
+          revenue_max?: number | null;
+          revenue_min?: number;
+          role?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      leave_requests: {
+        Row: {
+          created_at: string;
+          end_date: string;
+          id: string;
+          reason: string;
+          review_note: string | null;
+          reviewed_at: string | null;
+          reviewed_by: string | null;
+          start_date: string;
+          status: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          end_date: string;
+          id?: string;
+          reason: string;
+          review_note?: string | null;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          start_date: string;
+          status?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          end_date?: string;
+          id?: string;
+          reason?: string;
+          review_note?: string | null;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          start_date?: string;
+          status?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "leave_requests_reviewed_by_fkey";
+            columns: ["reviewed_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "leave_requests_user_id_fkey";
             columns: ["user_id"];
             isOneToOne: false;
             referencedRelation: "profiles";

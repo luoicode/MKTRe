@@ -24,7 +24,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { Enums, Tables, TablesInsert } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
-import { getLeaderTeamIds, getManagerTeamIds } from "@/lib/dailyAggregates";
+import { getLeaderTeamIds } from "@/lib/dailyAggregates";
 import { formatYmd } from "@/lib/dateRange";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -63,12 +63,16 @@ type TaskStatus = Enums<"task_status">;
 type BoardStatus = TaskStatus;
 type TaskPriority = "low" | "medium" | "high";
 type DeadlineFilter = "all" | "today" | "overdue" | "future" | "none";
+type DeadlineState = "none" | "overdue" | "today" | "future";
 type CompletionTarget =
   | { type: "task"; id: string; title: string; teamId: string | null }
   | { type: "template"; id: string; title: string; teamId: string | null };
 type ReviewTarget =
   | { type: "task"; task: TaskRow }
   | { type: "template"; template: TemplateRow; completion: CompletionRow; user: UserRow | null };
+type UnifiedChecklistItem =
+  | { type: "task"; task: TaskRow; status: BoardStatus; deadlineState: DeadlineState }
+  | { type: "template"; template: TemplateRow; status: BoardStatus; deadlineState: DeadlineState };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const boardColumns: Array<{ status: BoardStatus; title: string; tone: string }> = [
@@ -194,7 +198,6 @@ export function TasksWorkspace() {
     queryFn: async () => {
       let teamIds: string[] | undefined;
       if (role === "leader") teamIds = await getLeaderTeamIds(profile!.id);
-      if (role === "manager") teamIds = await getManagerTeamIds(profile!.id);
       if (role === "employee") {
         const { data: employeeMemberships } = await supabase
           .from("team_memberships")
@@ -462,15 +465,6 @@ export function TasksWorkspace() {
       .sort((a, b) => compareTaskUrgency(a, b, date));
   }, [date, deadlineFilter, shownTasks, taskSearch]);
 
-  const filteredTasks = useMemo(
-    () =>
-      baseFilteredTasks.filter((item) => {
-        const status = normalizeTaskStatus(item.status);
-        return statusFilter === "all" || status === statusFilter;
-      }),
-    [baseFilteredTasks, statusFilter],
-  );
-
   const baseFilteredTemplates = useMemo(() => {
     const selectedUserTeamIds = new Set(
       (data?.memberships ?? [])
@@ -492,7 +486,8 @@ export function TasksWorkspace() {
           item.description,
           data?.teams.find((team) => team.id === item.team_id)?.name,
         ].some((value) => value?.toLowerCase().includes(keyword));
-      return matchesKeyword && matchesUser && matchesTeam && deadlineFilter === "all";
+      const matchesDeadline = deadlineFilter === "all" || deadlineFilter === "today";
+      return matchesKeyword && matchesUser && matchesTeam && matchesDeadline;
     });
   }, [
     data?.memberships,
@@ -504,39 +499,17 @@ export function TasksWorkspace() {
     taskSearch,
   ]);
 
-  const filteredTemplates = useMemo(
-    () =>
-      baseFilteredTemplates.filter((item) => {
-        const status = getTemplateBoardStatus(
-          item,
-          data?.completions ?? [],
-          data?.users ?? [],
-          data?.memberships ?? [],
-          profile?.id,
-          isEmployee,
-        );
-        return statusFilter === "all" || status === statusFilter;
-      }),
-    [
-      baseFilteredTemplates,
-      data?.completions,
-      data?.memberships,
-      data?.users,
-      isEmployee,
-      profile?.id,
-      statusFilter,
-    ],
-  );
-
-  const tabCounts = useMemo(() => {
-    const counts = new Map<BoardStatus | "all", number>([["all", 0]]);
-    for (const column of boardColumns) counts.set(column.status, 0);
-    for (const item of baseFilteredTasks) {
+  const baseChecklistItems = useMemo<UnifiedChecklistItem[]>(() => {
+    const taskItems: UnifiedChecklistItem[] = baseFilteredTasks.map((item) => {
       const status = normalizeTaskStatus(item.status);
-      counts.set("all", (counts.get("all") ?? 0) + 1);
-      counts.set(status, (counts.get(status) ?? 0) + 1);
-    }
-    for (const item of baseFilteredTemplates) {
+      return {
+        type: "task",
+        task: item,
+        status,
+        deadlineState: getDeadlineState(item.deadline, status, date),
+      };
+    });
+    const templateItems: UnifiedChecklistItem[] = baseFilteredTemplates.map((item) => {
       const status = getTemplateBoardStatus(
         item,
         data?.completions ?? [],
@@ -545,19 +518,61 @@ export function TasksWorkspace() {
         profile?.id,
         isEmployee,
       );
-      counts.set("all", (counts.get("all") ?? 0) + 1);
-      counts.set(status, (counts.get(status) ?? 0) + 1);
-    }
-    return counts;
+      return {
+        type: "template",
+        template: item,
+        status,
+        deadlineState: status === "done" ? "none" : "today",
+      };
+    });
+    return [...templateItems, ...taskItems];
   }, [
     baseFilteredTasks,
     baseFilteredTemplates,
     data?.completions,
     data?.memberships,
     data?.users,
+    date,
     isEmployee,
     profile?.id,
   ]);
+
+  const visibleChecklistItems = useMemo(
+    () =>
+      baseChecklistItems.filter((item) => statusFilter === "all" || item.status === statusFilter),
+    [baseChecklistItems, statusFilter],
+  );
+
+  const filteredTemplates = useMemo(
+    () =>
+      visibleChecklistItems
+        .filter(
+          (item): item is Extract<UnifiedChecklistItem, { type: "template" }> =>
+            item.type === "template",
+        )
+        .map((item) => item.template),
+    [visibleChecklistItems],
+  );
+
+  const filteredTasks = useMemo(
+    () =>
+      visibleChecklistItems
+        .filter(
+          (item): item is Extract<UnifiedChecklistItem, { type: "task" }> => item.type === "task",
+        )
+        .map((item) => item.task),
+    [visibleChecklistItems],
+  );
+
+  const tabCounts = useMemo(() => {
+    const counts = new Map<BoardStatus | "all", number>([["all", 0]]);
+    for (const column of boardColumns) counts.set(column.status, 0);
+    for (const item of baseChecklistItems) {
+      counts.set("all", (counts.get("all") ?? 0) + 1);
+      counts.set(item.status, (counts.get(item.status) ?? 0) + 1);
+    }
+    return counts;
+  }, [baseChecklistItems]);
 
   const unreadTabs = useMemo(() => {
     const tabs = new Set<BoardStatus | "all">();
@@ -600,17 +615,15 @@ export function TasksWorkspace() {
     setStatusFilter(value);
     markTabSeen(value);
   };
-  const totalWorkCount = filteredTasks.length;
-  const completedWorkCount = filteredTasks.filter(
-    (item) => normalizeTaskStatus(item.status) === "done",
-  ).length;
-  const overdueTaskCount = filteredTasks.filter(
-    (item) => getDeadlineState(item.deadline, item.status, date) === "overdue",
+  const totalWorkCount = visibleChecklistItems.length;
+  const completedWorkCount = visibleChecklistItems.filter((item) => item.status === "done").length;
+  const overdueTaskCount = visibleChecklistItems.filter(
+    (item) => item.deadlineState === "overdue",
   ).length;
   const incompleteWorkCount = Math.max(0, totalWorkCount - completedWorkCount);
   const progressValue = totalWorkCount ? (completedWorkCount / totalWorkCount) * 100 : 0;
   const boardEmptyText =
-    (data?.tasks.length ?? 0) > 0 && filteredTasks.length === 0 && filteredTemplates.length === 0
+    baseChecklistItems.length > 0 && visibleChecklistItems.length === 0
       ? "Không có task phù hợp với bộ lọc"
       : "Trống";
   const refreshData = async () => {
@@ -618,12 +631,44 @@ export function TasksWorkspace() {
     toast.success("Đã làm mới dữ liệu");
   };
 
+  const canReviewTask = useCallback(
+    (item: Pick<TaskRow, "assigned_to" | "team_id">) => {
+      if (!profile || !role || !item.assigned_to) return false;
+      if (role === "admin" || role === "manager") return true;
+      if (role !== "leader" || item.assigned_to === profile.id || !item.team_id) return false;
+      return (data?.memberships ?? []).some(
+        (membership) =>
+          membership.team_id === item.team_id &&
+          membership.user_id === item.assigned_to &&
+          membership.role_in_team !== "leader" &&
+          (data?.teams ?? []).some((team) => team.id === membership.team_id),
+      );
+    },
+    [data?.memberships, data?.teams, profile, role],
+  );
+
+  const canReviewTemplateCompletion = useCallback(
+    (template: Pick<TemplateRow, "team_id">, completion: Pick<CompletionRow, "user_id">) => {
+      if (!profile || !role) return false;
+      if (role === "admin" || role === "manager") return true;
+      if (role !== "leader" || completion.user_id === profile.id) return false;
+      return (data?.memberships ?? []).some((membership) => {
+        if (membership.user_id !== completion.user_id) return false;
+        if (membership.role_in_team === "leader") return false;
+        if (template.team_id && membership.team_id !== template.team_id) return false;
+        return (data?.teams ?? []).some((team) => team.id === membership.team_id);
+      });
+    },
+    [data?.memberships, data?.teams, profile, role],
+  );
+
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     console.debug("[MKTRe tasks stats]", {
       rawTasksCount: data?.tasks.length ?? 0,
       visibleTasksCount: shownTasks.length,
       filteredTasksCount: filteredTasks.length,
+      unifiedItemsCount: visibleChecklistItems.length,
       filters: {
         search: taskSearch,
         status: statusFilter,
@@ -637,6 +682,7 @@ export function TasksWorkspace() {
     data?.tasks.length,
     deadlineFilter,
     filteredTasks.length,
+    visibleChecklistItems.length,
     role,
     selectedTeamId,
     selectedUserId,
@@ -1019,12 +1065,24 @@ export function TasksWorkspace() {
   };
 
   const openTaskReview = (row: TaskRow) => {
+    if (!canReviewTask(row)) {
+      toast.error("Bạn không có quyền duyệt mục này");
+      return;
+    }
     setTaskDetailsOpen(false);
     setReviewTarget({ type: "task", task: row });
   };
 
   const reviewItem = async (approved: boolean) => {
     if (!profile || !reviewTarget) return;
+    const allowed =
+      reviewTarget.type === "task"
+        ? canReviewTask(reviewTarget.task)
+        : canReviewTemplateCompletion(reviewTarget.template, reviewTarget.completion);
+    if (!allowed) {
+      toast.error("Bạn không có quyền duyệt mục này");
+      return;
+    }
     const now = new Date().toISOString();
     if (reviewTarget.type === "task") {
       const nextStatus = approved ? "done" : "in_progress";
@@ -1326,11 +1384,11 @@ export function TasksWorkspace() {
                 <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Đã xong
               </Badge>
             )}
-            {canAssign && status === "pending_review" && (
+            {canReviewTask(item) && status === "pending_review" && (
               <Button
                 size="sm"
                 className="h-7 rounded-lg px-2.5 text-xs"
-                onClick={() => setReviewTarget({ type: "task", task: item })}
+                onClick={() => openTaskReview(item)}
               >
                 <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> Duyệt
               </Button>
@@ -1488,25 +1546,28 @@ export function TasksWorkspace() {
             </div>
           )}
 
-          {canAssign && pendingReviewRows.length > 0 && (
+          {canAssign && pendingReviewRows.some((row) => canReviewTemplateCompletion(item, row)) && (
             <div className="mt-4 space-y-2 rounded-xl border border-violet-100 bg-violet-50/60 p-3">
               <p className="text-[11px] font-semibold text-violet-700">Chờ duyệt</p>
-              {pendingReviewRows.slice(0, 3).map((row) => {
-                const user = templateUsers.find((entry) => entry.id === row.user_id) ?? null;
-                return (
-                  <button
-                    key={row.id}
-                    type="button"
-                    onClick={() =>
-                      setReviewTarget({ type: "template", template: item, completion: row, user })
-                    }
-                    className="flex w-full items-center justify-between gap-2 rounded-lg bg-white px-2 py-1.5 text-left text-xs text-slate-700 shadow-sm transition hover:bg-violet-50"
-                  >
-                    <span className="truncate">{user?.full_name ?? "Nhân viên"}</span>
-                    <ShieldCheck className="h-3.5 w-3.5 text-violet-500" />
-                  </button>
-                );
-              })}
+              {pendingReviewRows
+                .filter((row) => canReviewTemplateCompletion(item, row))
+                .slice(0, 3)
+                .map((row) => {
+                  const user = templateUsers.find((entry) => entry.id === row.user_id) ?? null;
+                  return (
+                    <button
+                      key={row.id}
+                      type="button"
+                      onClick={() =>
+                        setReviewTarget({ type: "template", template: item, completion: row, user })
+                      }
+                      className="flex w-full items-center justify-between gap-2 rounded-lg bg-white px-2 py-1.5 text-left text-xs text-slate-700 shadow-sm transition hover:bg-violet-50"
+                    >
+                      <span className="truncate">{user?.full_name ?? "Nhân viên"}</span>
+                      <ShieldCheck className="h-3.5 w-3.5 text-violet-500" />
+                    </button>
+                  );
+                })}
             </div>
           )}
 
@@ -1626,6 +1687,7 @@ export function TasksWorkspace() {
         task={currentSelectedTask}
         currentProfileId={profile?.id}
         canManage={canAssign}
+        canReview={currentSelectedTask ? canReviewTask(currentSelectedTask) : false}
         onOpenChange={(open) => {
           setTaskDetailsOpen(open);
           if (!open) setSelectedTask(null);
@@ -2444,7 +2506,7 @@ function getDeadlineState(
   deadline: string | null,
   statusValue: string | null | undefined,
   today: string,
-) {
+): DeadlineState {
   const status = normalizeTaskStatus(statusValue);
   if (!deadline || status === "done") return "none" as const;
   const due = new Date(deadline);
