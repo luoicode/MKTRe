@@ -19,7 +19,7 @@ Deno.serve(async (req) => {
   try {
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
     // Check if any admin exists
@@ -63,13 +63,13 @@ Deno.serve(async (req) => {
 
     return Response.json(
       { ok: true, message: "Tạo admin thành công", username: ADMIN_USERNAME },
-      { headers: corsHeaders }
+      { headers: corsHeaders },
     );
   } catch (e) {
     console.error(e);
     return Response.json(
       { ok: false, error: (e as Error).message },
-      { status: 500, headers: corsHeaders }
+      { status: 500, headers: corsHeaders },
     );
   }
 });

@@ -16,29 +16,40 @@ Deno.serve(async (req) => {
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return Response.json({ error: "Unauthorized" }, { status: 401, headers: corsHeaders });
+    if (!authHeader)
+      return Response.json({ error: "Unauthorized" }, { status: 401, headers: corsHeaders });
 
     const userClient = createClient(url, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: userData } = await userClient.auth.getUser();
-    if (!userData.user) return Response.json({ error: "Unauthorized" }, { status: 401, headers: corsHeaders });
+    if (!userData.user)
+      return Response.json({ error: "Unauthorized" }, { status: 401, headers: corsHeaders });
 
     const admin = createClient(url, serviceKey);
     const { data: callerProfile } = await admin
-      .from("profiles").select("id").eq("auth_user_id", userData.user.id).single();
-    if (!callerProfile) return Response.json({ error: "Forbidden" }, { status: 403, headers: corsHeaders });
+      .from("profiles")
+      .select("id")
+      .eq("auth_user_id", userData.user.id)
+      .single();
+    if (!callerProfile)
+      return Response.json({ error: "Forbidden" }, { status: 403, headers: corsHeaders });
 
-    const { data: roles } = await admin.from("user_roles").select("role").eq("user_id", callerProfile.id);
+    const { data: roles } = await admin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", callerProfile.id);
     if (!(roles ?? []).some((r) => r.role === "admin")) {
       return Response.json({ error: "Forbidden" }, { status: 403, headers: corsHeaders });
     }
 
     const { profile_id, role, status, password, full_name } = await req.json();
-    if (!profile_id) return Response.json({ error: "Thiếu profile_id" }, { status: 400, headers: corsHeaders });
+    if (!profile_id)
+      return Response.json({ error: "Thiếu profile_id" }, { status: 400, headers: corsHeaders });
 
     const { data: target } = await admin.from("profiles").select("*").eq("id", profile_id).single();
-    if (!target) return Response.json({ error: "User không tồn tại" }, { status: 404, headers: corsHeaders });
+    if (!target)
+      return Response.json({ error: "User không tồn tại" }, { status: 404, headers: corsHeaders });
 
     const updates: Record<string, unknown> = {};
     if (status) updates.status = status;
@@ -54,7 +65,10 @@ Deno.serve(async (req) => {
 
     if (password) {
       if (password.length < 6) {
-        return Response.json({ error: "Mật khẩu tối thiểu 6 ký tự" }, { status: 400, headers: corsHeaders });
+        return Response.json(
+          { error: "Mật khẩu tối thiểu 6 ký tự" },
+          { status: 400, headers: corsHeaders },
+        );
       }
       await admin.auth.admin.updateUserById(target.auth_user_id, { password });
     }

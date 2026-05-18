@@ -24,7 +24,8 @@ Deno.serve(async (req) => {
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return Response.json({ error: "Unauthorized" }, { status: 401, headers: corsHeaders });
+    if (!authHeader)
+      return Response.json({ error: "Unauthorized" }, { status: 401, headers: corsHeaders });
 
     // Verify caller is admin
     const userClient = createClient(url, anonKey, {
@@ -41,7 +42,8 @@ Deno.serve(async (req) => {
       .select("id")
       .eq("auth_user_id", userData.user.id)
       .single();
-    if (!callerProfile) return Response.json({ error: "No profile" }, { status: 403, headers: corsHeaders });
+    if (!callerProfile)
+      return Response.json({ error: "No profile" }, { status: 403, headers: corsHeaders });
 
     const { data: roles } = await admin
       .from("user_roles")
@@ -49,7 +51,10 @@ Deno.serve(async (req) => {
       .eq("user_id", callerProfile.id);
     const isAdmin = (roles ?? []).some((r) => r.role === "admin");
     if (!isAdmin) {
-      return Response.json({ error: "Forbidden: chỉ Admin được tạo tài khoản" }, { status: 403, headers: corsHeaders });
+      return Response.json(
+        { error: "Forbidden: chỉ Admin được tạo tài khoản" },
+        { status: 403, headers: corsHeaders },
+      );
     }
 
     const body = await req.json();
@@ -62,15 +67,24 @@ Deno.serve(async (req) => {
     };
 
     if (!full_name || !username || !password || !role) {
-      return Response.json({ error: "Thiếu thông tin bắt buộc" }, { status: 400, headers: corsHeaders });
+      return Response.json(
+        { error: "Thiếu thông tin bắt buộc" },
+        { status: 400, headers: corsHeaders },
+      );
     }
     if (password.length < 6) {
-      return Response.json({ error: "Mật khẩu tối thiểu 6 ký tự" }, { status: 400, headers: corsHeaders });
+      return Response.json(
+        { error: "Mật khẩu tối thiểu 6 ký tự" },
+        { status: 400, headers: corsHeaders },
+      );
     }
 
     const normalizedUsername = normalizeLoginName(username);
     if (!normalizedUsername) {
-      return Response.json({ error: "Tài khoản đăng nhập không hợp lệ" }, { status: 400, headers: corsHeaders });
+      return Response.json(
+        { error: "Tài khoản đăng nhập không hợp lệ" },
+        { status: 400, headers: corsHeaders },
+      );
     }
     const email = `${normalizedUsername}@${INTERNAL_AUTH_DOMAIN}`;
 
@@ -81,7 +95,10 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (existingProfileError) throw existingProfileError;
     if (existingProfile) {
-      return Response.json({ error: "Tài khoản đăng nhập đã tồn tại" }, { status: 409, headers: corsHeaders });
+      return Response.json(
+        { error: "Tài khoản đăng nhập đã tồn tại" },
+        { status: 409, headers: corsHeaders },
+      );
     }
 
     const { data: created, error: createErr } = await admin.auth.admin.createUser({
@@ -92,7 +109,10 @@ Deno.serve(async (req) => {
     });
     if (createErr) {
       if (createErr.message?.toLowerCase().includes("already")) {
-        return Response.json({ error: "Tài khoản đăng nhập đã tồn tại" }, { status: 409, headers: corsHeaders });
+        return Response.json(
+          { error: "Tài khoản đăng nhập đã tồn tại" },
+          { status: 409, headers: corsHeaders },
+        );
       }
       throw createErr;
     }
@@ -114,9 +134,7 @@ Deno.serve(async (req) => {
       throw profErr;
     }
 
-    const { error: roleErr } = await admin
-      .from("user_roles")
-      .insert({ user_id: profile.id, role });
+    const { error: roleErr } = await admin.from("user_roles").insert({ user_id: profile.id, role });
     if (roleErr) throw roleErr;
 
     await admin.from("audit_logs").insert({
@@ -124,7 +142,13 @@ Deno.serve(async (req) => {
       action: "create_user",
       entity_type: "profiles",
       entity_id: profile.id,
-      new_value: { username: normalizedUsername, email, full_name, role, status: status ?? "active" },
+      new_value: {
+        username: normalizedUsername,
+        email,
+        full_name,
+        role,
+        status: status ?? "active",
+      },
     });
 
     return Response.json({ ok: true, profile }, { headers: corsHeaders });

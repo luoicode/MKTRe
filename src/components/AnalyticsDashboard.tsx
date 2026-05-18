@@ -20,6 +20,7 @@ import {
   deriveRates,
   getVisibleReports,
   groupMetricsByDate,
+  type ReportMetricTotals,
   sumReportMetrics,
 } from "@/lib/analytics";
 import { formatPercent, fmtInt, fmtVndDong } from "@/lib/reports";
@@ -46,12 +47,21 @@ export function AnalyticsDashboard({
       let teamIds: string[] | undefined;
       if (scope === "leader") teamIds = await getLeaderTeamIds(profile!.id);
       if (scope === "manager") teamIds = await getManagerTeamIds(profile!.id);
-      const reports = await getVisibleReports({
-        from,
-        to,
-        teamIds,
-        userId: scope === "employee" ? profile!.id : undefined,
-      });
+      const [reports, leaderPersonalReports] = await Promise.all([
+        getVisibleReports({
+          from,
+          to,
+          teamIds,
+          userId: scope === "employee" ? profile!.id : undefined,
+        }),
+        scope === "leader"
+          ? getVisibleReports({
+              from,
+              to,
+              userId: profile!.id,
+            })
+          : Promise.resolve([]),
+      ]);
 
       let kpiQuery = supabase
         .from("kpi_targets")
@@ -62,12 +72,20 @@ export function AnalyticsDashboard({
       else if (teamIds?.length) kpiQuery = kpiQuery.in("team_id", teamIds);
       const { data: kpis } = await kpiQuery;
 
-      return { reports, kpis: kpis ?? [], teamIds: teamIds ?? [] };
+      return { reports, leaderPersonalReports, kpis: kpis ?? [], teamIds: teamIds ?? [] };
     },
   });
 
   const totals = useMemo(() => sumReportMetrics(data?.reports ?? []), [data]);
   const rates = useMemo(() => deriveRates(totals), [totals]);
+  const leaderPersonalTotals = useMemo(
+    () => sumReportMetrics(data?.leaderPersonalReports ?? []),
+    [data],
+  );
+  const leaderPersonalRates = useMemo(
+    () => deriveRates(leaderPersonalTotals),
+    [leaderPersonalTotals],
+  );
   const daily = useMemo(() => groupMetricsByDate(data?.reports ?? []), [data]);
   const kpiRevenueTarget = (data?.kpis ?? []).reduce(
     (sum: number, k: Pick<Tables<"kpi_targets">, "revenue_target">) =>
@@ -81,7 +99,7 @@ export function AnalyticsDashboard({
     <PageShell className="gap-3">
       <PageHeader className="flex-wrap items-end justify-between gap-3 md:flex">
         <div>
-          <h1 className="text-xl font-bold tracking-tight md:text-2xl">Dashboard</h1>
+          <h1 className="text-xl font-bold tracking-tight md:text-2xl">Tổng quan</h1>
           <p className="text-sm text-muted-foreground">
             {scope === "admin"
               ? "Toàn hệ thống"
@@ -104,26 +122,52 @@ export function AnalyticsDashboard({
         </PageContent>
       ) : (
         <ScrollArea className="space-y-3 md:pr-2">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <Stat
-              icon={TrendingUp}
-              label="Tổng doanh thu"
-              value={fmtVndDong(totals.total_revenue)}
-            />
-            <Stat icon={Target} label="Chi phí Ads" value={fmtVndDong(totals.ads_cost)} />
-            <Stat icon={MessageSquare} label="Mess" value={fmtInt(totals.mess_count)} />
-            <Stat icon={Database} label="Data" value={fmtInt(totals.data_count)} />
-            <Stat icon={ShoppingCart} label="Đơn chốt" value={fmtInt(totals.total_orders)} />
-          </div>
+          {scope === "leader" ? (
+            <OverviewSection
+              title="Hiệu suất cá nhân"
+              subtitle="Số liệu riêng của Leader"
+              badge="Cá nhân"
+            >
+              <DashboardMetrics totals={leaderPersonalTotals} rates={leaderPersonalRates} />
+            </OverviewSection>
+          ) : null}
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Mini label="Chi Phí ADS/MESS" value={fmtVndDong(rates.cp_mess)} />
-            <Mini label="Tỉ lệ chốt DATA trong ngày" value={formatPercent(rates.conversion_rate)} />
-            <Mini label="Chi Phí/DATA trong ngày" value={fmtVndDong(rates.cp_data)} />
-            <Mini label="Chi Phí ADS/Doanh số ngày" value={formatPercent(rates.cp_daily_revenue)} />
-            <Mini label="Trung bình đơn" value={fmtVndDong(rates.avg_order)} />
-            <Mini label="Chi Phí ADS/Tổng Doanh Số" value={formatPercent(rates.cp_revenue)} />
-          </div>
+          <OverviewSection
+            title={scope === "leader" ? "Tổng quan team" : "Tổng quan"}
+            subtitle={
+              scope === "leader"
+                ? "Tổng hợp toàn team, bao gồm cả báo cáo của Leader"
+                : "Tổng hợp theo phạm vi dữ liệu hiện tại"
+            }
+            badge={scope === "leader" ? "Team" : undefined}
+          >
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <Stat
+                icon={TrendingUp}
+                label="Tổng doanh thu"
+                value={fmtVndDong(totals.total_revenue)}
+              />
+              <Stat icon={Target} label="Chi phí Ads" value={fmtVndDong(totals.ads_cost)} />
+              <Stat icon={MessageSquare} label="Mess" value={fmtInt(totals.mess_count)} />
+              <Stat icon={Database} label="Data" value={fmtInt(totals.data_count)} />
+              <Stat icon={ShoppingCart} label="Đơn chốt" value={fmtInt(totals.total_orders)} />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Mini label="Chi Phí ADS/MESS" value={fmtVndDong(rates.cp_mess)} />
+              <Mini
+                label="Tỉ lệ chốt DATA trong ngày"
+                value={formatPercent(rates.conversion_rate)}
+              />
+              <Mini label="Chi Phí/DATA trong ngày" value={fmtVndDong(rates.cp_data)} />
+              <Mini
+                label="Chi Phí ADS/Doanh số ngày"
+                value={formatPercent(rates.cp_daily_revenue)}
+              />
+              <Mini label="Trung bình đơn" value={fmtVndDong(rates.avg_order)} />
+              <Mini label="Chi Phí ADS/Tổng Doanh Số" value={formatPercent(rates.cp_revenue)} />
+            </div>
+          </OverviewSection>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between px-4 py-3">
@@ -211,6 +255,74 @@ function Stat({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function OverviewSection({
+  title,
+  subtitle,
+  badge,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  badge?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-xl border bg-card/80 p-3 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold">{title}</h2>
+            {badge ? <Badge variant="secondary">{badge}</Badge> : null}
+          </div>
+          <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
+        </div>
+      </div>
+      <div className="space-y-3">{children}</div>
+    </section>
+  );
+}
+
+function DashboardMetrics({
+  totals,
+  rates,
+}: {
+  totals: ReportMetricTotals;
+  rates: ReturnType<typeof deriveRates>;
+}) {
+  const recoveredRevenue = totals.total_revenue - totals.daily_data_revenue;
+
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <Stat icon={Target} label="Chi Phí Ads" value={fmtVndDong(totals.ads_cost)} />
+        <Stat icon={MessageSquare} label="MESS" value={fmtInt(totals.mess_count)} />
+        <Stat icon={Database} label="Data" value={fmtInt(totals.data_count)} />
+        <Stat
+          icon={ShoppingCart}
+          label="Đơn chốt DATA trong ngày"
+          value={fmtInt(totals.closed_orders)}
+        />
+        <Stat
+          icon={TrendingUp}
+          label="DS DATA ngày"
+          value={fmtVndDong(totals.daily_data_revenue)}
+        />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Mini label="Tổng Đơn Chốt" value={fmtInt(totals.total_orders)} />
+        <Mini label="Tổng Doanh Số" value={fmtVndDong(totals.total_revenue)} />
+        <Mini label="DS chốt lại" value={fmtVndDong(recoveredRevenue)} />
+        <Mini label="CP/MESS" value={fmtVndDong(rates.cp_mess)} />
+        <Mini label="CP/Data" value={fmtVndDong(rates.cp_data)} />
+        <Mini label="Tỉ lệ chốt" value={formatPercent(rates.conversion_rate)} />
+        <Mini label="CP/DS ngày" value={formatPercent(rates.cp_daily_revenue)} />
+        <Mini label="CP/Tổng DS" value={formatPercent(rates.cp_revenue)} />
+        <Mini label="TB Đơn" value={fmtVndDong(rates.avg_order)} />
+      </div>
+    </>
   );
 }
 

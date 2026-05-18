@@ -101,8 +101,12 @@ export const formatPercent = (v: number | null | undefined, digits = 2) =>
   v == null || !Number.isFinite(Number(v)) ? "—" : `${Number(v).toFixed(digits)}%`;
 
 /** Returns null if denominator is 0/negative/null. */
-export function safeDivide(num: number | null | undefined, den: number | null | undefined): number | null {
-  const n = Number(num), d = Number(den);
+export function safeDivide(
+  num: number | null | undefined,
+  den: number | null | undefined,
+): number | null {
+  const n = Number(num),
+    d = Number(den);
   if (!Number.isFinite(n) || !Number.isFinite(d) || d <= 0) return null;
   return n / d;
 }
@@ -138,7 +142,8 @@ export function slugify(s: string) {
   return s
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/đ/g, "d").replace(/Đ/g, "D")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");

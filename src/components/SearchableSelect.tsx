@@ -5,10 +5,18 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-export interface SSOption { value: string; label: string; sub?: string }
+export interface SSOption {
+  value: string;
+  label: string;
+  sub?: string;
+}
 
 export function SearchableSelect({
-  value, onChange, options, placeholder = "Chọn...", emptyText = "Không có",
+  value,
+  onChange,
+  options,
+  placeholder = "Chọn...",
+  emptyText = "Không có",
   className,
 }: {
   value: string;
@@ -23,15 +31,19 @@ export function SearchableSelect({
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return options;
-    return options.filter((o) =>
-      o.label.toLowerCase().includes(s) || (o.sub ?? "").toLowerCase().includes(s),
+    return options.filter(
+      (o) => o.label.toLowerCase().includes(s) || (o.sub ?? "").toLowerCase().includes(s),
     );
   }, [q, options]);
   const selected = options.find((o) => o.value === value);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" role="combobox" className={cn("w-full justify-between font-normal", className)}>
+        <Button
+          variant="outline"
+          role="combobox"
+          className={cn("w-full justify-between font-normal", className)}
+        >
           <span className={cn("truncate", !selected && "text-muted-foreground")}>
             {selected ? selected.label : placeholder}
           </span>
@@ -56,7 +68,11 @@ export function SearchableSelect({
             <button
               key={o.value}
               type="button"
-              onClick={() => { onChange(o.value); setOpen(false); setQ(""); }}
+              onClick={() => {
+                onChange(o.value);
+                setOpen(false);
+                setQ("");
+              }}
               className={cn(
                 "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent text-left",
                 o.value === value && "bg-accent",
@@ -76,7 +92,11 @@ export function SearchableSelect({
 }
 
 export function SearchableMultiSelect({
-  values, onChange, options, placeholder = "Chọn...", emptyText = "Không có",
+  values,
+  onChange,
+  options,
+  placeholder = "Chọn...",
+  emptyText = "Không có",
   className,
 }: {
   values: string[];
@@ -92,19 +112,24 @@ export function SearchableMultiSelect({
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return options;
-    return options.filter((o) =>
-      o.label.toLowerCase().includes(s) || (o.sub ?? "").toLowerCase().includes(s),
+    return options.filter(
+      (o) => o.label.toLowerCase().includes(s) || (o.sub ?? "").toLowerCase().includes(s),
     );
   }, [q, options]);
   const toggle = (v: string) => {
     const next = new Set(set);
-    if (next.has(v)) next.delete(v); else next.add(v);
+    if (next.has(v)) next.delete(v);
+    else next.add(v);
     onChange(Array.from(next));
   };
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" role="combobox" className={cn("w-full justify-between font-normal", className)}>
+        <Button
+          variant="outline"
+          role="combobox"
+          className={cn("w-full justify-between font-normal", className)}
+        >
           <span className={cn("truncate", values.length === 0 && "text-muted-foreground")}>
             {values.length === 0 ? placeholder : `Đã chọn ${values.length}`}
           </span>
@@ -148,8 +173,12 @@ export function SearchableMultiSelect({
         </div>
         {values.length > 0 && (
           <div className="border-t p-2 flex justify-between">
-            <Button size="sm" variant="ghost" onClick={() => onChange([])}>Bỏ chọn</Button>
-            <Button size="sm" onClick={() => setOpen(false)}>Xong</Button>
+            <Button size="sm" variant="ghost" onClick={() => onChange([])}>
+              Bỏ chọn
+            </Button>
+            <Button size="sm" onClick={() => setOpen(false)}>
+              Xong
+            </Button>
           </div>
         )}
       </PopoverContent>

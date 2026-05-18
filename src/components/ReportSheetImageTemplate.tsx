@@ -50,13 +50,6 @@ type MetricKey =
   | "cost_per_total_revenue"
   | "recovered_revenue";
 
-const staticMetricTone: Partial<Record<MetricKey, "green" | "red">> = {
-  cp_mess: "green",
-  cp_data: "green",
-  avg_order: "green",
-  recovered_revenue: "green",
-};
-
 export const ReportSheetImageTemplate = forwardRef<HTMLDivElement, { data: ReportSheetImageData }>(
   function ReportSheetImageTemplate({ data }, ref) {
     const c = calculateReportMetrics(data);
@@ -97,7 +90,11 @@ export const ReportSheetImageTemplate = forwardRef<HTMLDivElement, { data: Repor
     const channelLine = normalizeSheetHeaderLine(data.channel || "FACEBOOK");
 
     return (
-      <div ref={ref} className="bg-white p-2" style={{ width: 720 }}>
+      <div
+        ref={ref}
+        className="bg-white p-2"
+        style={{ width: 720, fontFamily: "Arial, sans-serif" }}
+      >
         <div
           className="grid text-[25px] font-extrabold leading-none text-black"
           style={{ gridTemplateColumns: "1fr 1fr" }}
@@ -153,7 +150,7 @@ function getMetricTone(metricKey: MetricKey, value: string): "green" | "red" | u
     if (percent == null) return undefined;
     return percent <= 55 ? "green" : "red";
   }
-  return staticMetricTone[metricKey];
+  return undefined;
 }
 
 function getPercentValue(value: string) {
