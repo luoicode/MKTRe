@@ -111,38 +111,83 @@ function buildEntrySlots(slots: ReportSlot[] | undefined, baseDate: string): Rep
 }
 
 function getAutoSlot(slots: ReportEntrySlot[], now: Date) {
-  const todaySlots = slots.filter((s) => s.group === "today");
-  if (!todaySlots.length) return slots[0]?.id;
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  return (
-    todaySlots.find((s) => slotMinutes(s) > nowMinutes)?.id ?? todaySlots[todaySlots.length - 1].id
-  );
+  const openSlot = [...slots]
+    .sort((a, b) => dueAt(a).getTime() - dueAt(b).getTime())
+    .find((s) => isOpen(s, now));
+  if (openSlot) return openSlot.id;
+
+  const futureSlot = [...slots]
+    .sort((a, b) => openAt(a).getTime() - openAt(b).getTime())
+    .find((s) => openAt(s).getTime() > now.getTime());
+  return futureSlot?.id ?? slots[slots.length - 1]?.id;
 }
 
 function shouldAutoAdvance(
   active: ReportEntrySlot | undefined,
+  slots: ReportEntrySlot[],
   nextId: string | undefined,
   now: Date,
 ) {
-  if (!active || !nextId || active.group !== "today" || active.id === nextId) return false;
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  return nowMinutes >= slotMinutes(active);
+  if (!active || !nextId || active.id === nextId) return false;
+  if (isLocked(active, now)) return true;
+  const next = slots.find((slot) => slot.id === nextId);
+  return !!next && isOpen(next, now) && !isOpen(active, now);
 }
 
-type SlotTimingState = "upcoming" | "due" | "overdue";
+type SlotTimingState = "not_open" | "open" | "locked";
 
-function slotDateTime(slot: ReportEntrySlot) {
+function dueAt(slot: ReportEntrySlot) {
   const raw = slot.slot_time || slot.slot_name;
   const [hh = "0", mm = "0"] = raw.replace("h", ":").split(":");
   const [year, month, day] = slot.dueDate.split("-").map(Number);
   return new Date(year, month - 1, day, Number(hh), Number(mm), 0, 0);
 }
 
+function addMinutes(date: Date, minutes: number) {
+  return new Date(date.getTime() + minutes * 60_000);
+}
+
+function openAt(slot: ReportEntrySlot) {
+  return addMinutes(dueAt(slot), -60);
+}
+
+function closeAt(slot: ReportEntrySlot) {
+  return addMinutes(dueAt(slot), 60);
+}
+
+function isOpen(slot: ReportEntrySlot, now: Date) {
+  return now.getTime() >= openAt(slot).getTime() && now.getTime() <= closeAt(slot).getTime();
+}
+
+function isLocked(slot: ReportEntrySlot, now: Date) {
+  return now.getTime() > closeAt(slot).getTime();
+}
+
 function slotTimingState(slot: ReportEntrySlot, now: Date): SlotTimingState {
-  const diffMinutes = (now.getTime() - slotDateTime(slot).getTime()) / 60_000;
-  if (diffMinutes < -30) return "upcoming";
-  if (diffMinutes <= 60) return "due";
-  return "overdue";
+  if (now.getTime() < openAt(slot).getTime()) return "not_open";
+  if (isOpen(slot, now)) return "open";
+  return "locked";
+}
+
+function isReminderWindow(slot: ReportEntrySlot, now: Date) {
+  const reminderAt = addMinutes(dueAt(slot), -30);
+  return now.getTime() >= reminderAt.getTime() && now.getTime() <= dueAt(slot).getTime();
+}
+
+function canEditReport(
+  slot: ReportEntrySlot,
+  now: Date,
+  existing?: { status: string | null; submitted_at?: string | null } | null,
+) {
+  if (!isOpen(slot, now)) return false;
+  if (!existing) return true;
+  const status = String(existing.status ?? "");
+  if (status === "approved" || status === "locked") return false;
+  if (status === "submitted") {
+    if (!existing.submitted_at) return false;
+    return now.getTime() - new Date(existing.submitted_at).getTime() <= 20 * 60_000;
+  }
+  return true;
 }
 
 function slotVisual(
@@ -160,29 +205,29 @@ function slotVisual(
     };
   }
   const state = slotTimingState(slot, now);
-  if (state === "overdue") {
+  if (state === "locked") {
     return {
-      label: "Quá giờ",
+      label: "Đã khoá",
       icon: AlertCircle,
       className:
-        "border-red-200 bg-red-50 text-red-700 data-[state=active]:bg-red-600 data-[state=active]:text-white",
+        "border-red-200 bg-red-50 text-red-700 opacity-90 data-[state=active]:bg-red-600 data-[state=active]:text-white",
       badge: "bg-red-100 text-red-700",
     };
   }
-  if (state === "due") {
+  if (state === "open") {
     return {
-      label: "Đến giờ",
+      label: "Đang mở",
       icon: Clock3,
       className:
-        "border-amber-200 bg-amber-50 text-amber-700 data-[state=active]:bg-amber-500 data-[state=active]:text-white",
-      badge: "bg-amber-100 text-amber-700",
+        "border-emerald-200 bg-emerald-50 text-emerald-700 data-[state=active]:bg-emerald-600 data-[state=active]:text-white",
+      badge: "bg-emerald-100 text-emerald-700",
     };
   }
   return {
-    label: "Sắp tới",
+    label: "Chưa mở",
     icon: Clock3,
     className:
-      "border-slate-200 bg-slate-50 text-slate-600 data-[state=active]:bg-slate-700 data-[state=active]:text-white",
+      "border-slate-200 bg-slate-50 text-slate-500 opacity-80 data-[state=active]:bg-slate-700 data-[state=active]:text-white",
     badge: "bg-slate-100 text-slate-600",
   };
 }
@@ -191,8 +236,8 @@ async function ensureReportSlotNotification(
   profileId: string,
   item: {
     slot: ReportEntrySlot;
-    type: "report_slot_due" | "report_slot_overdue";
-    severity: "warning" | "error";
+    type: "report_slot_due";
+    severity: "warning";
     title: string;
     message: string;
   },
@@ -227,7 +272,6 @@ async function ensureReportSlotNotification(
     .eq("type", item.type)
     .contains("metadata", {
       report_date: item.slot.reportDate,
-      due_date: item.slot.dueDate,
       slot_id: item.slot.id,
       slot_time: item.slot.slot_time,
     })
@@ -314,7 +358,7 @@ export function EmployeeReport() {
       return;
     }
     const next = getAutoSlot(entrySlots, now);
-    if (shouldAutoAdvance(activeEntry, next, now)) {
+    if (shouldAutoAdvance(activeEntry, entrySlots, next, now)) {
       setActiveSlot(next);
       setSubmitted(null);
     }
@@ -329,25 +373,21 @@ export function EmployeeReport() {
       .map((slot) => {
         const report = submittedReports.get(`${slot.reportDate}:${slot.id}`);
         if (report && ["submitted", "approved"].includes(String(report.status))) return null;
-        const timing = slotTimingState(slot, now);
-        if (timing !== "due" && timing !== "overdue") return null;
-        const type = timing === "due" ? "report_slot_due" : "report_slot_overdue";
+        if (!isReminderWindow(slot, now)) return null;
+        const type = "report_slot_due" as const;
         return {
           slot,
           type,
-          severity: timing === "due" ? "warning" : "error",
-          title: timing === "due" ? "Đến giờ báo cáo" : "Quá giờ báo cáo",
-          message:
-            timing === "due"
-              ? `Đã đến giờ nhập báo cáo khung ${slot.slot_name}`
-              : `Bạn đã quá giờ báo cáo khung ${slot.slot_name}`,
-          key: `${type}:${slot.reportDate}:${slot.id}`,
+          severity: "warning" as const,
+          title: "Sắp đến giờ báo cáo",
+          message: `Sắp đến giờ báo cáo khung ${slot.slot_name}`,
+          key: `${type}:${slot.dueDate}:${slot.id}`,
         };
       })
       .filter(Boolean) as Array<{
       slot: ReportEntrySlot;
-      type: "report_slot_due" | "report_slot_overdue";
-      severity: "warning" | "error";
+      type: "report_slot_due";
+      severity: "warning";
       title: string;
       message: string;
       key: string;
@@ -500,6 +540,8 @@ export function EmployeeReport() {
                   slotId={s.id}
                   slotName={s.slot_name}
                   date={s.reportDate}
+                  entrySlot={s}
+                  now={now}
                   groupLabel={s.groupLabel}
                   onSaved={() => qc.invalidateQueries({ queryKey: ["my-reports"] })}
                   onSubmitted={handleSubmitted}
@@ -553,6 +595,8 @@ function SlotForm({
   slotId,
   slotName,
   date,
+  entrySlot,
+  now,
   groupLabel,
   onSaved,
   onSubmitted,
@@ -562,6 +606,8 @@ function SlotForm({
   slotId: string;
   slotName: string;
   date: string;
+  entrySlot: ReportEntrySlot;
+  now: Date;
   groupLabel: string;
   onSaved: () => void;
   onSubmitted: (d: SubmittedReportData) => void;
@@ -668,11 +714,16 @@ function SlotForm({
     return w;
   }, [nums]);
 
-  const locked = existing && ["approved", "locked"].includes(existing.status as string);
+  const editable = canEditReport(entrySlot, now, existing);
+  const timingState = slotTimingState(entrySlot, now);
   const isReconciliation = isReconciliationSlot(slotName);
   const wasReconciled = isReconciliation || !!hasReconciliationAudit;
 
   const save = async (status: "draft" | "submitted") => {
+    if (!editable) {
+      toast.error(reportReadonlyMessage(timingState, existing));
+      return;
+    }
     setSaving(true);
     const submittedAt = status === "submitted" ? new Date().toISOString() : null;
     const payload = {
@@ -743,14 +794,14 @@ function SlotForm({
           id={k}
           value={form[k]}
           onChange={(v) => setForm((f) => ({ ...f, [k]: v }))}
-          disabled={!!locked}
+          disabled={!editable}
         />
       ) : (
         <NumberInput
           id={k}
           value={form[k]}
           onChange={(v) => setForm((f) => ({ ...f, [k]: v }))}
-          disabled={!!locked}
+          disabled={!editable}
         />
       )}
     </div>
@@ -799,9 +850,15 @@ function SlotForm({
               id="note"
               value={form.note}
               onChange={(e) => setForm({ ...form, note: e.target.value })}
-              disabled={!!locked}
+              disabled={!editable}
             />
           </div>
+
+          {!editable && (
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
+              {reportReadonlyMessage(timingState, existing)}
+            </div>
+          )}
 
           {warnings.length > 0 && (
             <div className="space-y-1 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
@@ -820,7 +877,7 @@ function SlotForm({
             </div>
           )}
 
-          {!locked && (
+          {editable && (
             <div className="flex flex-wrap justify-end gap-2 rounded-lg border bg-card/95 p-2 shadow-sm backdrop-blur">
               <Button
                 size="icon"
@@ -879,6 +936,19 @@ function SlotForm({
       </Card>
     </div>
   );
+}
+
+function reportReadonlyMessage(
+  timingState: SlotTimingState,
+  existing?: { status: string | null; submitted_at?: string | null } | null,
+) {
+  const status = String(existing?.status ?? "");
+  if (status === "approved" || status === "locked") return "Báo cáo đã được khóa, chỉ xem.";
+  if (status === "submitted") return "Báo cáo đã gửi chỉ được sửa trong 20 phút đầu.";
+  if (timingState === "not_open")
+    return "Khung báo cáo chưa mở. Form sẽ mở trước deadline 1 tiếng.";
+  if (timingState === "locked") return "Khung báo cáo đã khoá. Không thể nhập hoặc gửi thêm.";
+  return "Không thể chỉnh sửa báo cáo ở thời điểm hiện tại.";
 }
 
 function Metric({ label, value, danger }: { label: string; value: string; danger?: boolean }) {

@@ -1569,6 +1569,48 @@ export type Database = {
           },
         ];
       };
+      task_read_states: {
+        Row: {
+          created_at: string;
+          id: string;
+          last_seen_status: string | null;
+          seen_at: string;
+          task_id: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          last_seen_status?: string | null;
+          seen_at?: string;
+          task_id: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          last_seen_status?: string | null;
+          seen_at?: string;
+          task_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "task_read_states_task_id_fkey";
+            columns: ["task_id"];
+            isOneToOne: false;
+            referencedRelation: "tasks";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "task_read_states_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       tasks: {
         Row: {
           assigned_by: string | null;

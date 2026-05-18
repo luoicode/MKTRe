@@ -584,29 +584,25 @@ async function buildEmployeeReminderNotifications(
   );
   const missingSlots = (slots ?? []).filter((slot) => {
     const reportDate = isPreviousDaySlot(slot) ? addDays(date, -1) : date;
-    const timing = slotTimingState(slot, date, now);
-    if (timing !== "due" && timing !== "overdue") return false;
+    if (!isReminderWindow(slot, date, now)) return false;
     return !submitted.has(`${reportDate}:${slot.id}`);
   });
   for (const slot of missingSlots) {
     const reportDate = isPreviousDaySlot(slot) ? addDays(date, -1) : date;
     const dueDate = date;
-    const timing = slotTimingState(slot, dueDate, now);
-    const type = timing === "due" ? "report_slot_due" : "report_slot_overdue";
-    if (hasReportSlotNotification(existingNotifications, type, reportDate, slot.id)) continue;
+    const type = "report_slot_due";
+    if (hasReportSlotNotification(existingNotifications, type, reportDate, dueDate, slot.id))
+      continue;
     notifications.push({
       id: `virtual-report-${type}-${reportDate}-${slot.id}`,
       virtual: true,
       target_profile_id: profileId,
       user_id: profileId,
-      title: timing === "due" ? "Đến giờ báo cáo" : "Quá giờ báo cáo",
-      body:
-        timing === "due"
-          ? `Đã đến giờ nhập báo cáo khung ${slot.slot_name}`
-          : `Bạn đã quá giờ báo cáo khung ${slot.slot_name}`,
+      title: "Sắp đến giờ báo cáo",
+      body: `Sắp đến giờ báo cáo khung ${slot.slot_name}`,
       kind: "report",
       type,
-      severity: timing === "due" ? "warning" : "error",
+      severity: "warning",
       is_read: false,
       entity_type: "report",
       metadata: {
@@ -660,31 +656,42 @@ function isPreviousDaySlot(slot: { slot_name: string; slot_time: string }) {
   return slot.slot_name.includes("13") || slot.slot_time.startsWith("13:");
 }
 
-function slotTimingState(
+function dueAt(slot: { slot_name: string; slot_time: string }, dueDate: string) {
+  const [hh = "0", mm = "0"] = slot.slot_time.replace("h", ":").split(":");
+  const [year, month, day] = dueDate.split("-").map(Number);
+  return new Date(year, month - 1, day, Number(hh), Number(mm), 0, 0);
+}
+
+function addMinutes(date: Date, minutes: number) {
+  return new Date(date.getTime() + minutes * 60_000);
+}
+
+function isReminderWindow(
   slot: { slot_name: string; slot_time: string },
   dueDate: string,
   now: Date,
 ) {
-  const [hh = "0", mm = "0"] = slot.slot_time.replace("h", ":").split(":");
-  const [year, month, day] = dueDate.split("-").map(Number);
-  const slotAt = new Date(year, month - 1, day, Number(hh), Number(mm), 0, 0);
-  const diffMinutes = (now.getTime() - slotAt.getTime()) / 60_000;
-  if (diffMinutes < -30) return "upcoming";
-  if (diffMinutes <= 60) return "due";
-  return "overdue";
+  const reminderAt = addMinutes(dueAt(slot, dueDate), -30);
+  return now.getTime() >= reminderAt.getTime() && now.getTime() <= dueAt(slot, dueDate).getTime();
 }
 
 function hasReportSlotNotification(
   notifications: NotificationRow[],
   type: string,
   reportDate: string,
+  dueDate: string,
   slotId: string,
 ) {
   return notifications.some((notification) => {
     if (notification.type !== type) return false;
     const metadata = notification.metadata;
     if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
-    return metadata.report_date === reportDate && metadata.slot_id === slotId;
+    const metadataDueDate = typeof metadata.due_date === "string" ? metadata.due_date : null;
+    return (
+      metadata.report_date === reportDate &&
+      (!metadataDueDate || metadataDueDate === dueDate) &&
+      metadata.slot_id === slotId
+    );
   });
 }
 

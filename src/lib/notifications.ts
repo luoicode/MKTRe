@@ -18,7 +18,7 @@ const notificationTypeLabelMap: Record<string, string> = {
   onboarding_review: "Chờ duyệt onboarding",
   onboarding_review_pending: "Chờ duyệt onboarding",
   report_missing: "Chưa báo cáo",
-  report_slot_due: "Đến giờ báo cáo",
+  report_slot_due: "Sắp đến giờ báo cáo",
   report_slot_overdue: "Quá giờ báo cáo",
   task_approved: "Task đã duyệt",
   task_assigned: "Nhiệm vụ mới",

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarDays,
@@ -57,6 +57,7 @@ type TaskRow = TaskDetailsTask;
 type TemplateRow = Tables<"daily_task_templates">;
 type OnboardingTemplateRow = Tables<"onboarding_task_templates">;
 type CompletionRow = Tables<"task_completions">;
+type TaskReadStateRow = Tables<"task_read_states">;
 type TaskStatus = Enums<"task_status">;
 type BoardStatus = TaskStatus;
 type TaskPriority = "low" | "medium" | "high";
@@ -78,7 +79,7 @@ const boardColumns: Array<{ status: BoardStatus; title: string; tone: string }> 
   },
   {
     status: "pending_review",
-    title: "Đang duyệt",
+    title: "Đợi duyệt",
     tone: "border-violet-200 bg-violet-50 text-violet-700",
   },
   {
@@ -277,6 +278,15 @@ export function TasksWorkspace() {
             profileMap.get(row.assigned_by ?? "") ?? profileMap.get(row.created_by ?? "") ?? null,
           teams: row.team_id ? (teamMap.get(row.team_id) ?? null) : null,
         }));
+      const taskIds = tasks.map((row) => row.id);
+      const { data: taskReadStates, error: taskReadStatesError } = taskIds.length
+        ? await supabase
+            .from("task_read_states")
+            .select("*")
+            .eq("user_id", profile!.id)
+            .in("task_id", taskIds)
+        : { data: [], error: null };
+      if (taskReadStatesError) throw taskReadStatesError;
 
       const templatesQuery = supabase
         .from("daily_task_templates")
@@ -326,6 +336,7 @@ export function TasksWorkspace() {
         memberships: (memberships ?? []) as MembershipRow[],
         users: users ?? [],
         tasks,
+        taskReadStates: (taskReadStates ?? []) as TaskReadStateRow[],
         templates: ((templates ?? []) as TemplateRow[]).filter(
           (row) => !row.team_id || activeTeamIds.includes(row.team_id),
         ),
@@ -363,6 +374,19 @@ export function TasksWorkspace() {
     if (selectedUserId === "all") return;
     if (!teamMembers.some((member) => member.id === selectedUserId)) setSelectedUserId("all");
   }, [selectedUserId, teamMembers]);
+
+  const taskReadStateMap = useMemo(
+    () => new Map((data?.taskReadStates ?? []).map((row) => [row.task_id, row])),
+    [data?.taskReadStates],
+  );
+
+  const isTaskUnread = useCallback(
+    (item: TaskRow) => {
+      const readState = taskReadStateMap.get(item.id);
+      return !readState || readState.last_seen_status !== normalizeTaskStatus(item.status);
+    },
+    [taskReadStateMap],
+  );
 
   useEffect(() => {
     if (!profile || !canAssign || !data?.tasks.length) return;
@@ -418,7 +442,7 @@ export function TasksWorkspace() {
     };
   }, [canAssign, data?.tasks, date, profile]);
 
-  const filteredTasks = useMemo(() => {
+  const baseFilteredTasks = useMemo(() => {
     const keyword = taskSearch.trim().toLowerCase();
     return shownTasks
       .filter((item) => {
@@ -427,19 +451,26 @@ export function TasksWorkspace() {
           [item.title, item.description, item.profiles?.full_name, item.teams?.name].some((value) =>
             value?.toLowerCase().includes(keyword),
           );
-        const status = normalizeTaskStatus(item.status);
-        const matchesStatus = statusFilter === "all" || status === statusFilter;
         const deadlineState = getDeadlineState(item.deadline, item.status, date);
         const matchesDeadline =
           deadlineFilter === "all" ||
           deadlineFilter === deadlineState ||
           (deadlineFilter === "none" && deadlineState === "none");
-        return matchesKeyword && matchesStatus && matchesDeadline;
+        return matchesKeyword && matchesDeadline;
       })
       .sort((a, b) => compareTaskUrgency(a, b, date));
-  }, [date, deadlineFilter, shownTasks, statusFilter, taskSearch]);
+  }, [date, deadlineFilter, shownTasks, taskSearch]);
 
-  const filteredTemplates = useMemo(() => {
+  const filteredTasks = useMemo(
+    () =>
+      baseFilteredTasks.filter((item) => {
+        const status = normalizeTaskStatus(item.status);
+        return statusFilter === "all" || status === statusFilter;
+      }),
+    [baseFilteredTasks, statusFilter],
+  );
+
+  const baseFilteredTemplates = useMemo(() => {
     const selectedUserTeamIds = new Set(
       (data?.memberships ?? [])
         .filter((membership) => membership.user_id === selectedUserId)
@@ -453,6 +484,58 @@ export function TasksWorkspace() {
         (item.team_id ? selectedUserTeamIds.has(item.team_id) : false);
       const matchesTeam =
         selectedTeamId === "all" || item.team_id === null || item.team_id === selectedTeamId;
+      const matchesKeyword =
+        !keyword ||
+        [
+          item.title,
+          item.description,
+          data?.teams.find((team) => team.id === item.team_id)?.name,
+        ].some((value) => value?.toLowerCase().includes(keyword));
+      return matchesKeyword && matchesUser && matchesTeam && deadlineFilter === "all";
+    });
+  }, [
+    data?.memberships,
+    data?.teams,
+    data?.templates,
+    selectedTeamId,
+    selectedUserId,
+    deadlineFilter,
+    taskSearch,
+  ]);
+
+  const filteredTemplates = useMemo(
+    () =>
+      baseFilteredTemplates.filter((item) => {
+        const status = getTemplateBoardStatus(
+          item,
+          data?.completions ?? [],
+          data?.users ?? [],
+          data?.memberships ?? [],
+          profile?.id,
+          isEmployee,
+        );
+        return statusFilter === "all" || status === statusFilter;
+      }),
+    [
+      baseFilteredTemplates,
+      data?.completions,
+      data?.memberships,
+      data?.users,
+      isEmployee,
+      profile?.id,
+      statusFilter,
+    ],
+  );
+
+  const tabCounts = useMemo(() => {
+    const counts = new Map<BoardStatus | "all", number>([["all", 0]]);
+    for (const column of boardColumns) counts.set(column.status, 0);
+    for (const item of baseFilteredTasks) {
+      const status = normalizeTaskStatus(item.status);
+      counts.set("all", (counts.get("all") ?? 0) + 1);
+      counts.set(status, (counts.get(status) ?? 0) + 1);
+    }
+    for (const item of baseFilteredTemplates) {
       const status = getTemplateBoardStatus(
         item,
         data?.completions ?? [],
@@ -461,32 +544,61 @@ export function TasksWorkspace() {
         profile?.id,
         isEmployee,
       );
-      const matchesKeyword =
-        !keyword ||
-        [
-          item.title,
-          item.description,
-          data?.teams.find((team) => team.id === item.team_id)?.name,
-        ].some((value) => value?.toLowerCase().includes(keyword));
-      const matchesStatus = statusFilter === "all" || status === statusFilter;
-      return (
-        matchesKeyword && matchesStatus && matchesUser && matchesTeam && deadlineFilter === "all"
-      );
-    });
+      counts.set("all", (counts.get("all") ?? 0) + 1);
+      counts.set(status, (counts.get(status) ?? 0) + 1);
+    }
+    return counts;
   }, [
+    baseFilteredTasks,
+    baseFilteredTemplates,
     data?.completions,
     data?.memberships,
-    data?.teams,
-    data?.templates,
     data?.users,
     isEmployee,
     profile?.id,
-    selectedTeamId,
-    selectedUserId,
-    deadlineFilter,
-    statusFilter,
-    taskSearch,
   ]);
+
+  const unreadTabs = useMemo(() => {
+    const tabs = new Set<BoardStatus | "all">();
+    for (const item of baseFilteredTasks) {
+      if (!isTaskUnread(item)) continue;
+      tabs.add("all");
+      tabs.add(normalizeTaskStatus(item.status));
+    }
+    return tabs;
+  }, [baseFilteredTasks, isTaskUnread]);
+
+  const markTasksSeen = async (items: TaskRow[]) => {
+    if (!profile?.id || !items.length) return;
+    const nowIso = new Date().toISOString();
+    const payload = items.map((item) => ({
+      task_id: item.id,
+      user_id: profile.id,
+      last_seen_status: normalizeTaskStatus(item.status),
+      seen_at: nowIso,
+    }));
+    const { error } = await supabase
+      .from("task_read_states")
+      .upsert(payload, { onConflict: "task_id,user_id" });
+    if (error) {
+      if (import.meta.env.DEV) console.warn("[MKTRe task reads] mark seen failed", error);
+      return;
+    }
+    await qc.invalidateQueries({ queryKey: ["tasks-workspace"] });
+  };
+
+  const markTabSeen = (value: BoardStatus | "all") => {
+    const tasksToMark = baseFilteredTasks.filter((item) => {
+      if (!isTaskUnread(item)) return false;
+      return value === "all" || normalizeTaskStatus(item.status) === value;
+    });
+    void markTasksSeen(tasksToMark);
+  };
+
+  const handleStatusFilterChange = (value: BoardStatus | "all") => {
+    setStatusFilter(value);
+    markTabSeen(value);
+  };
   const totalWorkCount = filteredTasks.length;
   const completedWorkCount = filteredTasks.filter(
     (item) => normalizeTaskStatus(item.status) === "done",
@@ -609,7 +721,9 @@ export function TasksWorkspace() {
       return;
     }
     toast.success("Đã cập nhật task");
-    qc.invalidateQueries({ queryKey: ["tasks-workspace"] });
+    const currentTask = data?.tasks.find((item) => item.id === id);
+    if (currentTask) await markTasksSeen([{ ...currentTask, status }]);
+    await qc.invalidateQueries({ queryKey: ["tasks-workspace"] });
   };
 
   const startTemplate = async (item: TemplateRow) => {
@@ -854,6 +968,7 @@ export function TasksWorkspace() {
       return;
     }
     toast.success("Đã cập nhật task");
+    await markTasksSeen([{ ...editingTask, status: editTaskForm.status }]);
     setEditingTask(null);
     qc.invalidateQueries({ queryKey: ["tasks-workspace"] });
   };
@@ -883,6 +998,7 @@ export function TasksWorkspace() {
   };
 
   const openTaskDetails = (row: TaskRow) => {
+    void markTasksSeen([row]);
     setSelectedTask(row);
     setTaskDetailsOpen(true);
   };
@@ -906,10 +1022,11 @@ export function TasksWorkspace() {
     if (!profile || !reviewTarget) return;
     const now = new Date().toISOString();
     if (reviewTarget.type === "task") {
+      const nextStatus = approved ? "done" : "in_progress";
       const { error } = await supabase
         .from("tasks")
         .update({
-          status: approved ? "done" : "in_progress",
+          status: nextStatus,
           completed_at: approved ? now : null,
           reviewed_at: now,
           reviewed_by: profile.id,
@@ -920,6 +1037,7 @@ export function TasksWorkspace() {
         toast.error(error.message);
         return;
       }
+      await markTasksSeen([{ ...reviewTarget.task, status: nextStatus }]);
     } else {
       const { error } = await supabase
         .from("task_completions")
@@ -1926,7 +2044,12 @@ export function TasksWorkspace() {
             />
           </div>
 
-          <StatusTabs value={statusFilter} onChange={setStatusFilter} />
+          <StatusTabs
+            value={statusFilter}
+            onChange={handleStatusFilterChange}
+            counts={tabCounts}
+            unreadTabs={unreadTabs}
+          />
 
           {canAssign && (
             <>
@@ -1992,42 +2115,15 @@ export function TasksWorkspace() {
           </div>
         ) : (
           <div className="min-w-0">
-            <div className="grid gap-5 overflow-x-auto pb-2 md:grid-cols-4 md:overflow-visible">
-              {boardColumns.map((column) => {
-                const columnTasks = filteredTasks.filter(
-                  (item) => normalizeTaskStatus(item.status) === column.status,
-                );
-                const columnTemplates = filteredTemplates.filter((item) => {
-                  const status = getTemplateBoardStatus(
-                    item,
-                    data?.completions ?? [],
-                    data?.users ?? [],
-                    data?.memberships ?? [],
-                    profile?.id,
-                    isEmployee,
-                  );
-                  return status === column.status;
-                });
-                const count = columnTasks.length + columnTemplates.length;
-
-                return (
-                  <section key={column.status} className="min-h-80 min-w-[280px] md:min-w-0">
-                    <div className="mb-4 flex shrink-0 items-center gap-3">
-                      <span className={cn("h-3 w-3 rounded-full", columnDotClass(column.status))} />
-                      <h2 className="text-base font-bold text-slate-900">{column.title}</h2>
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
-                        {count}
-                      </span>
-                    </div>
-                    <div className="space-y-4 md:max-h-[560px] md:overflow-y-auto md:pr-1">
-                      {columnTemplates.map((item) => renderTemplateCard(item))}
-                      {columnTasks.map((item) => renderTaskCard(item))}
-                      {!count && <Empty text={boardEmptyText} />}
-                    </div>
-                  </section>
-                );
-              })}
+            <div className="grid gap-5 pb-2 md:grid-cols-2">
+              {filteredTemplates.map((item) => renderTemplateCard(item))}
+              {filteredTasks.map((item) => renderTaskCard(item))}
             </div>
+            {filteredTasks.length + filteredTemplates.length === 0 && (
+              <div className="rounded-3xl border border-dashed bg-white p-10">
+                <Empty text={boardEmptyText} />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -2115,9 +2211,13 @@ function CardActionsMenu({
 function StatusTabs({
   value,
   onChange,
+  counts,
+  unreadTabs,
 }: {
   value: BoardStatus | "all";
   onChange: (value: BoardStatus | "all") => void;
+  counts: Map<BoardStatus | "all", number>;
+  unreadTabs: Set<BoardStatus | "all">;
 }) {
   const options: Array<{ value: BoardStatus | "all"; label: string }> = [
     { value: "all", label: "Tất cả" },
@@ -2125,20 +2225,31 @@ function StatusTabs({
   ];
 
   return (
-    <div className="flex h-12 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
+    <div className="flex h-12 max-w-full overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
       {options.map((option) => (
         <button
           key={option.value}
           type="button"
           onClick={() => onChange(option.value)}
           className={cn(
-            "min-w-24 rounded-xl px-4 text-sm font-semibold transition",
+            "relative flex min-w-max items-center gap-2 rounded-xl px-4 text-sm font-semibold transition",
             value === option.value
               ? "bg-slate-950 text-white shadow-sm"
               : "text-slate-500 hover:bg-slate-50 hover:text-slate-900",
           )}
         >
-          {option.label}
+          <span>{option.label}</span>
+          <span
+            className={cn(
+              "rounded-full px-2 py-0.5 text-[11px]",
+              value === option.value ? "bg-white/15 text-white" : "bg-slate-100 text-slate-500",
+            )}
+          >
+            {counts.get(option.value) ?? 0}
+          </span>
+          {unreadTabs.has(option.value) && (
+            <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+          )}
         </button>
       ))}
     </div>
@@ -2155,7 +2266,7 @@ function columnDotClass(status: BoardStatus) {
 function statusShortLabel(status: BoardStatus) {
   if (status === "todo") return "Cần làm";
   if (status === "in_progress") return "Đã làm";
-  if (status === "pending_review") return "Đang duyệt";
+  if (status === "pending_review") return "Đợi duyệt";
   return "Hoàn thành";
 }
 
