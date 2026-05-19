@@ -9,8 +9,10 @@ export type NotificationLike = {
 
 const notificationTypeLabelMap: Record<string, string> = {
   announcement: "Thông báo",
+  attendance_reminder: "Nhắc điểm danh",
   checklist_new: "Checklist mới",
   checklist_pending: "Checklist cần làm",
+  daily_checklist_incomplete: "Checklist chưa hoàn thành",
   kpi_personal_low: "KPI cá nhân",
   kpi_team_low: "KPI team",
   leave_request_approved: "Nghỉ phép đã duyệt",
@@ -24,11 +26,17 @@ const notificationTypeLabelMap: Record<string, string> = {
   onboarding_review: "Chờ duyệt onboarding",
   onboarding_review_pending: "Chờ duyệt onboarding",
   report_missing: "Chưa báo cáo",
+  report_missing_summary: "Tổng hợp chưa báo cáo",
+  report_reminder: "Nhắc báo cáo",
   report_slot_due: "Sắp đến giờ báo cáo",
   report_slot_overdue: "Quá giờ báo cáo",
+  report_slot_summary: "Tổng hợp báo cáo",
   task_approved: "Task đã duyệt",
   task_assigned: "Nhiệm vụ mới",
+  task_deadline_due: "Task sắp đến hạn",
+  task_due_soon: "Task sắp đến hạn",
   task_overdue: "Task quá hạn",
+  task_pending_review: "Task chờ duyệt",
   task_rejected: "Task cần làm lại",
   task_review: "Chờ duyệt task",
 };

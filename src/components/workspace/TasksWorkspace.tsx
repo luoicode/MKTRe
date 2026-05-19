@@ -26,6 +26,7 @@ import type { Enums, Tables, TablesInsert } from "@/integrations/supabase/types"
 import { useAuth } from "@/lib/auth";
 import { getLeaderTeamIds } from "@/lib/dailyAggregates";
 import { formatYmd } from "@/lib/dateRange";
+import { insertNotificationsWithTelegram, sendTelegramNotification } from "@/lib/telegram";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -415,7 +416,7 @@ export function TasksWorkspace() {
           .contains("metadata", { dedupe_key: dedupeKey })
           .limit(1);
         if (existing?.length || cancelled) continue;
-        await supabase.from("notifications").insert({
+        await insertNotificationsWithTelegram({
           target_profile_id: item.assigned_to,
           actor_profile_id: profile.id,
           user_id: item.assigned_to,
@@ -727,6 +728,20 @@ export function TasksWorkspace() {
       return;
     }
     if (import.meta.env.DEV) console.info("[TasksWorkspace] created task rpc result", createdTask);
+    const createdTaskId = Array.isArray(createdTask)
+      ? createdTask[0]?.id
+      : (createdTask as { id?: string } | null)?.id;
+    await sendTelegramNotification({
+      recipient_profile_id: assignedTo,
+      title: "Nhiệm vụ mới",
+      message: `Bạn có task mới: ${task.title.trim()}.`,
+      type: "task_assigned",
+      metadata: {
+        task_id: createdTaskId ?? null,
+        team_id: teamId,
+      },
+      dedupe_key: `task_assigned:${createdTaskId ?? task.title.trim()}:${assignedTo}`,
+    });
     toast.success("Đã giao task");
     setTask((current) => ({
       ...current,

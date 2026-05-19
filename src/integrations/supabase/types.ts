@@ -1947,6 +1947,133 @@ export type Database = {
           },
         ];
       };
+      telegram_accounts: {
+        Row: {
+          created_at: string;
+          id: string;
+          is_active: boolean;
+          linked_at: string;
+          profile_id: string;
+          telegram_chat_id: string;
+          telegram_user_id: string | null;
+          telegram_username: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          linked_at?: string;
+          profile_id: string;
+          telegram_chat_id: string;
+          telegram_user_id?: string | null;
+          telegram_username?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          linked_at?: string;
+          profile_id?: string;
+          telegram_chat_id?: string;
+          telegram_user_id?: string | null;
+          telegram_username?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "telegram_accounts_profile_id_fkey";
+            columns: ["profile_id"];
+            isOneToOne: true;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      telegram_link_codes: {
+        Row: {
+          code: string;
+          created_at: string;
+          expires_at: string;
+          id: string;
+          profile_id: string;
+          used_at: string | null;
+        };
+        Insert: {
+          code: string;
+          created_at?: string;
+          expires_at: string;
+          id?: string;
+          profile_id: string;
+          used_at?: string | null;
+        };
+        Update: {
+          code?: string;
+          created_at?: string;
+          expires_at?: string;
+          id?: string;
+          profile_id?: string;
+          used_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "telegram_link_codes_profile_id_fkey";
+            columns: ["profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      telegram_notification_logs: {
+        Row: {
+          created_at: string;
+          dedupe_key: string | null;
+          error: string | null;
+          id: string;
+          notification_id: string | null;
+          recipient_profile_id: string | null;
+          status: string;
+          telegram_chat_id: string | null;
+        };
+        Insert: {
+          created_at?: string;
+          dedupe_key?: string | null;
+          error?: string | null;
+          id?: string;
+          notification_id?: string | null;
+          recipient_profile_id?: string | null;
+          status: string;
+          telegram_chat_id?: string | null;
+        };
+        Update: {
+          created_at?: string;
+          dedupe_key?: string | null;
+          error?: string | null;
+          id?: string;
+          notification_id?: string | null;
+          recipient_profile_id?: string | null;
+          status?: string;
+          telegram_chat_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "telegram_notification_logs_notification_id_fkey";
+            columns: ["notification_id"];
+            isOneToOne: false;
+            referencedRelation: "notifications";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "telegram_notification_logs_recipient_profile_id_fkey";
+            columns: ["recipient_profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       user_roles: {
         Row: {
           created_at: string;
