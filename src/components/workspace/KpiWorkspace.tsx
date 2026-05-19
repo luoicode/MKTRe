@@ -36,7 +36,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { PageHeader, PageShell, ScrollArea } from "@/components/layout/PageShell";
+import { PageShell, ScrollArea } from "@/components/layout/PageShell";
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { RefreshButton } from "@/components/RefreshButton";
 import { toast } from "sonner";
 
@@ -472,42 +473,38 @@ export function KpiWorkspace() {
 
   return (
     <PageShell>
-      <PageHeader className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            {role === "employee" || role === "leader" ? "KPI Cá Nhân" : "KPI"}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {profile?.full_name ?? "Nhân sự"} · {periodLabel}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
-          {(role === "employee" || role === "leader") && (
-            <Badge className={statusClass(personalStatus)}>
-              <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
-              {statusLabel(personalStatus)}
-            </Badge>
-          )}
-          {canEdit && (
-            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" /> Tạo KPI
-                </Button>
-              </DialogTrigger>
-              <KpiCreateDialog
-                form={form}
-                setForm={setForm}
-                role={role}
-                teams={data?.teams ?? []}
-                users={usersForForm}
-                onSave={save}
-              />
-            </Dialog>
-          )}
-        </div>
-      </PageHeader>
+      <WorkspacePageHeader
+        title={role === "employee" || role === "leader" ? "KPI cá nhân" : "KPI"}
+        subtitle={`${profile?.full_name ?? "Nhân sự"} · ${periodLabel}`}
+        actions={
+          <>
+            <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
+            {(role === "employee" || role === "leader") && (
+              <Badge className={statusClass(personalStatus)}>
+                <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+                {statusLabel(personalStatus)}
+              </Badge>
+            )}
+            {canEdit && (
+              <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="mr-2 h-4 w-4" /> Tạo KPI
+                  </Button>
+                </DialogTrigger>
+                <KpiCreateDialog
+                  form={form}
+                  setForm={setForm}
+                  role={role}
+                  teams={data?.teams ?? []}
+                  users={usersForForm}
+                  onSave={save}
+                />
+              </Dialog>
+            )}
+          </>
+        }
+      />
 
       <ScrollArea className="py-1 md:pr-2">
         {isLoading ? (

@@ -56,6 +56,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { TaskDetailsModal, type TaskDetailsTask } from "@/components/workspace/TaskDetailsModal";
 import { RefreshButton } from "@/components/RefreshButton";
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 
 type TeamRow = Pick<Tables<"teams">, "id" | "name">;
 type UserRow = Pick<Tables<"profiles">, "id" | "full_name" | "username" | "avatar_url">;
@@ -2091,31 +2092,25 @@ export function TasksWorkspace() {
         </DialogContent>
       </Dialog>
 
-      <div className="shrink-0 rounded-b-3xl border-b border-slate-200 bg-slate-50/95 pb-4 backdrop-blur md:sticky md:top-0 md:z-20">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="flex flex-wrap items-center gap-5">
-              <h1 className="text-3xl font-bold tracking-tight text-slate-950">
-                {isEmployee ? "Công Việc Của Tôi" : "Checklist công việc"}
-              </h1>
-            </div>
-            <p className="mt-1 text-sm font-medium text-slate-500">
-              {isEmployee
-                ? `${profile?.full_name ?? "Marketing"} · Cập nhật lúc ${new Intl.DateTimeFormat(
-                    "vi-VN",
-                    {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      day: "2-digit",
-                      month: "2-digit",
-                      year: "numeric",
-                    },
-                  ).format(new Date())}`
-                : "Quản lý nhiệm vụ, checklist và luồng duyệt của đội ngũ"}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
+      <WorkspacePageHeader
+        className="md:sticky md:top-0 md:z-20"
+        title={isEmployee ? "Công việc của tôi" : "Checklist công việc"}
+        subtitle={
+          isEmployee
+            ? `${profile?.full_name ?? "Marketing"} · Cập nhật lúc ${new Intl.DateTimeFormat(
+                "vi-VN",
+                {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                },
+              ).format(new Date())}`
+            : "Quản lý nhiệm vụ, checklist và luồng duyệt của đội ngũ"
+        }
+        actions={
+          <>
             <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
             {isEmployee && (
               <Badge className="rounded-full border-emerald-100 bg-white px-4 py-2 text-sm font-semibold text-emerald-600 shadow-sm">
@@ -2137,9 +2132,9 @@ export function TasksWorkspace() {
                 </Button>
               </>
             )}
-          </div>
-        </div>
-
+          </>
+        }
+      >
         {canAssign && (
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <SummaryCard label="Tổng task" value={totalWorkCount} />
@@ -2149,7 +2144,7 @@ export function TasksWorkspace() {
             <SummaryCard label="Tỉ lệ hoàn thành" value={`${Math.round(progressValue)}%`} />
           </div>
         )}
-      </div>
+      </WorkspacePageHeader>
 
       <div className="space-y-4 md:min-h-0 md:flex-1 md:overflow-y-auto md:overflow-x-hidden md:pt-4">
         {canManageOnboardingTemplates && (

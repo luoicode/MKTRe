@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Plus, Trash2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { SearchableSelect, SearchableMultiSelect } from "@/components/SearchableSelect";
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 
 export const Route = createFileRoute("/_authenticated/admin/manager-assignments")({
   component: ManagerAssignments,
@@ -231,12 +232,10 @@ function ManagerAssignments() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Phân công TP Marketing</h1>
-        <p className="text-sm text-muted-foreground">
-          Thăng chức TP Marketing và gán các team phụ trách
-        </p>
-      </div>
+      <WorkspacePageHeader
+        title="Quản lý team"
+        subtitle="Thăng chức TP Marketing và gán các team phụ trách"
+      />
 
       <Card>
         <CardHeader>

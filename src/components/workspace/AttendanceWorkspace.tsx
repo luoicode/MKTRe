@@ -17,7 +17,8 @@ import { getLeaderTeamIds } from "@/lib/dailyAggregates";
 import { formatDateVN, todayStr } from "@/lib/reports";
 import { sendTelegramForNotification } from "@/lib/telegram";
 import { cn } from "@/lib/utils";
-import { PageHeader, PageShell, ScrollArea } from "@/components/layout/PageShell";
+import { PageShell, ScrollArea } from "@/components/layout/PageShell";
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { RefreshButton } from "@/components/RefreshButton";
 import { UserAvatar } from "@/components/UserAvatar";
 import { Badge } from "@/components/ui/badge";
@@ -699,40 +700,38 @@ export function AttendanceWorkspace() {
 
   return (
     <PageShell>
-      <PageHeader className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight">Điểm danh</h1>
-            {isEmployeeView ? (
-              <Badge className="gap-1 rounded-full bg-orange-50 text-orange-700 hover:bg-orange-50">
-                {employeeStreak >= 3 ? <Flame className="h-3.5 w-3.5" /> : null}
-                {employeeStreak >= 3
-                  ? `${employeeStreak} ngày liên tiếp`
-                  : `${employeeStreak} ngày`}
-              </Badge>
+      <WorkspacePageHeader
+        title="Điểm danh"
+        subtitle={
+          isEmployeeView
+            ? `${profile.full_name} · Tháng ${formatMonthLabel(month)}`
+            : "Theo dõi điểm danh, checklist và lịch làm việc"
+        }
+        badge={
+          isEmployeeView ? (
+            <Badge className="gap-1 rounded-full bg-orange-50 text-orange-700 hover:bg-orange-50">
+              {employeeStreak >= 3 ? <Flame className="h-3.5 w-3.5" /> : null}
+              {employeeStreak >= 3 ? `${employeeStreak} ngày liên tiếp` : `${employeeStreak} ngày`}
+            </Badge>
+          ) : null
+        }
+        actions={
+          <>
+            <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
+            {canSelfCheckIn ? (
+              <Button variant="outline" onClick={() => setLeaveOpen(true)}>
+                Xin nghỉ phép
+              </Button>
             ) : null}
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {isEmployeeView
-              ? `${profile.full_name} · Tháng ${formatMonthLabel(month)}`
-              : "Theo dõi điểm danh, checklist và lịch làm việc"}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
-          {canSelfCheckIn ? (
-            <Button variant="outline" onClick={() => setLeaveOpen(true)}>
-              Xin nghỉ phép
-            </Button>
-          ) : null}
-          {canSelfCheckIn ? (
-            <Button onClick={checkInToday} disabled={hasCheckedInToday}>
-              <UserCheck className="mr-2 h-4 w-4" />
-              {hasCheckedInToday ? "Đã điểm danh" : "Điểm danh"}
-            </Button>
-          ) : null}
-        </div>
-      </PageHeader>
+            {canSelfCheckIn ? (
+              <Button onClick={checkInToday} disabled={hasCheckedInToday}>
+                <UserCheck className="mr-2 h-4 w-4" />
+                {hasCheckedInToday ? "Đã điểm danh" : "Điểm danh"}
+              </Button>
+            ) : null}
+          </>
+        }
+      />
 
       {isLoading ? (
         <div className="flex flex-1 items-center justify-center">

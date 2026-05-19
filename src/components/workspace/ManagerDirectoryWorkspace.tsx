@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 
 type DirectoryMode = "teams" | "leaders" | "employees";
 
@@ -139,21 +140,21 @@ export function ManagerDirectoryWorkspace({ mode }: { mode: DirectoryMode }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
-          <p className="text-sm text-muted-foreground">{subtitle}</p>
-        </div>
-        <div className="relative w-full max-w-sm">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-            placeholder="Tìm kiếm..."
-          />
-        </div>
-      </div>
+      <WorkspacePageHeader
+        title={title}
+        subtitle={subtitle}
+        actions={
+          <div className="relative w-full max-w-sm">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+              placeholder="Tìm kiếm..."
+            />
+          </div>
+        }
+      />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Summary icon={UsersRound} label="Team" value={String(data?.teams.length ?? "—")} />

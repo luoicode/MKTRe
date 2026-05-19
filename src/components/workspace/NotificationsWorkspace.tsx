@@ -38,7 +38,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { PageContent, PageHeader, PageShell } from "@/components/layout/PageShell";
+import { PageContent, PageShell } from "@/components/layout/PageShell";
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { toast } from "sonner";
 
 type TargetScope = "system" | "team";
@@ -340,30 +341,30 @@ export function NotificationsWorkspace({ mode = "auto" }: { mode?: "auto" | "his
 
   return (
     <PageShell>
-      <PageHeader className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{pageTitle}</h1>
-          <p className="text-sm text-muted-foreground">
-            {isHistoryMode
-              ? "Tạo tin tức, nhắc báo cáo, KPI hoặc task mới."
-              : "Hộp thông báo và các cập nhật mới nhất."}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {canCreate && (
-            <Button onClick={() => setCreateOpen(true)} className="shadow-sm">
-              <BellPlus className="mr-2 h-4 w-4" />
-              Tạo thông báo
-            </Button>
-          )}
-          {!isHistoryMode && (
-            <Button variant="outline" onClick={markAllRead}>
-              <CheckCheck className="mr-2 h-4 w-4" />
-              Đọc tất cả
-            </Button>
-          )}
-        </div>
-      </PageHeader>
+      <WorkspacePageHeader
+        title={pageTitle}
+        subtitle={
+          isHistoryMode
+            ? "Tạo tin tức, nhắc báo cáo, KPI hoặc task mới."
+            : "Hộp thông báo và các cập nhật mới nhất."
+        }
+        actions={
+          <>
+            {canCreate && (
+              <Button onClick={() => setCreateOpen(true)} className="shadow-sm">
+                <BellPlus className="mr-2 h-4 w-4" />
+                Tạo thông báo
+              </Button>
+            )}
+            {!isHistoryMode && (
+              <Button variant="outline" onClick={markAllRead}>
+                <CheckCheck className="mr-2 h-4 w-4" />
+                Đọc tất cả
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {canCreate && (
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>

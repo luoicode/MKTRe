@@ -28,6 +28,7 @@ import { Loader2, Plus, UserPlus, AlertTriangle, ArrowRightLeft } from "lucide-r
 import { toast } from "sonner";
 import { SearchableSelect, SearchableMultiSelect } from "@/components/SearchableSelect";
 import { RefreshButton } from "@/components/RefreshButton";
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 
 export const Route = createFileRoute("/_authenticated/admin/teams")({ component: AdminTeams });
 
@@ -157,32 +158,32 @@ function AdminTeams() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Quản lý Team</h1>
-          <p className="text-sm text-muted-foreground">Tạo team, gán Leader & nhân viên</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <RefreshButton
-            isRefreshing={isTeamsFetching || isProfilesFetching}
-            onRefresh={refreshData}
-          />
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" /> Tạo team
-              </Button>
-            </DialogTrigger>
-            <CreateTeamDialog
-              leaders={leaders}
-              onClose={() => {
-                setOpen(false);
-                qc.invalidateQueries({ queryKey: ["teams-full"] });
-              }}
+      <WorkspacePageHeader
+        title="Quản lý team"
+        subtitle="Tạo team, gán Leader & nhân viên"
+        actions={
+          <>
+            <RefreshButton
+              isRefreshing={isTeamsFetching || isProfilesFetching}
+              onRefresh={refreshData}
             />
-          </Dialog>
-        </div>
-      </div>
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="mr-2 h-4 w-4" /> Tạo team
+                </Button>
+              </DialogTrigger>
+              <CreateTeamDialog
+                leaders={leaders}
+                onClose={() => {
+                  setOpen(false);
+                  qc.invalidateQueries({ queryKey: ["teams-full"] });
+                }}
+              />
+            </Dialog>
+          </>
+        }
+      />
 
       <Card>
         <CardHeader>

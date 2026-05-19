@@ -40,6 +40,7 @@ import { SubmittedReportCard, type SubmittedReportData } from "@/components/Subm
 import { isReconciliationSlot } from "@/lib/reportAudit";
 import { chooseReportImageDirectory } from "@/utils/reportImageStorage";
 import { insertNotificationsWithTelegram } from "@/lib/telegram";
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 
 export const Route = createFileRoute("/_authenticated/employee/report")({
   component: EmployeeReport,
@@ -524,18 +525,20 @@ export function EmployeeReport() {
         }`}
         aria-hidden={reportLocked}
       >
-        <div className="shrink-0">
-          <h1 className="text-xl font-bold tracking-tight md:text-2xl">Báo cáo của bạn</h1>
-          <p className="text-sm text-muted-foreground">
-            Hôm nay: {formatDateVN(date)}
-            {activeEntry && (
-              <>
-                {" "}
-                · Đang nhập: {activeEntry.groupLabel} ({formatDateVN(activeEntry.reportDate)})
-              </>
-            )}
-          </p>
-        </div>
+        <WorkspacePageHeader
+          title="Nhập báo cáo"
+          subtitle={
+            <>
+              Hôm nay: {formatDateVN(date)}
+              {activeEntry ? (
+                <>
+                  {" "}
+                  · Đang nhập: {activeEntry.groupLabel} ({formatDateVN(activeEntry.reportDate)})
+                </>
+              ) : null}
+            </>
+          }
+        />
 
         {!slots ? (
           <div className="flex justify-center py-10 md:min-h-0 md:flex-1 md:items-center">

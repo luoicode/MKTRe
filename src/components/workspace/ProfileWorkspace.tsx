@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 
 export function ProfileWorkspace() {
   const { profile, refresh } = useAuth();
@@ -185,9 +186,7 @@ export function ProfileWorkspace() {
 
   return (
     <div className="flex h-auto min-h-0 flex-col md:h-full md:overflow-hidden">
-      <div className="shrink-0 pb-3">
-        <h1 className="text-2xl font-bold">Thông tin cá nhân</h1>
-      </div>
+      <WorkspacePageHeader title="Thông tin cá nhân" className="mb-3" />
 
       <div className="min-h-0 flex-1 overflow-visible pb-4 md:overflow-y-auto md:pr-2">
         <div className="mx-auto max-w-3xl">

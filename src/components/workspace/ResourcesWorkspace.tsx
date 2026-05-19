@@ -47,6 +47,7 @@ import type { Json, Tables, TablesInsert, TablesUpdate } from "@/integrations/su
 import { useAuth } from "@/lib/auth";
 import { insertNotificationsWithTelegram } from "@/lib/telegram";
 import { cn } from "@/lib/utils";
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 
 type OnboardingSection = Tables<"onboarding_sections">;
 type OnboardingCard = Tables<"onboarding_cards">;
@@ -910,45 +911,39 @@ export function ResourcesWorkspace() {
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col gap-4 overflow-hidden">
-      <div className="shrink-0 overflow-hidden rounded-3xl border bg-background/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85">
-        <div className="flex flex-wrap items-center justify-between gap-4 p-5">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700">
-                <GraduationCap className="h-5 w-5" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight">Hướng dẫn tân thủ</h1>
-                <p className="text-sm text-muted-foreground">
-                  Lộ trình onboarding, đào tạo và văn bản cần đọc cho nhân sự mới.
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge
-              className={cn(
-                "rounded-full px-4 py-2 text-sm shadow-sm",
-                certificateReady
-                  ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100"
-                  : "bg-indigo-100 text-indigo-700 hover:bg-indigo-100",
-              )}
-            >
-              {certificateReady ? (
-                <>
-                  <Award className="mr-1.5 h-4 w-4" /> Đã được chứng nhận
-                </>
-              ) : (
-                `${completedCards}/${totalCards}`
-              )}
-            </Badge>
+      <WorkspacePageHeader
+        icon={<GraduationCap className="h-5 w-5" />}
+        title="Hướng dẫn tân thủ"
+        subtitle="Lộ trình onboarding, đào tạo và văn bản cần đọc cho nhân sự mới."
+        badge={
+          <Badge
+            className={cn(
+              "rounded-full px-4 py-2 text-sm shadow-sm",
+              certificateReady
+                ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100"
+                : "bg-indigo-100 text-indigo-700 hover:bg-indigo-100",
+            )}
+          >
+            {certificateReady ? (
+              <>
+                <Award className="mr-1.5 h-4 w-4" /> Đã được chứng nhận
+              </>
+            ) : (
+              `${completedCards}/${totalCards}`
+            )}
+          </Badge>
+        }
+        actions={
+          <>
             {isAdmin && (
               <Button variant="outline" onClick={() => openDocumentForm()}>
                 <Plus className="mr-2 h-4 w-4" /> Tài liệu
               </Button>
             )}
-          </div>
-        </div>
+          </>
+        }
+        className="overflow-hidden backdrop-blur supports-[backdrop-filter]:bg-background/85"
+      >
         <div className="h-1.5 bg-muted">
           <div
             className={cn(
@@ -958,7 +953,7 @@ export function ResourcesWorkspace() {
             style={{ width: `${progressPercent}%` }}
           />
         </div>
-      </div>
+      </WorkspacePageHeader>
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
         {sections.map((section, index) => {

@@ -28,7 +28,8 @@ import { kpiPercent, kpiStatus, kpiStatusLabel } from "@/lib/kpi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
-import { PageContent, PageHeader, PageShell, ScrollArea } from "@/components/layout/PageShell";
+import { PageContent, PageShell, ScrollArea } from "@/components/layout/PageShell";
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib/dateRange";
 import { RefreshButton } from "@/components/RefreshButton";
 import { toast } from "sonner";
@@ -183,29 +184,20 @@ export function AnalyticsDashboard({
 
   return (
     <PageShell className="gap-3">
-      <PageHeader className="space-y-3 md:flex md:items-center md:justify-between md:gap-4 md:space-y-0">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight md:text-2xl">Tổng quan</h1>
-          <p className="text-sm text-muted-foreground">
-            {scope === "admin"
-              ? "Toàn hệ thống"
-              : scope === "manager"
-                ? "TP Marketing"
-                : scope === "leader"
-                  ? "Leader team"
-                  : "Cá nhân"}{" "}
-            · Doanh thu, ads, KPI và hiệu suất theo khoảng ngày.
-          </p>
-        </div>
-        <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row md:items-end">
-          <SalaryHeaderSummary estimate={salaryEstimate} />
-          <DateRangeFilter
-            value={range}
-            onChange={setRange}
-            trailingControl={<RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />}
-          />
-        </div>
-      </PageHeader>
+      <WorkspacePageHeader
+        title="Tổng quan"
+        subtitle={`${scope === "admin" ? "Toàn hệ thống" : scope === "manager" ? "TP Marketing" : scope === "leader" ? "Leader team" : "Cá nhân"} · Doanh thu, ads, KPI và hiệu suất theo khoảng ngày.`}
+        actions={
+          <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row md:items-end">
+            <SalaryHeaderSummary estimate={salaryEstimate} />
+            <DateRangeFilter
+              value={range}
+              onChange={setRange}
+              trailingControl={<RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />}
+            />
+          </div>
+        }
+      />
 
       {isLoading ? (
         <PageContent className="flex justify-center py-12 md:items-center">

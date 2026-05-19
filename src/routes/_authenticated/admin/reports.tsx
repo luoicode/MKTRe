@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { RefreshButton } from "@/components/RefreshButton";
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/admin/reports")({ component: AdminReports });
@@ -114,55 +115,62 @@ function AdminReports() {
 
   return (
     <div className="w-full min-w-0 space-y-2 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden">
-      <div className="screenshot-hide shrink-0 gap-2 md:flex md:flex-wrap md:items-end md:justify-between">
-        <div className="flex flex-wrap items-end gap-2">
-          <DateRangeFilter value={range} onChange={setRange} />
-          <div className="min-w-56">
-            <Label>Team</Label>
-            <Select value={teamId} onValueChange={setTeamId}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tất cả team</SelectItem>
-                {(data?.teams ?? []).map((team) => (
-                  <SelectItem key={team.id} value={team.id}>
-                    {team.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
-          <ReportActions
-            targetRef={ref}
-            filename={teamReportExportFilename(now, normalizedRange.to, selectedTeamName)}
-            screenshotMode={screenshot}
-            onToggleScreenshot={() => setScreenshot((value) => !value)}
-            sheetData={
-              totals
-                ? {
-                    reportType: "team",
-                    reportDate: normalizedRange.to,
-                    dateLabel,
-                    title: selectedTeamName,
-                    channel: "FACEBOOK",
-                    ads_cost: totals.ads_cost,
-                    mess_count: totals.mess_count,
-                    data_count: totals.data_count,
-                    closed_orders: totals.closed_orders,
-                    daily_data_revenue: totals.daily_data_revenue,
-                    total_orders: totals.total_orders,
-                    total_revenue: totals.total_revenue,
-                    recovered_revenue: totals.recovered_revenue,
-                  }
-                : undefined
-            }
-          />
-        </div>
-      </div>
+      <WorkspacePageHeader
+        className="screenshot-hide"
+        title="Báo cáo tổng"
+        subtitle={dateLabel}
+        actions={
+          <>
+            <div className="flex flex-wrap items-end gap-2">
+              <DateRangeFilter value={range} onChange={setRange} />
+              <div className="min-w-56">
+                <Label>Team</Label>
+                <Select value={teamId} onValueChange={setTeamId}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tất cả team</SelectItem>
+                    {(data?.teams ?? []).map((team) => (
+                      <SelectItem key={team.id} value={team.id}>
+                        {team.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
+              <ReportActions
+                targetRef={ref}
+                filename={teamReportExportFilename(now, normalizedRange.to, selectedTeamName)}
+                screenshotMode={screenshot}
+                onToggleScreenshot={() => setScreenshot((value) => !value)}
+                sheetData={
+                  totals
+                    ? {
+                        reportType: "team",
+                        reportDate: normalizedRange.to,
+                        dateLabel,
+                        title: selectedTeamName,
+                        channel: "FACEBOOK",
+                        ads_cost: totals.ads_cost,
+                        mess_count: totals.mess_count,
+                        data_count: totals.data_count,
+                        closed_orders: totals.closed_orders,
+                        daily_data_revenue: totals.daily_data_revenue,
+                        total_orders: totals.total_orders,
+                        total_revenue: totals.total_revenue,
+                        recovered_revenue: totals.recovered_revenue,
+                      }
+                    : undefined
+                }
+              />
+            </div>
+          </>
+        }
+      />
 
       {isLoading ? (
         <div className="flex justify-center py-10 md:min-h-0 md:flex-1 md:items-center">

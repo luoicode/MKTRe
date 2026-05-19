@@ -35,6 +35,7 @@ import { Loader2, Plus, Edit } from "lucide-react";
 import { toast } from "sonner";
 import { RefreshButton } from "@/components/RefreshButton";
 import { UserAvatar } from "@/components/UserAvatar";
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({ component: AdminUsers });
 
@@ -191,30 +192,30 @@ function AdminUsers() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Quản lý người dùng</h1>
-          <p className="text-sm text-muted-foreground">Tạo, cập nhật, vô hiệu hóa tài khoản</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" /> Tạo user
-              </Button>
-            </DialogTrigger>
-            <CreateUserDialog
-              teams={teams}
-              adminProfileId={profile?.id ?? null}
-              onClose={() => {
-                setCreateOpen(false);
-                qc.invalidateQueries({ queryKey: ["admin-users"] });
-              }}
-            />
-          </Dialog>
-        </div>
-      </div>
+      <WorkspacePageHeader
+        title="Quản lý người dùng"
+        subtitle="Tạo, cập nhật, vô hiệu hóa tài khoản"
+        actions={
+          <>
+            <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
+            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="mr-2 h-4 w-4" /> Tạo user
+                </Button>
+              </DialogTrigger>
+              <CreateUserDialog
+                teams={teams}
+                adminProfileId={profile?.id ?? null}
+                onClose={() => {
+                  setCreateOpen(false);
+                  qc.invalidateQueries({ queryKey: ["admin-users"] });
+                }}
+              />
+            </Dialog>
+          </>
+        }
+      />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">

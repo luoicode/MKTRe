@@ -19,6 +19,7 @@ import {
 import { Loader2 } from "lucide-react";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { initialDateRange, type DateRangeValue } from "@/lib/dateRange";
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 
 export const Route = createFileRoute("/_authenticated/leader/slot-report")({
   component: LeaderSlotReport,
@@ -81,32 +82,30 @@ function LeaderSlotReport() {
 
   return (
     <div className="w-full min-w-0 space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Báo cáo theo khung giờ</h1>
-        <p className="text-sm text-muted-foreground">
-          Xem chính xác báo cáo lũy kế của từng nhân viên tại đúng mốc giờ. Không cộng dồn nhiều
-          khung giờ.
-        </p>
-      </div>
-
-      <div className="flex flex-wrap items-end gap-3">
-        <DateRangeFilter value={range} onChange={setRange} />
-        <div>
-          <Label>Khung giờ</Label>
-          <Select value={slotId} onValueChange={setSlotId}>
-            <SelectTrigger className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {slots?.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.slot_name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      <WorkspacePageHeader
+        title="Báo cáo tổng"
+        subtitle="Xem chính xác báo cáo lũy kế của từng nhân viên tại đúng mốc giờ. Không cộng dồn nhiều khung giờ."
+        actions={
+          <>
+            <DateRangeFilter value={range} onChange={setRange} />
+            <div>
+              <Label>Khung giờ</Label>
+              <Select value={slotId} onValueChange={setSlotId}>
+                <SelectTrigger className="w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {slots?.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.slot_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        }
+      />
 
       {isLoading ? (
         <div className="flex justify-center py-10">

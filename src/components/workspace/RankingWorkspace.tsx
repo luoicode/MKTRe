@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { RefreshButton } from "@/components/RefreshButton";
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { toast } from "sonner";
 
 type RankingEntry = Database["public"]["Functions"]["get_ranking_entries"]["Returns"][number];
@@ -76,19 +77,17 @@ export function RankingWorkspace() {
 
   return (
     <div className="space-y-4 md:flex md:h-full md:min-h-0 md:flex-col md:gap-4 md:space-y-0 md:overflow-hidden">
-      <section className="shrink-0 rounded-3xl border bg-white p-4 shadow-sm md:p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-              <Trophy className="h-3.5 w-3.5" />
-              {PERIOD_LABELS[effectivePeriod]}
-            </div>
-            <h1 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-950 md:text-3xl">
-              Bảng xếp hạng
-            </h1>
+      <WorkspacePageHeader
+        icon={<Trophy className="h-5 w-5" />}
+        title="Xếp hạng"
+        badge={
+          <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+            <Trophy className="h-3.5 w-3.5" />
+            {PERIOD_LABELS[effectivePeriod]}
           </div>
-
-          <div className="flex flex-wrap items-center gap-2">
+        }
+        actions={
+          <>
             {showRankTag ? (
               <CurrentRankTag rank={currentUserRank} total={marketingRows.length} />
             ) : canUsePeriodFilter ? (
@@ -111,9 +110,9 @@ export function RankingWorkspace() {
               </div>
             ) : null}
             <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
-          </div>
-        </div>
-      </section>
+          </>
+        }
+      />
 
       <div className="shrink-0 md:max-h-[35%]">
         <Podium rows={topThree} currentUserId={profile?.id} isLoading={isLoading} />

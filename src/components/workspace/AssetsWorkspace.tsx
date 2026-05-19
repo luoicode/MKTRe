@@ -42,7 +42,8 @@ import {
 } from "@/components/ui/select";
 import { TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { PageHeader, PageShell, ScrollArea } from "@/components/layout/PageShell";
+import { PageShell, ScrollArea } from "@/components/layout/PageShell";
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { RefreshButton } from "@/components/RefreshButton";
 import { toast } from "sonner";
 
@@ -459,20 +460,12 @@ export function AssetsWorkspace() {
 
   return (
     <PageShell>
-      <PageHeader className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
-              <Package className="h-5 w-5" />
-            </span>
-            <div>
-              <h1 className="text-3xl font-extrabold tracking-tight">Tài sản</h1>
-              <p className="text-sm text-muted-foreground">
-                Quản lý tài sản chung, cố định, linh động và cá nhân
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+      <WorkspacePageHeader
+        icon={<Package className="h-5 w-5" />}
+        title="Tài sản"
+        subtitle="Quản lý tài sản chung, cố định, linh động và cá nhân"
+        actions={
+          <>
             <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
             {canCreate && (
               <Button onClick={openCreate}>
@@ -480,9 +473,9 @@ export function AssetsWorkspace() {
                 Thêm tài sản
               </Button>
             )}
-          </div>
-        </div>
-
+          </>
+        }
+      >
         <Card>
           <CardContent className="grid gap-3 p-3 lg:grid-cols-6">
             <Field label="Tìm kiếm">
@@ -571,7 +564,7 @@ export function AssetsWorkspace() {
             </Field>
           </CardContent>
         </Card>
-      </PageHeader>
+      </WorkspacePageHeader>
 
       <ScrollArea className="md:overflow-hidden md:pr-2">
         {isLoading ? (

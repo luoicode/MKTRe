@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 
 export function ManagerReportsWorkspace() {
   const { profile } = useAuth();
@@ -50,17 +51,11 @@ export function ManagerReportsWorkspace() {
 
   return (
     <div className="space-y-5 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden">
-      <div className="shrink-0 flex-wrap items-end justify-between gap-3 md:flex">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Báo cáo theo team</h1>
-          <p className="text-sm text-muted-foreground">
-            Xem báo cáo trong phạm vi team được phân công.
-          </p>
-        </div>
-        <div className="mt-3 md:mt-0">
-          <DateRangeFilter value={range} onChange={setRange} />
-        </div>
-      </div>
+      <WorkspacePageHeader
+        title="Báo cáo tổng"
+        subtitle="Xem báo cáo trong phạm vi team được phân công."
+        actions={<DateRangeFilter value={range} onChange={setRange} />}
+      />
 
       <Card className="md:flex md:min-h-0 md:flex-1 md:flex-col">
         <CardHeader className="shrink-0">
