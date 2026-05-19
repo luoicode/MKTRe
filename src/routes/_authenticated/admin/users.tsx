@@ -234,14 +234,14 @@ function AdminUsers() {
           ) : (
             <div className="overflow-x-auto">
               <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Tên</TableHead>
-                    <TableHead>Số điện thoại</TableHead>
-                    <TableHead>Vai trò</TableHead>
-                    <TableHead>Team</TableHead>
-                    <TableHead>Trạng thái</TableHead>
-                    <TableHead className="w-24" />
+                <TableHeader className="sticky top-0 z-20 bg-white/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/80">
+                  <TableRow className="border-b border-slate-200 hover:bg-transparent">
+                    <TableHead className="bg-inherit">Tên</TableHead>
+                    <TableHead className="bg-inherit">Số điện thoại</TableHead>
+                    <TableHead className="bg-inherit">Vai trò</TableHead>
+                    <TableHead className="bg-inherit">Team</TableHead>
+                    <TableHead className="bg-inherit">Trạng thái</TableHead>
+                    <TableHead className="w-24 bg-inherit" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>

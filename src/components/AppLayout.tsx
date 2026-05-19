@@ -8,7 +8,7 @@ import {
   FileText,
   LogOut,
   LayoutDashboard,
-  Menu,
+  Search,
   Target,
   CheckSquare,
   BookOpen,
@@ -53,26 +53,26 @@ interface NavItem {
 const NAV: NavItem[] = [
   // Admin
   { to: "/admin/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["admin"] },
-  { to: "/admin/reports", label: "Báo cáo tổng", icon: FileText, roles: ["admin"] },
+  { to: "/admin/reports", label: "Báo cáo", icon: FileText, roles: ["admin"] },
   { to: "/admin/kpi", label: "KPI", icon: Target, roles: ["admin"] },
-  { to: "/admin/users", label: "Quản lý User", icon: Users, roles: ["admin"] },
-  { to: "/admin/teams", label: "Quản lý Team", icon: UsersRound, roles: ["admin"] },
-  { to: "/admin/tasks", label: "Checklist công việc", icon: CheckSquare, roles: ["admin"] },
+  { to: "/admin/users", label: "Người dùng", icon: Users, roles: ["admin"] },
+  { to: "/admin/teams", label: "Team", icon: UsersRound, roles: ["admin"] },
+  { to: "/admin/tasks", label: "Công việc", icon: CheckSquare, roles: ["admin"] },
   { to: "/admin/attendance", label: "Điểm danh", icon: CalendarCheck, roles: ["admin"] },
   { to: "/admin/notifications", label: "Thông báo", icon: Bell, roles: ["admin"] },
   { to: "/admin/assets", label: "Tài sản", icon: Package, roles: ["admin"] },
-  { to: "/admin/ranking", label: "Bảng xếp hạng", icon: Trophy, roles: ["admin"] },
+  { to: "/admin/ranking", label: "Xếp hạng", icon: Trophy, roles: ["admin"] },
   { to: "/admin/resources", label: "Hướng dẫn tân thủ", icon: BookOpen, roles: ["admin"] },
 
   // Marketing Manager
   { to: "/manager/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["manager"] },
   { to: "/manager/kpi", label: "KPI", icon: Target, roles: ["manager"] },
-  { to: "/manager/tasks", label: "Checklist công việc", icon: CheckSquare, roles: ["manager"] },
+  { to: "/manager/tasks", label: "Công việc", icon: CheckSquare, roles: ["manager"] },
   { to: "/manager/attendance", label: "Điểm danh", icon: CalendarCheck, roles: ["manager"] },
   { to: "/manager/notifications", label: "Thông báo", icon: Bell, roles: ["manager"] },
   { to: "/manager/assets", label: "Tài sản", icon: Package, roles: ["manager"] },
-  { to: "/manager/ranking", label: "Bảng xếp hạng", icon: Trophy, roles: ["manager"] },
-  { to: "/manager/teams", label: "Teams", icon: UsersRound, roles: ["manager"] },
+  { to: "/manager/ranking", label: "Xếp hạng", icon: Trophy, roles: ["manager"] },
+  { to: "/manager/teams", label: "Team", icon: UsersRound, roles: ["manager"] },
   {
     to: "/manager/resources",
     label: "Hướng dẫn tân thủ",
@@ -81,37 +81,31 @@ const NAV: NavItem[] = [
   },
 
   // Leader
-  { to: "/leader/resources", label: "Hướng dẫn tân thủ", icon: BookOpen, roles: ["leader"] },
   { to: "/leader/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["leader"] },
-  { to: "/leader/kpi", label: "KPI", icon: Target, roles: ["leader"] },
   { to: "/leader/report-slots", label: "Nhập báo cáo cá nhân", icon: FileText, roles: ["leader"] },
-  { to: "/leader/daily-report", label: "Báo cáo tổng", icon: FileText, roles: ["leader"] },
-  { to: "/leader/tasks", label: "Checklist công việc", icon: CheckSquare, roles: ["leader"] },
+  { to: "/leader/daily-report", label: "Báo cáo", icon: FileText, roles: ["leader"] },
+  { to: "/leader/kpi", label: "KPI", icon: Target, roles: ["leader"] },
+  { to: "/leader/tasks", label: "Công việc", icon: CheckSquare, roles: ["leader"] },
   { to: "/leader/attendance", label: "Điểm danh", icon: CalendarCheck, roles: ["leader"] },
   { to: "/leader/assets", label: "Tài sản", icon: Package, roles: ["leader"] },
-  { to: "/leader/ranking", label: "Bảng xếp hạng", icon: Trophy, roles: ["leader"] },
+  { to: "/leader/ranking", label: "Xếp hạng", icon: Trophy, roles: ["leader"] },
+  { to: "/leader/resources", label: "Hướng dẫn tân thủ", icon: BookOpen, roles: ["leader"] },
 
   // Employee
-  {
-    to: "/employee/resources",
-    label: "Hướng dẫn tân thủ",
-    icon: BookOpen,
-    roles: ["employee"],
-  },
   { to: "/employee/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["employee"] },
-  { to: "/employee/attendance", label: "Điểm danh", icon: CalendarCheck, roles: ["employee"] },
-  { to: "/employee/kpi", label: "KPI", icon: Target, roles: ["employee"] },
   { to: "/employee/report", label: "Nhập báo cáo", icon: FileText, roles: ["employee"] },
-  { to: "/employee/tasks", label: "Checklist công việc", icon: CheckSquare, roles: ["employee"] },
+  { to: "/employee/kpi", label: "KPI", icon: Target, roles: ["employee"] },
+  { to: "/employee/tasks", label: "Công việc", icon: CheckSquare, roles: ["employee"] },
+  { to: "/employee/attendance", label: "Điểm danh", icon: CalendarCheck, roles: ["employee"] },
   { to: "/employee/assets", label: "Tài sản", icon: Package, roles: ["employee"] },
-  { to: "/employee/ranking", label: "Bảng xếp hạng", icon: Trophy, roles: ["employee"] },
+  { to: "/employee/ranking", label: "Xếp hạng", icon: Trophy, roles: ["employee"] },
+  { to: "/employee/resources", label: "Hướng dẫn tân thủ", icon: BookOpen, roles: ["employee"] },
 ];
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const { profile, role, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [open, setOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
@@ -189,25 +183,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
     logScrollRoot();
     window.requestAnimationFrame(logScrollRoot);
   }, [location.pathname]);
-
-  const SidebarInner = (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 px-4 py-5">
-        <div className="flex items-center gap-3 rounded-xl px-2">
-          <div className="h-10 w-10 overflow-hidden rounded-xl">
-            <img src="/favicon_main.png" alt="MKTRe" className="h-full w-full object-cover" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-sidebar-foreground">Workspace MIZ</p>
-            <p className="text-xs text-sidebar-foreground/60">Báo cáo nội bộ</p>
-          </div>
-        </div>
-      </div>
-      <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
-        <NavSection items={items} pathname={location.pathname} onNavigate={() => setOpen(false)} />
-      </nav>
-    </div>
-  );
 
   const UserMenu = (
     <>
@@ -310,73 +285,76 @@ export function AppLayout({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div className="h-full min-h-0 w-full min-w-0 bg-background md:h-screen md:overflow-hidden">
-      <aside className="fixed left-0 top-0 z-30 hidden h-screen w-64 overflow-hidden border-r border-sidebar-border bg-sidebar md:flex">
-        {SidebarInner}
-      </aside>
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col bg-background md:h-screen md:overflow-hidden">
+      <header className="sticky top-0 z-40 shrink-0 border-b bg-card/95 shadow-sm backdrop-blur">
+        <div className="flex min-h-16 items-center gap-3 px-4 py-3 md:px-6 xl:px-8">
+          <div className="flex min-w-0 shrink-0 items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 via-blue-600 to-violet-600 text-lg font-black text-white shadow-lg shadow-blue-500/25">
+              M
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-base font-extrabold tracking-tight text-slate-950">
+                Workspace MIZ
+              </p>
+              <p className="truncate text-xs font-medium text-muted-foreground">
+                Nội bộ • Quản trị
+              </p>
+            </div>
+          </div>
 
-      {/* Mobile */}
-      {open && (
-        <div className="fixed inset-0 z-50 flex md:hidden">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-          <aside className="relative flex h-screen w-64 flex-col overflow-hidden bg-sidebar">
-            {SidebarInner}
-          </aside>
-        </div>
-      )}
+          <div className="hidden min-w-0 flex-1 justify-end md:flex">
+            <div className="relative w-full max-w-md">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="h-10 rounded-full bg-muted/60 pl-9"
+                placeholder="Tìm kiếm tài sản..."
+                aria-label="Tìm kiếm"
+              />
+            </div>
+          </div>
 
-      <div className="flex h-full min-h-0 min-w-0 flex-col md:ml-64 md:h-screen md:min-h-0">
-        <header className="flex h-14 items-center justify-between border-b bg-card px-4 md:hidden">
-          <Button variant="ghost" size="icon" onClick={() => setOpen(true)}>
-            <Menu className="h-5 w-5" />
-          </Button>
-          <span className="text-sm font-semibold">Workspace MIZ</span>
-          <div className="flex items-center gap-1">
+          <div className="ml-auto flex shrink-0 items-center gap-1.5 md:gap-2">
             <NotificationsBell />
             {UserMenu}
           </div>
-        </header>
-        <header className="hidden h-14 items-center justify-end gap-2 border-b bg-card px-6 md:flex">
-          <NotificationsBell />
-          {UserMenu}
-        </header>
-        <main className="min-w-0 flex-1 overflow-x-hidden md:min-h-0 md:overflow-hidden">
-          <div className="w-full min-w-0 px-4 py-4 md:h-full md:min-h-0 md:overflow-y-auto md:overflow-x-hidden md:px-6 md:py-6 xl:px-8">
-            <div className="h-auto min-h-0 w-full min-w-0 md:h-full">{children}</div>
-          </div>
-        </main>
-      </div>
+        </div>
+
+        <nav className="overflow-x-auto border-t bg-card/95 px-4 md:px-6 xl:px-8">
+          <NavSection items={items} pathname={location.pathname} />
+        </nav>
+      </header>
+
+      <main className="min-w-0 flex-1 overflow-x-hidden md:min-h-0 md:overflow-hidden">
+        <div className="w-full min-w-0 px-4 py-4 md:h-full md:min-h-0 md:overflow-y-auto md:overflow-x-hidden md:px-6 md:py-6 xl:px-8">
+          <div className="h-auto min-h-0 w-full min-w-0 md:h-full">{children}</div>
+        </div>
+      </main>
     </div>
   );
 }
 
-function NavSection({
-  items,
-  pathname,
-  onNavigate,
-}: {
-  items: NavItem[];
-  pathname: string;
-  onNavigate: () => void;
-}) {
+function NavSection({ items, pathname }: { items: NavItem[]; pathname: string }) {
   return (
-    <div className="space-y-1">
+    <div className="flex min-w-max items-center gap-1">
       {items.map((it) => {
         const active = pathname.startsWith(it.to);
         return (
           <Link
             key={it.to}
             to={it.to}
-            onClick={onNavigate}
             className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-              active
-                ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+              "relative flex h-12 items-center gap-2 whitespace-nowrap px-3 text-sm font-semibold transition-colors",
+              active ? "text-primary" : "text-muted-foreground hover:text-foreground",
             )}
           >
             <it.icon className="h-4 w-4" />
-            {it.label}
+            <span>{it.label}</span>
+            <span
+              className={cn(
+                "absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary transition-opacity",
+                active ? "opacity-100" : "opacity-0",
+              )}
+            />
           </Link>
         );
       })}

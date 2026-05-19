@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ThHTMLAttributes } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Box,
@@ -40,14 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader, PageShell, ScrollArea } from "@/components/layout/PageShell";
 import { RefreshButton } from "@/components/RefreshButton";
@@ -574,7 +567,7 @@ export function AssetsWorkspace() {
         </Card>
       </PageHeader>
 
-      <ScrollArea className="md:pr-2">
+      <ScrollArea className="md:overflow-hidden md:pr-2">
         {isLoading ? (
           <div className="flex justify-center py-12">
             <Loader2 className="h-6 w-6 animate-spin" />
@@ -900,45 +893,47 @@ function AssetTable({
   onDelete: (asset: Asset) => void;
 }) {
   return (
-    <div className="space-y-3 pb-6">
-      <Card className="hidden overflow-hidden rounded-3xl border-slate-200 shadow-sm lg:block">
-        <Table>
-          <TableHeader className="bg-slate-50">
-            <TableRow>
-              <TableHead className="min-w-[220px] px-4">Tên tài sản</TableHead>
-              <TableHead>Loại</TableHead>
-              <TableHead>Nhóm</TableHead>
-              <TableHead className="min-w-[180px]">Giá trị / Tài khoản</TableHead>
-              <TableHead className="min-w-[170px]">Mật khẩu / Nhạy cảm</TableHead>
-              <TableHead>Trạng thái</TableHead>
-              <TableHead>Chủ sở hữu</TableHead>
-              <TableHead>Người cấp</TableHead>
-              <TableHead>Ngày cấp</TableHead>
-              <TableHead className="w-[180px] text-right">Thao tác</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {assets.map((asset) => {
-              const canEdit = canEditAsset(asset, role, profileId);
-              return (
-                <AssetTableRow
-                  key={asset.id}
-                  asset={asset}
-                  teamMap={teamMap}
-                  profileMap={profileMap}
-                  canEdit={canEdit}
-                  canViewSensitive={canEdit}
-                  isSecretVisible={visibleSecretIds.has(asset.id)}
-                  onToggleSecret={() => onToggleSecret(asset.id)}
-                  onCopy={onCopy}
-                  onDetail={() => onDetail(asset)}
-                  onEdit={() => onEdit(asset)}
-                  onDelete={() => onDelete(asset)}
-                />
-              );
-            })}
-          </TableBody>
-        </Table>
+    <div className="h-full min-h-0 space-y-3 pb-6 lg:pb-0">
+      <Card className="hidden h-full min-h-0 rounded-3xl border-slate-200 shadow-sm lg:block">
+        <div className="h-full min-h-0 overflow-auto rounded-3xl">
+          <table className="w-full caption-bottom border-separate border-spacing-0 text-sm">
+            <thead>
+              <tr className="hover:bg-transparent">
+                <AssetStickyHead className="min-w-[220px] px-4">Tên tài sản</AssetStickyHead>
+                <AssetStickyHead>Loại</AssetStickyHead>
+                <AssetStickyHead>Nhóm</AssetStickyHead>
+                <AssetStickyHead className="min-w-[180px]">Giá trị / Tài khoản</AssetStickyHead>
+                <AssetStickyHead className="min-w-[170px]">Mật khẩu / Nhạy cảm</AssetStickyHead>
+                <AssetStickyHead>Trạng thái</AssetStickyHead>
+                <AssetStickyHead>Chủ sở hữu</AssetStickyHead>
+                <AssetStickyHead>Người cấp</AssetStickyHead>
+                <AssetStickyHead>Ngày cấp</AssetStickyHead>
+                <AssetStickyHead className="w-[180px] text-right">Thao tác</AssetStickyHead>
+              </tr>
+            </thead>
+            <TableBody>
+              {assets.map((asset) => {
+                const canEdit = canEditAsset(asset, role, profileId);
+                return (
+                  <AssetTableRow
+                    key={asset.id}
+                    asset={asset}
+                    teamMap={teamMap}
+                    profileMap={profileMap}
+                    canEdit={canEdit}
+                    canViewSensitive={canEdit}
+                    isSecretVisible={visibleSecretIds.has(asset.id)}
+                    onToggleSecret={() => onToggleSecret(asset.id)}
+                    onCopy={onCopy}
+                    onDetail={() => onDetail(asset)}
+                    onEdit={() => onEdit(asset)}
+                    onDelete={() => onDelete(asset)}
+                  />
+                );
+              })}
+            </TableBody>
+          </table>
+        </div>
       </Card>
 
       <div className="grid gap-3 lg:hidden">
@@ -1057,6 +1052,18 @@ type AssetRowProps = {
   onEdit: () => void;
   onDelete: () => void;
 };
+
+function AssetStickyHead({ className, ...props }: ThHTMLAttributes<HTMLTableCellElement>) {
+  return (
+    <th
+      className={cn(
+        "sticky top-0 z-30 h-11 border-b border-slate-200 bg-white/95 px-2 text-left align-middle font-semibold text-slate-600 shadow-[0_2px_8px_rgba(15,23,42,0.06)] backdrop-blur supports-[backdrop-filter]:bg-white/85",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
 
 function AssetMobileCard(props: AssetRowProps) {
   const {
