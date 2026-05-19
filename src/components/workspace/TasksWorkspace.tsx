@@ -78,6 +78,12 @@ type ReviewTarget =
 type UnifiedChecklistItem =
   | { type: "task"; task: TaskRow; status: BoardStatus; deadlineState: DeadlineState }
   | { type: "template"; template: TemplateRow; status: BoardStatus; deadlineState: DeadlineState };
+type TemplateUserScopeOptions = {
+  currentUserId: string | undefined;
+  isEmployee: boolean;
+  selectedTeamId: string;
+  selectedUserId: string;
+};
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const boardColumns: Array<{ status: BoardStatus; title: string; tone: string }> = [
@@ -515,14 +521,18 @@ export function TasksWorkspace() {
       };
     });
     const templateItems: UnifiedChecklistItem[] = baseFilteredTemplates.map((item) => {
-      const status = getTemplateBoardStatus(
+      const templateUsers = getTemplateScopedUsers(
         item,
-        data?.completions ?? [],
         data?.users ?? [],
         data?.memberships ?? [],
-        profile?.id,
-        isEmployee,
+        {
+          currentUserId: profile?.id,
+          isEmployee,
+          selectedTeamId,
+          selectedUserId,
+        },
       );
+      const status = getTemplateBoardStatus(item, data?.completions ?? [], templateUsers);
       return {
         type: "template",
         template: item,
@@ -540,6 +550,8 @@ export function TasksWorkspace() {
     date,
     isEmployee,
     profile?.id,
+    selectedTeamId,
+    selectedUserId,
   ]);
 
   const visibleChecklistItems = useMemo(
@@ -1491,29 +1503,23 @@ export function TasksWorkspace() {
     const completion = data?.completions.find(
       (row) => row.template_id === item.id && row.user_id === profile?.id,
     );
-    const templateUsers = item.team_id
-      ? getUsersForTeam(data?.users ?? [], data?.memberships ?? [], item.team_id)
-      : (data?.users ?? []);
+    const templateUsers = getTemplateScopedUsers(item, data?.users ?? [], data?.memberships ?? [], {
+      currentUserId: profile?.id,
+      isEmployee,
+      selectedTeamId,
+      selectedUserId,
+    });
     const templateCompletions = (data?.completions ?? []).filter(
       (row) => row.template_id === item.id,
     );
-    const doneUsers = templateUsers.filter((user) =>
-      templateCompletions.some(
-        (row) =>
-          row.user_id === user.id && (row.completed || normalizeTaskStatus(row.status) === "done"),
-      ),
-    );
+    const doneUsers = getCompletedTemplateUsers(templateUsers, templateCompletions);
+    const pendingUsers = getPendingTemplateUsers(templateUsers, templateCompletions);
+    const templateUserIds = new Set(templateUsers.map((user) => user.id));
     const pendingReviewRows = templateCompletions.filter(
-      (row) => normalizeTaskStatus(row.status) === "pending_review",
+      (row) =>
+        templateUserIds.has(row.user_id) && normalizeTaskStatus(row.status) === "pending_review",
     );
-    const currentStatus = getTemplateBoardStatus(
-      item,
-      data?.completions ?? [],
-      data?.users ?? [],
-      data?.memberships ?? [],
-      profile?.id,
-      isEmployee,
-    );
+    const currentStatus = getTemplateBoardStatus(item, data?.completions ?? [], templateUsers);
 
     if (editingTemplateId === item.id && canAssign) {
       return (
@@ -1683,10 +1689,14 @@ export function TasksWorkspace() {
 
         <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/60 px-5 py-3">
           <div className="flex items-center -space-x-2">
-            {templateUsers.slice(0, 3).map((user) => (
+            {pendingUsers.slice(0, 3).map((user) => (
               <UserAvatar key={user.id} user={user} />
             ))}
-            {!templateUsers.length && <UserAvatar user={null} />}
+            {pendingUsers.length > 3 && (
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-xs font-semibold text-slate-600">
+                +{pendingUsers.length - 3}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-4 text-sm font-medium text-slate-600">
             {completion?.proof_url && (
@@ -2503,42 +2513,67 @@ function getUsersForTeam(users: UserRow[], memberships: MembershipRow[], teamId:
   return users.filter((user) => userIds.has(user.id));
 }
 
+function getTemplateScopedUsers(
+  item: TemplateRow,
+  users: UserRow[],
+  memberships: MembershipRow[],
+  options: TemplateUserScopeOptions,
+) {
+  if (options.isEmployee) {
+    return users.filter((user) => user.id === options.currentUserId);
+  }
+
+  let scopedUsers = item.team_id ? getUsersForTeam(users, memberships, item.team_id) : users;
+
+  if (!item.team_id && options.selectedTeamId !== "all") {
+    scopedUsers = getUsersForTeam(users, memberships, options.selectedTeamId);
+  }
+
+  if (options.selectedUserId !== "all") {
+    scopedUsers = scopedUsers.filter((user) => user.id === options.selectedUserId);
+  }
+
+  return scopedUsers;
+}
+
+function isTemplateCompletionDone(row: CompletionRow | undefined) {
+  return Boolean(row && (row.completed || normalizeTaskStatus(row.status) === "done"));
+}
+
+function getCompletedTemplateUsers(users: UserRow[], completions: CompletionRow[]) {
+  return users.filter((user) =>
+    completions.some((row) => row.user_id === user.id && isTemplateCompletionDone(row)),
+  );
+}
+
+function getPendingTemplateUsers(users: UserRow[], completions: CompletionRow[]) {
+  return users.filter(
+    (user) => !completions.some((row) => row.user_id === user.id && isTemplateCompletionDone(row)),
+  );
+}
+
 function getTemplateBoardStatus(
   item: TemplateRow,
   completions: CompletionRow[],
-  users: UserRow[],
-  memberships: MembershipRow[],
-  currentUserId: string | undefined,
-  isEmployee: boolean,
+  templateUsers: UserRow[],
 ): BoardStatus {
-  const rows = completions.filter((row) => row.template_id === item.id);
-  if (isEmployee) {
-    return normalizeCompletionStatus(rows.find((row) => row.user_id === currentUserId));
-  }
-
-  const templateUsers = item.team_id ? getUsersForTeam(users, memberships, item.team_id) : users;
+  const templateUserIds = new Set(templateUsers.map((user) => user.id));
+  const rows = completions.filter(
+    (row) => row.template_id === item.id && templateUserIds.has(row.user_id),
+  );
   if (rows.some((row) => normalizeTaskStatus(row.status) === "pending_review")) {
     return "pending_review";
   }
   if (
     templateUsers.length > 0 &&
     templateUsers.every((user) =>
-      rows.some(
-        (row) =>
-          row.user_id === user.id && (row.completed || normalizeTaskStatus(row.status) === "done"),
-      ),
+      rows.some((row) => row.user_id === user.id && isTemplateCompletionDone(row)),
     )
   ) {
     return "done";
   }
   if (rows.some((row) => normalizeTaskStatus(row.status) === "in_progress")) return "in_progress";
   return "todo";
-}
-
-function normalizeCompletionStatus(row: CompletionRow | undefined): BoardStatus {
-  if (!row) return "todo";
-  if (row.completed) return "done";
-  return normalizeTaskStatus(row.status);
 }
 
 function shouldShowTaskOnBoard(
