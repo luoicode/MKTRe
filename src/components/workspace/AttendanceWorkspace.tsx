@@ -15,7 +15,7 @@ import type { Tables } from "@/integrations/supabase/types";
 import { useAuth, type AppRole } from "@/lib/auth";
 import { getLeaderTeamIds } from "@/lib/dailyAggregates";
 import { formatDateVN, todayStr } from "@/lib/reports";
-import { sendTelegramNotification } from "@/lib/telegram";
+import { sendTelegramForNotification } from "@/lib/telegram";
 import { cn } from "@/lib/utils";
 import { PageHeader, PageShell, ScrollArea } from "@/components/layout/PageShell";
 import { RefreshButton } from "@/components/RefreshButton";
@@ -214,74 +214,48 @@ function statusBadgeClass(status: string | null) {
   return "border-slate-200 bg-slate-50 text-slate-600";
 }
 
-async function notifyLeaveRequestTelegram({
-  requesterId,
-  requesterName,
-  leaveRequestId,
-  startDate,
-  endDate,
-}: {
-  requesterId: string;
-  requesterName: string;
-  leaveRequestId: string;
-  startDate: string;
-  endDate: string;
-}) {
-  const { data: requesterMemberships } = await supabase
-    .from("team_memberships")
-    .select("team_id")
-    .eq("user_id", requesterId)
-    .eq("is_active", true);
-  const teamIds = Array.from(new Set((requesterMemberships ?? []).map((row) => row.team_id)));
-
-  const leaderIds = new Set<string>();
-  if (teamIds.length) {
-    const { data: teamMemberships } = await supabase
-      .from("team_memberships")
-      .select("user_id")
-      .in("team_id", teamIds)
-      .eq("is_active", true)
-      .neq("user_id", requesterId);
-    const candidateIds = Array.from(new Set((teamMemberships ?? []).map((row) => row.user_id)));
-    if (candidateIds.length) {
-      const { data: leaderRoles } = await supabase
-        .from("user_roles")
-        .select("user_id")
-        .in("user_id", candidateIds)
-        .eq("role", "leader");
-      for (const row of leaderRoles ?? []) leaderIds.add(row.user_id);
-    }
-  }
-
-  const { data: adminManagerRoles } = await supabase
-    .from("user_roles")
-    .select("user_id")
-    .in("role", ["admin", "manager"]);
-
-  const recipientIds = new Set<string>([
-    ...leaderIds,
-    ...(adminManagerRoles ?? []).map((row) => row.user_id),
-  ]);
-  recipientIds.delete(requesterId);
-
+async function notifyLeaveRequestTelegram({ leaveRequestId }: { leaveRequestId: string }) {
+  const notifications = await getLeaveRequestNotifications(leaveRequestId, "leave_request_created");
   await Promise.allSettled(
-    Array.from(recipientIds).map((recipientId) =>
-      sendTelegramNotification({
-        recipient_profile_id: recipientId,
-        title: "Có đơn xin nghỉ mới",
-        message: `${requesterName} xin nghỉ từ ${formatDateVN(startDate)} đến ${formatDateVN(endDate)}`,
-        type: "leave_request_created",
-        metadata: {
-          leave_request_id: leaveRequestId,
-          requester_id: requesterId,
-          team_id: teamIds[0] ?? null,
-          start_date: startDate,
-          end_date: endDate,
-        },
-        dedupe_key: `leave_request:${leaveRequestId}:recipient:${recipientId}`,
-      }),
-    ),
+    notifications.map((notification) => {
+      const recipientProfileId = notification.target_profile_id ?? notification.user_id;
+      console.debug("[leave_request_created][telegram]", notification.id, recipientProfileId);
+      return sendTelegramForNotification(notification);
+    }),
   );
+}
+
+async function notifyLeaveReviewTelegram(
+  leaveRequestId: string,
+  type: "leave_request_approved" | "leave_request_rejected",
+) {
+  const notifications = await getLeaveRequestNotifications(leaveRequestId, type);
+  await Promise.allSettled(
+    notifications.map((notification) => sendTelegramForNotification(notification)),
+  );
+}
+
+async function getLeaveRequestNotifications(
+  leaveRequestId: string,
+  type: "leave_request_created" | "leave_request_approved" | "leave_request_rejected",
+) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("id, target_profile_id, user_id, title, message, body, type, kind, metadata")
+      .eq("entity_type", "leave_request")
+      .eq("entity_id", leaveRequestId)
+      .eq("type", type);
+
+    if (error) {
+      console.debug("[leave_request][telegram] notification lookup failed", error.message);
+      return [];
+    }
+    if (data?.length) return data;
+    await new Promise((resolve) => window.setTimeout(resolve, 250));
+  }
+  console.debug("[leave_request][telegram] no notification rows found", { leaveRequestId, type });
+  return [];
 }
 
 export function AttendanceWorkspace() {
@@ -596,11 +570,7 @@ export function AttendanceWorkspace() {
     }
     if (leaveRequest) {
       await notifyLeaveRequestTelegram({
-        requesterId: profile.id,
-        requesterName: profile.full_name,
         leaveRequestId: leaveRequest.id,
-        startDate: leaveRequest.start_date,
-        endDate: leaveRequest.end_date,
       });
     }
     setLeaveOpen(false);
@@ -631,22 +601,10 @@ export function AttendanceWorkspace() {
     setReviewOpen(false);
     setReviewingLeave(null);
     setReviewNote("");
-    await sendTelegramNotification({
-      recipient_profile_id: reviewingLeave.user_id,
-      title: status === "approved" ? "Đơn nghỉ đã được duyệt" : "Đơn nghỉ không được duyệt",
-      message:
-        status === "approved"
-          ? "Đơn xin nghỉ của bạn đã được duyệt."
-          : `Đơn xin nghỉ của bạn không được duyệt.${reviewNote.trim() ? ` Lý do: ${reviewNote.trim()}` : ""}`,
-      type: status === "approved" ? "leave_request_approved" : "leave_request_rejected",
-      metadata: {
-        leave_request_id: reviewingLeave.id,
-        requester_id: reviewingLeave.user_id,
-        status,
-        review_note: reviewNote.trim() || null,
-      },
-      dedupe_key: `leave_request:${reviewingLeave.id}:recipient:${reviewingLeave.user_id}:leave_request_${status === "approved" ? "approved" : "rejected"}`,
-    });
+    await notifyLeaveReviewTelegram(
+      reviewingLeave.id,
+      status === "approved" ? "leave_request_approved" : "leave_request_rejected",
+    );
     toast.success(status === "approved" ? "Đã duyệt đơn nghỉ" : "Đã không duyệt đơn nghỉ");
     await refetch();
   };
