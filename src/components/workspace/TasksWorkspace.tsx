@@ -26,7 +26,11 @@ import type { Enums, Tables, TablesInsert } from "@/integrations/supabase/types"
 import { useAuth } from "@/lib/auth";
 import { getLeaderTeamIds } from "@/lib/dailyAggregates";
 import { formatYmd } from "@/lib/dateRange";
-import { insertNotificationsWithTelegram, sendTelegramNotification } from "@/lib/telegram";
+import {
+  insertNotificationsWithTelegram,
+  sendTelegramForNotification,
+  sendTelegramNotification,
+} from "@/lib/telegram";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -813,10 +817,50 @@ export function TasksWorkspace() {
     qc.invalidateQueries({ queryKey: ["tasks-workspace"] });
   };
 
+  const notifyPendingReviewTelegram = async (
+    entityType: "task" | "task_completion",
+    entityId: string,
+  ) => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const { data: notifications, error } = await supabase
+        .from("notifications")
+        .select(
+          "id, target_profile_id, user_id, entity_type, entity_id, title, message, body, type, kind, metadata",
+        )
+        .eq("entity_type", entityType)
+        .eq("entity_id", entityId)
+        .eq("type", "task_review");
+
+      if (error) {
+        if (import.meta.env.DEV) {
+          console.debug("[task_pending_review][telegram] lookup failed", error.message);
+        }
+        return;
+      }
+
+      if (notifications?.length) {
+        await Promise.allSettled(
+          notifications.map((notification) => sendTelegramForNotification(notification)),
+        );
+        return;
+      }
+
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+    }
+
+    if (import.meta.env.DEV) {
+      console.debug("[task_pending_review][telegram] no notification rows found", {
+        entityType,
+        entityId,
+      });
+    }
+  };
+
   const submitForReview = async () => {
     if (!profile || !completionTarget) return;
     const note = completionForm.note.trim() || null;
     const proofUrl = completionForm.proof_url.trim() || null;
+    let reviewEntity: { entityType: "task" | "task_completion"; entityId: string } | null = null;
     if (completionTarget.type === "task") {
       const { error } = await supabase
         .from("tasks")
@@ -832,6 +876,7 @@ export function TasksWorkspace() {
         toast.error(error.message);
         return;
       }
+      reviewEntity = { entityType: "task", entityId: completionTarget.id };
     } else {
       const payload: TablesInsert<"task_completions"> = {
         template_id: completionTarget.id,
@@ -845,13 +890,21 @@ export function TasksWorkspace() {
         status: "pending_review",
         submitted_at: new Date().toISOString(),
       };
-      const { error } = await supabase
+      const { data: completionRow, error } = await supabase
         .from("task_completions")
-        .upsert(payload, { onConflict: "template_id,user_id,completion_date" });
+        .upsert(payload, { onConflict: "template_id,user_id,completion_date" })
+        .select("id")
+        .single();
       if (error) {
         toast.error(error.message);
         return;
       }
+      if (completionRow?.id) {
+        reviewEntity = { entityType: "task_completion", entityId: completionRow.id };
+      }
+    }
+    if (reviewEntity) {
+      await notifyPendingReviewTelegram(reviewEntity.entityType, reviewEntity.entityId);
     }
     toast.success("Đã gửi duyệt");
     setCompletionTarget(null);

@@ -242,7 +242,9 @@ async function getLeaveRequestNotifications(
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const { data, error } = await supabase
       .from("notifications")
-      .select("id, target_profile_id, user_id, title, message, body, type, kind, metadata")
+      .select(
+        "id, target_profile_id, user_id, entity_type, entity_id, title, message, body, type, kind, metadata",
+      )
       .eq("entity_type", "leave_request")
       .eq("entity_id", leaveRequestId)
       .eq("type", type);

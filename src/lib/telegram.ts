@@ -5,6 +5,8 @@ import { notificationTypeLabel } from "@/lib/notifications";
 export type TelegramNotificationPayload = {
   recipient_profile_id: string;
   notification_id?: string | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
   title: string;
   message?: string | null;
   type?: string | null;
@@ -37,6 +39,8 @@ export async function sendTelegramForNotification(notification: {
   target_profile_id?: string | null;
   recipient_profile_id?: string | null;
   user_id?: string | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
   title: string;
   message?: string | null;
   body?: string | null;
@@ -62,6 +66,8 @@ export async function sendTelegramForNotification(notification: {
   return sendTelegramNotification({
     recipient_profile_id: recipientId,
     notification_id: notification.id,
+    entity_type: notification.entity_type ?? null,
+    entity_id: notification.entity_id ?? null,
     title: notification.title,
     message: notification.message ?? notification.body ?? null,
     type: notification.type ?? notification.kind ?? null,
@@ -77,7 +83,9 @@ export async function insertNotificationsWithTelegram(
   const result = await supabase
     .from("notifications")
     .insert(rows)
-    .select("id, target_profile_id, user_id, title, message, body, type, kind, metadata");
+    .select(
+      "id, target_profile_id, user_id, entity_type, entity_id, title, message, body, type, kind, metadata",
+    );
 
   if (!result.error && result.data?.length) {
     await Promise.allSettled(result.data.map((row) => sendTelegramForNotification(row)));

@@ -9,6 +9,8 @@ const corsHeaders = {
 type SendPayload = {
   recipient_profile_id: string;
   notification_id?: string | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
   title: string;
   message?: string | null;
   type?: string | null;
@@ -38,8 +40,13 @@ const typeLabels: Record<string, string> = {
   task_due_soon: "Task sắp đến hạn",
   task_overdue: "Task quá hạn",
   task_pending_review: "Task chờ duyệt",
+  task_completion_pending_review: "Checklist chờ duyệt",
   task_rejected: "Task cần làm lại",
   task_review: "Chờ duyệt task",
+};
+
+type TelegramReplyMarkup = {
+  inline_keyboard: Array<Array<{ text: string; callback_data?: string; url?: string }>>;
 };
 
 function typeLabel(type: string | null | undefined) {
@@ -65,7 +72,11 @@ function formatTime(date = new Date()) {
   }).format(date);
 }
 
-async function sendTelegramMessage(chatId: string, text: string) {
+async function sendTelegramMessage(
+  chatId: string,
+  text: string,
+  replyMarkup?: TelegramReplyMarkup,
+) {
   const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
   if (!token) throw new Error("Missing TELEGRAM_BOT_TOKEN");
 
@@ -76,6 +87,7 @@ async function sendTelegramMessage(chatId: string, text: string) {
       chat_id: chatId,
       text,
       disable_web_page_preview: true,
+      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
     }),
   });
 
@@ -83,6 +95,126 @@ async function sendTelegramMessage(chatId: string, text: string) {
     const body = await response.text();
     throw new Error(`Telegram API ${response.status}: ${body}`);
   }
+}
+
+function isReviewNotification(type: string | null | undefined) {
+  return [
+    "task_review",
+    "task_pending_review",
+    "checklist_pending_review",
+    "task_completion_pending_review",
+    "onboarding_review",
+    "onboarding_review_pending",
+  ].includes(type ?? "");
+}
+
+function mktreUrl() {
+  return (
+    Deno.env.get("MKTRE_APP_URL") ??
+    Deno.env.get("SITE_URL") ??
+    Deno.env.get("PUBLIC_SITE_URL") ??
+    "https://mktre.local"
+  ).replace(/\/$/, "");
+}
+
+function compactDate(value: string | null | undefined) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+async function buildReviewMessageAndMarkup(
+  service: ReturnType<typeof createClient>,
+  payload: SendPayload,
+) {
+  if (!isReviewNotification(payload.type)) return null;
+
+  const entityType = payload.entity_type;
+  const entityId = payload.entity_id;
+  if (!entityType || !entityId || !["task", "task_completion"].includes(entityType)) return null;
+
+  let title = payload.message ?? payload.title;
+  let assigneeName = "Nhân sự";
+  const itemType = entityType === "task" ? "Task" : "Checklist";
+  let deadline = "—";
+  let note: string | null = null;
+  let proofUrl: string | null = null;
+
+  if (entityType === "task") {
+    const { data } = await service
+      .from("tasks")
+      .select(
+        "title, deadline, completion_note, proof_url, assigned_to, profiles:assigned_to(full_name, username)",
+      )
+      .eq("id", entityId)
+      .maybeSingle();
+    if (data) {
+      title = data.title ?? title;
+      deadline = compactDate(data.deadline);
+      note = data.completion_note ?? null;
+      proofUrl = data.proof_url ?? null;
+      const profile = Array.isArray(data.profiles) ? data.profiles[0] : data.profiles;
+      assigneeName = profile?.full_name ?? profile?.username ?? assigneeName;
+    }
+  } else {
+    const { data } = await service
+      .from("task_completions")
+      .select(
+        "completion_date, completion_note, note, proof_url, user_id, daily_task_templates:template_id(title), profiles:user_id(full_name, username)",
+      )
+      .eq("id", entityId)
+      .maybeSingle();
+    if (data) {
+      const template = Array.isArray(data.daily_task_templates)
+        ? data.daily_task_templates[0]
+        : data.daily_task_templates;
+      const profile = Array.isArray(data.profiles) ? data.profiles[0] : data.profiles;
+      title = template?.title ?? title;
+      deadline = data.completion_date
+        ? new Intl.DateTimeFormat("vi-VN", {
+            timeZone: "Asia/Ho_Chi_Minh",
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+          }).format(new Date(`${data.completion_date}T00:00:00+07:00`))
+        : "—";
+      note = data.completion_note ?? data.note ?? null;
+      proofUrl = data.proof_url ?? null;
+      assigneeName = profile?.full_name ?? profile?.username ?? assigneeName;
+    }
+  }
+
+  const text = [
+    "📌 Task/Checklist chờ duyệt",
+    "",
+    `👤 Người gửi: ${assigneeName}`,
+    `🧩 Tên việc: ${title}`,
+    `🏷 Loại: ${itemType}`,
+    `📅 Deadline: ${deadline}`,
+    `📝 Ghi chú: ${note || "—"}`,
+    proofUrl ? `🔗 Chứng từ: ${proofUrl}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const openUrl = `${mktreUrl()}/tasks`;
+  const replyMarkup: TelegramReplyMarkup = {
+    inline_keyboard: [
+      [
+        { text: "✅ Duyệt", callback_data: `approve_task:${entityType}:${entityId}` },
+        { text: "❌ Không duyệt", callback_data: `reject_task:${entityType}:${entityId}` },
+      ],
+      [{ text: "👁 Mở MKTRe", url: openUrl }],
+    ],
+  };
+
+  return { text, replyMarkup };
 }
 
 Deno.serve(async (req) => {
@@ -161,9 +293,11 @@ Deno.serve(async (req) => {
 
       const { data: notification } = await service
         .from("notifications")
-        .select("target_profile_id, user_id, actor_profile_id, created_by")
+        .select("target_profile_id, user_id, actor_profile_id, created_by, entity_type, entity_id")
         .eq("id", payload.notification_id)
         .maybeSingle();
+      payload.entity_type ??= notification?.entity_type ?? null;
+      payload.entity_id ??= notification?.entity_id ?? null;
       const targetId = notification?.target_profile_id ?? notification?.user_id;
       const canSend =
         targetId === payload.recipient_profile_id &&
@@ -220,20 +354,23 @@ Deno.serve(async (req) => {
       return Response.json({ ok: true, status: "skipped" }, { headers: corsHeaders });
     }
 
-    const text = [
-      "🔔 MKTRe",
-      "",
-      payload.title,
-      "",
-      payload.message ?? "",
-      "",
-      `Loại: ${typeLabel(payload.type)}`,
-      `Thời gian: ${formatTime()}`,
-    ]
-      .filter((line, index, lines) => line || lines[index - 1] !== "")
-      .join("\n");
+    const reviewMessage = await buildReviewMessageAndMarkup(service, payload);
+    const text =
+      reviewMessage?.text ??
+      [
+        "🔔 MKTRe",
+        "",
+        payload.title,
+        "",
+        payload.message ?? "",
+        "",
+        `Loại: ${typeLabel(payload.type)}`,
+        `Thời gian: ${formatTime()}`,
+      ]
+        .filter((line, index, lines) => line || lines[index - 1] !== "")
+        .join("\n");
 
-    await sendTelegramMessage(account.telegram_chat_id, text);
+    await sendTelegramMessage(account.telegram_chat_id, text, reviewMessage?.replyMarkup);
     await log("sent", null, account.telegram_chat_id);
     return Response.json({ ok: true, status: "sent" }, { headers: corsHeaders });
   } catch (error) {
