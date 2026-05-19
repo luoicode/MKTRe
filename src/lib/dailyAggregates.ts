@@ -19,6 +19,7 @@ export interface EmployeeLatest {
   status: string | null; // 'submitted' | 'approved' | 'draft' | 'rejected' | null
   submitted_at: string | null;
   updated_at: string | null;
+  created_at: string | null;
   ads_cost: number;
   mess_count: number;
   data_count: number;
@@ -95,7 +96,9 @@ export function sumTotals(rows: EmployeeLatest[]): TeamTotals {
 
 /**
  * For each active employee in the given teams, returns their LATEST report on that date.
- * "Latest" = highest report_slots.sort_order; tiebreak by submitted_at then updated_at.
+ * "Latest" = newest real submission/update time; tiebreak by slot order.
+ * This lets the 13h55 reconciliation submitted today win over yesterday's 21h00
+ * row while still keeping report_date as yesterday.
  * Reports with status draft/rejected are returned but NOT counted in totals.
  */
 export async function getLatestDailyReportPerEmployee(params: {
@@ -140,12 +143,12 @@ export async function getLatestDailyReportPerEmployee(params: {
   }
   const pickLatest = (arr: NonNullable<typeof reports>) => {
     return [...arr].sort((a, b) => {
+      const ta = reportRowTime(a);
+      const tb = reportRowTime(b);
+      if (tb !== ta) return tb - ta;
       const sa = slotById.get(a.slot_id)?.sort_order ?? 0;
       const sb = slotById.get(b.slot_id)?.sort_order ?? 0;
-      if (sb !== sa) return sb - sa;
-      const ta = new Date(a.submitted_at ?? a.updated_at).getTime();
-      const tb = new Date(b.submitted_at ?? b.updated_at).getTime();
-      return tb - ta;
+      return sb - sa;
     })[0];
   };
 
@@ -165,6 +168,7 @@ export async function getLatestDailyReportPerEmployee(params: {
       status: r?.status ?? null,
       submitted_at: r?.submitted_at ?? null,
       updated_at: r?.updated_at ?? null,
+      created_at: r?.created_at ?? null,
       ads_cost: Number(r?.ads_cost ?? 0),
       mess_count: Number(r?.mess_count ?? 0),
       data_count: Number(r?.data_count ?? 0),
@@ -228,6 +232,7 @@ export async function getLatestDailyReportPerEmployeeRange(params: {
         current.status = row.status;
         current.submitted_at = row.submitted_at;
         current.updated_at = row.updated_at;
+        current.created_at = row.created_at;
         current.note = row.note;
       }
 
@@ -253,6 +258,7 @@ function emptyEmployeeRangeRow(row: EmployeeLatest): EmployeeLatest {
     status: null,
     submitted_at: null,
     updated_at: null,
+    created_at: null,
     ads_cost: 0,
     mess_count: 0,
     data_count: 0,
@@ -271,8 +277,16 @@ function emptyEmployeeRangeRow(row: EmployeeLatest): EmployeeLatest {
   };
 }
 
-function reportTime(row: Pick<EmployeeLatest, "submitted_at" | "updated_at">) {
-  return new Date(row.submitted_at ?? row.updated_at ?? 0).getTime();
+function reportTime(row: Pick<EmployeeLatest, "submitted_at" | "updated_at" | "created_at">) {
+  return new Date(row.submitted_at ?? row.updated_at ?? row.created_at ?? 0).getTime();
+}
+
+function reportRowTime(row: {
+  submitted_at: string | null;
+  updated_at: string;
+  created_at: string;
+}) {
+  return new Date(row.submitted_at ?? row.updated_at ?? row.created_at ?? 0).getTime();
 }
 
 function enumerateDates(from: string, to: string) {

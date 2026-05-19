@@ -30,6 +30,7 @@ type RawVisibleReportRow = {
   status: string | null;
   submitted_at: string | null;
   updated_at: string | null;
+  created_at: string | null;
 };
 
 type VisibleReportRow = {
@@ -40,6 +41,7 @@ type VisibleReportRow = {
   status: string | null;
   submitted_at: string | null;
   updated_at: string | null;
+  created_at: string | null;
 } & ReportMetricTotals;
 
 type SlotOrderRow = {
@@ -147,7 +149,7 @@ function buildVisibleReportsQuery(params: {
   let q = supabase
     .from("slot_reports")
     .select(
-      "report_date, team_id, user_id, slot_id, ads_cost, mess_count, data_count, closed_orders, daily_data_revenue, total_orders, total_revenue, status, submitted_at, updated_at",
+      "report_date, team_id, user_id, slot_id, ads_cost, mess_count, data_count, closed_orders, daily_data_revenue, total_orders, total_revenue, status, submitted_at, updated_at, created_at",
     )
     .gte("report_date", params.from)
     .lte("report_date", params.to)
@@ -163,13 +165,13 @@ function compareReportRecency(
   b: RawVisibleReportRow,
   slotOrder: Map<string, number>,
 ) {
+  const aTime = reportRecencyTime(a);
+  const bTime = reportRecencyTime(b);
+  if (aTime !== bTime) return aTime - bTime;
+
   const aSlot = a.slot_id ? (slotOrder.get(a.slot_id) ?? 0) : 0;
   const bSlot = b.slot_id ? (slotOrder.get(b.slot_id) ?? 0) : 0;
-  if (aSlot !== bSlot) return aSlot - bSlot;
-
-  const aTime = new Date(a.submitted_at ?? a.updated_at ?? 0).getTime();
-  const bTime = new Date(b.submitted_at ?? b.updated_at ?? 0).getTime();
-  return aTime - bTime;
+  return aSlot - bSlot;
 }
 
 function normalizeVisibleReportRow(row: RawVisibleReportRow): VisibleReportRow {
@@ -181,6 +183,7 @@ function normalizeVisibleReportRow(row: RawVisibleReportRow): VisibleReportRow {
     status: row.status,
     submitted_at: row.submitted_at,
     updated_at: row.updated_at,
+    created_at: row.created_at,
     ads_cost: Number(row.ads_cost ?? 0),
     mess_count: Number(row.mess_count ?? 0),
     data_count: Number(row.data_count ?? 0),
@@ -189,6 +192,12 @@ function normalizeVisibleReportRow(row: RawVisibleReportRow): VisibleReportRow {
     total_orders: Number(row.total_orders ?? 0),
     total_revenue: Number(row.total_revenue ?? 0),
   };
+}
+
+function reportRecencyTime(
+  row: Pick<RawVisibleReportRow, "submitted_at" | "updated_at" | "created_at">,
+) {
+  return new Date(row.submitted_at ?? row.updated_at ?? row.created_at ?? 0).getTime();
 }
 
 export function monthRange(date = new Date()) {
