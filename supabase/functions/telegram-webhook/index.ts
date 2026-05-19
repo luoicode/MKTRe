@@ -9,7 +9,7 @@ const corsHeaders = {
 type TelegramUpdate = {
   message?: {
     text?: string;
-    chat?: { id?: number | string };
+    chat?: { id?: number | string; title?: string; type?: string };
     from?: { id?: number | string; username?: string };
   };
   callback_query?: {
@@ -378,6 +378,14 @@ Deno.serve(async (req) => {
 
     const service = createClient(url, serviceKey);
     const update = (await req.json()) as TelegramUpdate;
+
+    console.log("[telegram-webhook][chat]", {
+      chatId: update.message?.chat?.id,
+      chatTitle: update.message?.chat?.title,
+      chatType: update.message?.chat?.type,
+      text: update.message?.text,
+    });
+
     if (update.callback_query) {
       return await handleCallback(service, update);
     }

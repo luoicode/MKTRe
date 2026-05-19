@@ -164,6 +164,16 @@ export function AssetsWorkspace() {
 
       const assets = assetsResult.data ?? [];
       const memberships = membershipsResult.data ?? [];
+      const membershipProfileTeamMap = buildProfileTeamMap(memberships);
+      const scopedAssets = assets.filter((asset) =>
+        canViewAssetForRole(
+          asset,
+          role!,
+          profile!.id,
+          new Set(visibleTeamIds),
+          membershipProfileTeamMap,
+        ),
+      );
       const profileIds = new Set<string>();
       if (isAdmin) {
         const { data: allProfiles, error } = await supabase
@@ -172,7 +182,7 @@ export function AssetsWorkspace() {
           .order("full_name");
         if (error) throw error;
         return {
-          assets,
+          assets: scopedAssets,
           teams: teamsResult.data ?? [],
           profiles: allProfiles ?? [],
           memberships,
@@ -181,8 +191,10 @@ export function AssetsWorkspace() {
       }
 
       profileIds.add(profile!.id);
-      for (const row of memberships) profileIds.add(row.user_id);
-      for (const asset of assets) {
+      if (role !== "employee") {
+        for (const row of memberships) profileIds.add(row.user_id);
+      }
+      for (const asset of scopedAssets) {
         if (asset.owner_profile_id) profileIds.add(asset.owner_profile_id);
         if (asset.assigned_by) profileIds.add(asset.assigned_by);
         profileIds.add(asset.created_by);
@@ -198,7 +210,7 @@ export function AssetsWorkspace() {
       if (error) throw error;
 
       return {
-        assets,
+        assets: scopedAssets,
         teams: teamsResult.data ?? [],
         profiles: profiles ?? [],
         memberships,
@@ -221,13 +233,7 @@ export function AssetsWorkspace() {
   const teamMap = useMemo(() => new Map(teams.map((team) => [team.id, team.name])), [teams]);
   const profileMap = useMemo(() => new Map(profiles.map((row) => [row.id, row])), [profiles]);
   const profileTeamMap = useMemo(() => {
-    const map = new Map<string, Set<string>>();
-    for (const membership of memberships) {
-      const teamIds = map.get(membership.user_id) ?? new Set<string>();
-      teamIds.add(membership.team_id);
-      map.set(membership.user_id, teamIds);
-    }
-    return map;
+    return buildProfileTeamMap(memberships);
   }, [memberships]);
   const ownerFilterProfiles = useMemo(() => {
     if (isLeader) return profiles.filter((user) => profileTeamMap.has(user.id));
@@ -848,6 +854,43 @@ export function AssetsWorkspace() {
       />
     </PageShell>
   );
+}
+
+function buildProfileTeamMap(memberships: MembershipRow[]) {
+  const map = new Map<string, Set<string>>();
+  for (const membership of memberships) {
+    const teamIds = map.get(membership.user_id) ?? new Set<string>();
+    teamIds.add(membership.team_id);
+    map.set(membership.user_id, teamIds);
+  }
+  return map;
+}
+
+function canViewAssetForRole(
+  asset: Asset,
+  role: AppRole,
+  profileId: string,
+  visibleTeamIds: Set<string>,
+  profileTeamMap: Map<string, Set<string>>,
+) {
+  if (role === "admin" || role === "manager") return true;
+  if (asset.asset_group === "common") return true;
+
+  if (role === "employee") {
+    return asset.owner_profile_id === profileId || asset.created_by === profileId;
+  }
+
+  if (role === "leader") {
+    if (asset.owner_profile_id === profileId || asset.created_by === profileId) return true;
+    if (asset.owner_team_id && visibleTeamIds.has(asset.owner_team_id)) return true;
+    if (!asset.owner_profile_id) return false;
+    const ownerTeamIds = profileTeamMap.get(asset.owner_profile_id);
+    return Boolean(
+      ownerTeamIds && Array.from(ownerTeamIds).some((teamId) => visibleTeamIds.has(teamId)),
+    );
+  }
+
+  return false;
 }
 
 async function getTeams(role: AppRole, teamIds: string[]) {

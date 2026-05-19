@@ -2,3 +2,6 @@ project_id = "esipgbggkvdpbttcfbqx"
 
 [functions.telegram-webhook]
 verify_jwt = false
+
+[functions.telegram-group-reminders]
+verify_jwt = false

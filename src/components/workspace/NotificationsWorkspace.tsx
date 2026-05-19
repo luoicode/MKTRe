@@ -16,7 +16,7 @@ import type { Json, TablesInsert } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
 import { getLeaderTeamIds, getManagerTeamIds } from "@/lib/dailyAggregates";
 import { notificationTypeBadgeClass, notificationTypeLabel } from "@/lib/notifications";
-import { insertNotificationsWithTelegram } from "@/lib/telegram";
+import { insertNotificationsWithTelegram, sendGroupAnnouncement } from "@/lib/telegram";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -260,6 +260,14 @@ export function NotificationsWorkspace({ mode = "auto" }: { mode?: "auto" | "his
     if (error) {
       toast.error(error.message);
       return;
+    }
+    if (role === "admin" && form.target_scope === "system") {
+      void sendGroupAnnouncement({
+        title: form.title.trim(),
+        message: form.body || "",
+        actor_profile_id: profile!.id,
+        batch_id: batchId,
+      });
     }
     console.debug("[MKTRe announcement create]", {
       actorId: profile!.id,

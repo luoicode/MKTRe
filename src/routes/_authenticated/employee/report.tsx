@@ -73,6 +73,8 @@ interface ReportEntrySlot extends ReportSlot {
   groupLabel: string;
 }
 
+const SUBMITTED_REPORT_EDIT_WINDOW_MS = 60 * 60_000;
+
 function addDays(date: string, days: number) {
   const d = new Date(`${date}T00:00:00`);
   d.setDate(d.getDate() + days);
@@ -186,7 +188,9 @@ function canEditReport(
   if (status === "approved" || status === "locked") return false;
   if (status === "submitted") {
     if (!existing.submitted_at) return false;
-    return now.getTime() - new Date(existing.submitted_at).getTime() <= 20 * 60_000;
+    return (
+      now.getTime() - new Date(existing.submitted_at).getTime() <= SUBMITTED_REPORT_EDIT_WINDOW_MS
+    );
   }
   return true;
 }
@@ -1067,7 +1071,7 @@ function reportReadonlyMessage(
 ) {
   const status = String(existing?.status ?? "");
   if (status === "approved" || status === "locked") return "Báo cáo đã được khóa, chỉ xem.";
-  if (status === "submitted") return "Báo cáo đã gửi chỉ được sửa trong 20 phút đầu.";
+  if (status === "submitted") return "Báo cáo đã gửi chỉ được sửa trong 1 tiếng đầu.";
   if (timingState === "not_open")
     return "Khung báo cáo chưa mở. Form sẽ mở trước deadline 1 tiếng.";
   if (timingState === "locked") return "Khung báo cáo đã khoá. Không thể nhập hoặc gửi thêm.";

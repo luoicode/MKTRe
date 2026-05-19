@@ -84,6 +84,35 @@ export async function sendTelegramNotification(payload: TelegramNotificationPayl
   }
 }
 
+export async function sendGroupAnnouncement(payload: {
+  title: string;
+  message: string;
+  actor_profile_id: string;
+  batch_id: string;
+  action_url?: string | null;
+}) {
+  try {
+    const { error } = await supabase.functions.invoke("telegram-group-reminders", {
+      body: {
+        action: "announcement",
+        title: payload.title,
+        message: payload.message,
+        actor_profile_id: payload.actor_profile_id,
+        batch_id: payload.batch_id,
+        action_url: payload.action_url ?? null,
+      },
+    });
+    if (error) {
+      console.debug("[MKTRe telegram group announcement]", error.message);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.debug("[MKTRe telegram group announcement]", error);
+    return false;
+  }
+}
+
 export async function sendTelegramForNotification(notification: {
   id: string;
   target_profile_id?: string | null;

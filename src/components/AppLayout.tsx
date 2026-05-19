@@ -8,7 +8,6 @@ import {
   FileText,
   LogOut,
   LayoutDashboard,
-  Search,
   Target,
   CheckSquare,
   BookOpen,
@@ -299,17 +298,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
               <p className="truncate text-xs font-medium text-muted-foreground">
                 Nội bộ • Quản trị
               </p>
-            </div>
-          </div>
-
-          <div className="hidden min-w-0 flex-1 justify-end md:flex">
-            <div className="relative w-full max-w-md">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="h-10 rounded-full bg-muted/60 pl-9"
-                placeholder="Tìm kiếm tài sản..."
-                aria-label="Tìm kiếm"
-              />
             </div>
           </div>
 
