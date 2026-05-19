@@ -16,6 +16,7 @@ import type { Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
 import { notificationTypeBadgeClass, notificationTypeLabel } from "@/lib/notifications";
 import { todayStr } from "@/lib/reports";
+import { sendTelegramForNotification } from "@/lib/telegram";
 import { playNotification } from "@/utils/playNotification";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -149,6 +150,9 @@ export function NotificationsBell() {
                 duplicateSkipped,
               });
               if (shouldPlay) playNotification();
+              if (!duplicateSkipped && incoming.target_profile_id === profileId) {
+                void sendTelegramForNotification(incoming);
+              }
               queryClientRef.current.invalidateQueries({ queryKey: ["notifications", profileId] });
               return;
             }

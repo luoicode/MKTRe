@@ -45,6 +45,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json, Tables, TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
+import { insertNotificationsWithTelegram } from "@/lib/telegram";
 import { cn } from "@/lib/utils";
 
 type OnboardingSection = Tables<"onboarding_sections">;
@@ -745,7 +746,7 @@ export function ResourcesWorkspace() {
       } as Json,
     }));
 
-    const { error } = await supabase.from("notifications").insert(notifications);
+    const { error } = await insertNotificationsWithTelegram(notifications);
     if (error) {
       console.debug("[MKTRe onboarding notification]", error.message);
     }
@@ -762,7 +763,7 @@ export function ResourcesWorkspace() {
     const message = approved
       ? `Section ${section.title} đã được duyệt. Bạn có thể học section tiếp theo.`
       : `Section ${section.title} cần làm lại.${note ? ` Ghi chú: ${note}` : ""}`;
-    const { error } = await supabase.from("notifications").insert({
+    const { error } = await insertNotificationsWithTelegram({
       target_profile_id: answer.profile_id,
       user_id: answer.profile_id,
       actor_profile_id: profile.id,

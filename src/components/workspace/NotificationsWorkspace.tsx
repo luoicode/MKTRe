@@ -16,6 +16,7 @@ import type { Json, TablesInsert } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
 import { getLeaderTeamIds, getManagerTeamIds } from "@/lib/dailyAggregates";
 import { notificationTypeBadgeClass, notificationTypeLabel } from "@/lib/notifications";
+import { insertNotificationsWithTelegram } from "@/lib/telegram";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -255,10 +256,7 @@ export function NotificationsWorkspace({ mode = "auto" }: { mode?: "auto" | "his
       team_id: form.target_scope === "team" ? form.team_id : null,
       body: form.body || null,
     }));
-    const { data: insertedRows, error } = await supabase
-      .from("notifications")
-      .insert(payloads)
-      .select("id");
+    const { data: insertedRows, error } = await insertNotificationsWithTelegram(payloads);
     if (error) {
       toast.error(error.message);
       return;

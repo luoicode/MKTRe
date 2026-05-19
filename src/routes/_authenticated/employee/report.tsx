@@ -39,6 +39,7 @@ import { toast } from "sonner";
 import { SubmittedReportCard, type SubmittedReportData } from "@/components/SubmittedReportCard";
 import { isReconciliationSlot } from "@/lib/reportAudit";
 import { chooseReportImageDirectory } from "@/utils/reportImageStorage";
+import { insertNotificationsWithTelegram } from "@/lib/telegram";
 
 export const Route = createFileRoute("/_authenticated/employee/report")({
   component: EmployeeReport,
@@ -303,7 +304,7 @@ async function ensureReportSlotNotification(
     body: item.message,
   };
 
-  const { error } = await supabase.from("notifications").insert(payload);
+  const { error } = await insertNotificationsWithTelegram(payload);
   if (error) {
     if (error.code === "23505") return true;
     if (import.meta.env.DEV) console.warn("[report-slot-notification] insert failed", error);
