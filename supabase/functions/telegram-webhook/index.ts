@@ -23,11 +23,11 @@ type TelegramUpdate = {
   };
 };
 
-type CallbackAction = "approve_task" | "reject_task";
+type CallbackAction = "approve_task" | "reject_task" | "approve_leave" | "reject_leave";
 
 type CallbackPayload = {
   action: CallbackAction;
-  entityType: "task" | "task_completion";
+  entityType: "task" | "task_completion" | "leave_request";
   entityId: string;
 };
 
@@ -101,6 +101,17 @@ async function telegramApi(method: string, body: Record<string, unknown>) {
 function parseCallbackData(data: string | undefined): CallbackPayload | null {
   if (!data) return null;
   const [action, entityType, entityId] = data.split(":");
+
+  if (action === "approve_leave" || action === "reject_leave") {
+    const leaveRequestId = entityType;
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leaveRequestId ?? "")
+    ) {
+      return null;
+    }
+    return { action, entityType: "leave_request", entityId: leaveRequestId };
+  }
+
   if (action !== "approve_task" && action !== "reject_task") return null;
   if (entityType !== "task" && entityType !== "task_completion") return null;
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entityId ?? "")) {
@@ -111,6 +122,8 @@ function parseCallbackData(data: string | undefined): CallbackPayload | null {
 
 function typeLabel(type: string) {
   const labels: Record<string, string> = {
+    leave_request_approved: "Đơn nghỉ đã được duyệt",
+    leave_request_rejected: "Đơn nghỉ không được duyệt",
     task_approved: "Task đã duyệt",
     task_rejected: "Task cần làm lại",
   };
@@ -255,13 +268,20 @@ async function handleCallback(service: ReturnType<typeof createClient>, update: 
   }
 
   const reviewerProfileId = account.profile_id;
-  const approved = parsed.action === "approve_task";
-  const { data: result, error: reviewError } = await service.rpc("telegram_review_task", {
-    _reviewer_profile_id: reviewerProfileId,
-    _entity_type: parsed.entityType,
-    _entity_id: parsed.entityId,
-    _approved: approved,
-  });
+  const isLeaveRequest = parsed.entityType === "leave_request";
+  const approved = parsed.action === "approve_task" || parsed.action === "approve_leave";
+  const { data: result, error: reviewError } = isLeaveRequest
+    ? await service.rpc("telegram_review_leave_request", {
+        _reviewer_profile_id: reviewerProfileId,
+        _leave_request_id: parsed.entityId,
+        _approved: approved,
+      })
+    : await service.rpc("telegram_review_task", {
+        _reviewer_profile_id: reviewerProfileId,
+        _entity_type: parsed.entityType,
+        _entity_id: parsed.entityId,
+        _approved: approved,
+      });
 
   const status = String((result as { status?: string } | null)?.status ?? "failed");
   const message = String(
@@ -294,7 +314,7 @@ async function handleCallback(service: ReturnType<typeof createClient>, update: 
     await logCallback("duplicate", reviewerProfileId, message);
     await telegramApi("answerCallbackQuery", {
       callback_query_id: callbackId,
-      text: "Mục này đã được xử lý trước đó.",
+      text: isLeaveRequest ? "Đơn này đã được xử lý trước đó." : "Mục này đã được xử lý trước đó.",
       show_alert: true,
     });
     return Response.json({ ok: true }, { headers: corsHeaders });
@@ -322,7 +342,13 @@ async function handleCallback(service: ReturnType<typeof createClient>, update: 
     });
   }
 
-  const resultType = approved ? "task_approved" : "task_rejected";
+  const resultType = isLeaveRequest
+    ? approved
+      ? "leave_request_approved"
+      : "leave_request_rejected"
+    : approved
+      ? "task_approved"
+      : "task_rejected";
   const { data: notifications } = await service
     .from("notifications")
     .select("id, target_profile_id, user_id, title, message, body, type")

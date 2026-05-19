@@ -14,8 +14,56 @@ export type TelegramNotificationPayload = {
   dedupe_key?: string | null;
 };
 
+const ADMIN_MANAGER_TELEGRAM_TYPES = new Set([
+  "leave_request_created",
+  "task_pending_review",
+  "checklist_pending_review",
+  "task_assigned",
+  "task_overdue",
+  "employee_task_missing",
+  "employee_task_late",
+  "daily_checklist_incomplete_summary",
+  "report_slot_overdue_summary",
+  "daily_report_missing_summary",
+]);
+
+type TelegramRecipientRole = "admin" | "manager" | "leader" | "employee";
+
 export function getTelegramTypeLabel(type: string | null | undefined) {
   return notificationTypeLabel({ type });
+}
+
+export function shouldSendTelegramNotification(
+  role: string | null | undefined,
+  notificationType: string | null | undefined,
+) {
+  const normalizedRole = String(role ?? "").toLowerCase();
+  const normalizedType = String(notificationType ?? "");
+  if (!normalizedType) return false;
+  if (normalizedRole === "admin" || normalizedRole === "manager") {
+    return ADMIN_MANAGER_TELEGRAM_TYPES.has(normalizedType);
+  }
+  return true;
+}
+
+function canonicalTelegramType(
+  type: string | null | undefined,
+  entityType: string | null | undefined,
+) {
+  if (type === "task_review") {
+    return entityType === "task_completion" ? "checklist_pending_review" : "task_pending_review";
+  }
+  if (type === "task_completion_pending_review") return "checklist_pending_review";
+  return type ?? null;
+}
+
+async function getRecipientRole(profileId: string): Promise<TelegramRecipientRole> {
+  const { data } = await supabase.from("user_roles").select("role").eq("user_id", profileId);
+  const roles = new Set((data ?? []).map((row) => String(row.role)));
+  if (roles.has("admin")) return "admin";
+  if (roles.has("manager")) return "manager";
+  if (roles.has("leader")) return "leader";
+  return "employee";
 }
 
 export async function sendTelegramNotification(payload: TelegramNotificationPayload) {
@@ -63,6 +111,20 @@ export async function sendTelegramForNotification(notification: {
     !Array.isArray(notification.metadata)
       ? (notification.metadata as Record<string, unknown>)
       : null;
+  const telegramType = canonicalTelegramType(
+    notification.type ?? notification.kind ?? null,
+    notification.entity_type ?? null,
+  );
+  const recipientRole = await getRecipientRole(recipientId);
+  if (!shouldSendTelegramNotification(recipientRole, telegramType)) {
+    console.debug("[MKTRe telegram] skipped by role scope", {
+      notificationId: notification.id,
+      recipientRole,
+      type: telegramType,
+    });
+    return false;
+  }
+
   return sendTelegramNotification({
     recipient_profile_id: recipientId,
     notification_id: notification.id,
@@ -70,7 +132,7 @@ export async function sendTelegramForNotification(notification: {
     entity_id: notification.entity_id ?? null,
     title: notification.title,
     message: notification.message ?? notification.body ?? null,
-    type: notification.type ?? notification.kind ?? null,
+    type: telegramType,
     metadata,
     dedupe_key: typeof metadata?.dedupe_key === "string" ? metadata.dedupe_key : null,
   });

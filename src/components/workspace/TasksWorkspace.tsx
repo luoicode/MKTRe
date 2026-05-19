@@ -737,6 +737,8 @@ export function TasksWorkspace() {
       : (createdTask as { id?: string } | null)?.id;
     await sendTelegramNotification({
       recipient_profile_id: assignedTo,
+      entity_type: "task",
+      entity_id: createdTaskId ?? null,
       title: "Nhiệm vụ mới",
       message: `Bạn có task mới: ${task.title.trim()}.`,
       type: "task_assigned",
