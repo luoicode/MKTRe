@@ -32,7 +32,9 @@ const typeLabels: Record<string, string> = {
   report_missing_summary: "Tổng hợp chưa báo cáo",
   report_reminder: "Nhắc báo cáo",
   report_slot_due: "Sắp đến giờ báo cáo",
+  report_slot_missing_summary: "Tổng hợp chưa báo cáo",
   report_slot_overdue: "Quá giờ báo cáo",
+  report_slot_submitted_summary: "Tổng hợp đã báo cáo",
   report_slot_summary: "Tổng hợp báo cáo",
   task_approved: "Task đã duyệt",
   task_assigned: "Nhiệm vụ mới",
@@ -59,6 +61,8 @@ const ADMIN_MANAGER_TELEGRAM_TYPES = new Set([
   "employee_task_missing",
   "employee_task_late",
   "daily_checklist_incomplete_summary",
+  "report_slot_submitted_summary",
+  "report_slot_missing_summary",
   "report_slot_overdue_summary",
   "daily_report_missing_summary",
 ]);
@@ -524,74 +528,37 @@ async function buildTaskMessage(service: ReturnType<typeof createClient>, payloa
 }
 
 async function buildReportMessage(service: ReturnType<typeof createClient>, payload: SendPayload) {
-  if (payload.entity_type !== "report" && !payload.type?.startsWith("report_")) return null;
+  const type = payload.type ?? "";
+  if (!["report_reminder", "report_slot_due", "report_slot_overdue"].includes(type)) return null;
 
-  const reportDate = getMetadataString(payload.metadata, "report_date");
-  const slotId = payload.entity_id ?? getMetadataString(payload.metadata, "slot_id");
-  const slotTimeFromMetadata = getMetadataString(payload.metadata, "slot_time");
-
-  let report: {
-    ads_cost: number | null;
-    mess_count: number | null;
-    data_count: number | null;
-    total_revenue: number | null;
-    note: string | null;
-    report_date: string | null;
-    slot_id: string | null;
-    user_id: string | null;
-    team_id: string | null;
-  } | null = null;
-
-  if (payload.entity_id) {
-    const byId = await service
-      .from("slot_reports")
-      .select(
-        "ads_cost, mess_count, data_count, total_revenue, note, report_date, slot_id, user_id, team_id",
-      )
-      .eq("id", payload.entity_id)
-      .maybeSingle();
-    report = byId.data ?? null;
-  }
-
-  if (!report && reportDate && slotId) {
-    const bySlot = await service
-      .from("slot_reports")
-      .select(
-        "ads_cost, mess_count, data_count, total_revenue, note, report_date, slot_id, user_id, team_id",
-      )
-      .eq("user_id", payload.recipient_profile_id)
-      .eq("report_date", reportDate)
-      .eq("slot_id", slotId)
-      .maybeSingle();
-    report = bySlot.data ?? null;
-  }
-
-  let slotLabel = slotTimeFromMetadata ?? EMPTY_TEXT;
-  const slotLookupId = report?.slot_id ?? slotId;
+  let slotLabel =
+    getMetadataString(payload.metadata, "slot_time") ??
+    getMetadataString(payload.metadata, "slot") ??
+    "chưa xác định";
+  const slotLookupId = payload.entity_id ?? getMetadataString(payload.metadata, "slot_id");
   if (slotLookupId) {
     const { data: slot } = await service
       .from("report_slots")
       .select("slot_name, slot_time")
       .eq("id", slotLookupId)
       .maybeSingle();
-    slotLabel = slot?.slot_name ?? formatSlotTime(slot?.slot_time) ?? slotLabel;
+    slotLabel = slot?.slot_name ?? (slot?.slot_time ? formatSlotTime(slot.slot_time) : slotLabel);
   }
 
-  const profileId = report?.user_id ?? payload.recipient_profile_id;
-  const teamName = await getTeamName(service, { teamId: report?.team_id, profileId });
+  if (type === "report_slot_overdue") {
+    return [
+      "🚨 Bạn đã quá giờ báo cáo",
+      "",
+      `Khung giờ: ${slotLabel}`,
+      "Vui lòng gửi báo cáo ngay trong thời gian cho phép.",
+    ].join("\n");
+  }
 
   return [
-    "📊 Báo cáo",
+    "⏰ Sắp đến giờ báo cáo",
     "",
-    `👤 Nhân sự: ${await getProfileName(service, profileId)}`,
-    `👥 Team: ${teamName}`,
-    `🕒 Khung giờ: ${valueOrEmpty(slotLabel)}`,
-    `📅 Ngày báo cáo: ${compactDateOnly(report?.report_date ?? reportDate)}`,
-    `💰 Doanh số: ${formatMetric(report?.total_revenue)}`,
-    `💸 Chi phí ads: ${formatMetric(report?.ads_cost)}`,
-    `💬 Mess: ${formatMetric(report?.mess_count)}`,
-    `📋 Data: ${formatMetric(report?.data_count)}`,
-    `📝 Ghi chú: ${valueOrEmpty(report?.note)}`,
+    `Khung giờ: ${slotLabel}`,
+    "Vui lòng chuẩn bị gửi báo cáo đúng giờ.",
   ].join("\n");
 }
 
@@ -664,55 +631,44 @@ async function buildReminderMessage(
 
 function buildSummaryMessage(payload: SendPayload) {
   const type = payload.type ?? "";
-  const names = getMetadataStringList(payload.metadata, [
-    "missing_users",
-    "missing_names",
-    "employees",
-    "employee_names",
-    "users",
-    "names",
-  ]);
+  const isSubmittedSummary =
+    type === "report_slot_submitted_summary" || type === "report_slot_summary";
+  const isMissingSummary =
+    type === "report_slot_missing_summary" ||
+    type === "report_slot_overdue_summary" ||
+    type === "daily_report_missing_summary";
+  const isChecklistSummary = type === "daily_checklist_incomplete_summary";
+
+  const names = getMetadataStringList(
+    payload.metadata,
+    isSubmittedSummary
+      ? ["submitted_users", "submitted_names", "employees", "employee_names", "users", "names"]
+      : ["missing_users", "missing_names", "employees", "employee_names", "users", "names"],
+  );
   const listText = names.length
     ? names.map((name) => `- ${name}`).join("\n")
-    : valueOrEmpty(payload.message);
-  const teamName = valueOrEmpty(getMetadataString(payload.metadata, "team_name"));
-  const slot = valueOrEmpty(
-    getMetadataString(payload.metadata, "slot_time") ?? getMetadataString(payload.metadata, "slot"),
-  );
-  const date = compactDateOnly(
-    getMetadataString(payload.metadata, "report_date") ??
-      getMetadataString(payload.metadata, "date") ??
-      getMetadataString(payload.metadata, "completion_date"),
-  );
+    : valueOrEmpty(payload.message) === EMPTY_TEXT
+      ? "Chưa có dữ liệu"
+      : valueOrEmpty(payload.message);
+  const slot =
+    getMetadataString(payload.metadata, "slot_time") ??
+    getMetadataString(payload.metadata, "slot") ??
+    "chưa xác định";
 
-  if (type === "report_slot_overdue_summary") {
-    return [
-      `🚨 Chưa báo cáo khung ${slot}`,
-      "",
-      `👥 Team: ${teamName}`,
-      `📅 Ngày: ${date}`,
-      listText,
-    ].join("\n");
+  if (isSubmittedSummary) {
+    return [`📊 Báo cáo khung ${slot}`, "", "Đã báo cáo:", listText].join("\n");
   }
 
-  if (type === "daily_report_missing_summary") {
-    return [
-      "🚨 Chưa báo cáo trong ngày",
-      "",
-      `👥 Team: ${teamName}`,
-      `📅 Ngày: ${date}`,
-      listText,
-    ].join("\n");
+  if (isMissingSummary) {
+    const title =
+      type === "daily_report_missing_summary"
+        ? "🚨 Chưa báo cáo trong ngày"
+        : `🚨 Chưa báo cáo khung ${slot}`;
+    return [title, "", "Chưa báo cáo:", listText].join("\n");
   }
 
-  if (type === "daily_checklist_incomplete_summary") {
-    return [
-      "🚨 Chưa hoàn thành checklist/task hôm nay",
-      "",
-      `👥 Team: ${teamName}`,
-      `📅 Ngày: ${date}`,
-      listText,
-    ].join("\n");
+  if (isChecklistSummary) {
+    return ["🚨 Chưa hoàn thành checklist/task hôm nay", "", listText].join("\n");
   }
 
   return null;

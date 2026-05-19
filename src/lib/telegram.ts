@@ -23,6 +23,8 @@ const ADMIN_MANAGER_TELEGRAM_TYPES = new Set([
   "employee_task_missing",
   "employee_task_late",
   "daily_checklist_incomplete_summary",
+  "report_slot_submitted_summary",
+  "report_slot_missing_summary",
   "report_slot_overdue_summary",
   "daily_report_missing_summary",
 ]);
