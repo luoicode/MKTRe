@@ -170,7 +170,7 @@ export function AnalyticsDashboard({
 
   return (
     <PageShell className="gap-3">
-      <PageHeader className="flex-wrap items-center justify-between gap-3 md:flex">
+      <PageHeader className="space-y-3 md:flex md:items-center md:justify-between md:gap-4 md:space-y-0">
         <div>
           <h1 className="text-xl font-bold tracking-tight md:text-2xl">Tổng quan</h1>
           <p className="text-sm text-muted-foreground">
@@ -184,7 +184,8 @@ export function AnalyticsDashboard({
             · Doanh thu, ads, KPI và hiệu suất theo khoảng ngày.
           </p>
         </div>
-        <div className="mt-3 md:mt-0">
+        <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row md:items-end">
+          <SalaryHeaderSummary estimate={salaryEstimate} />
           <DateRangeFilter
             value={range}
             onChange={setRange}
@@ -311,6 +312,23 @@ export function AnalyticsDashboard({
         </ScrollArea>
       )}
     </PageShell>
+  );
+}
+
+function SalaryHeaderSummary({ estimate }: { estimate: SalaryEstimate | null }) {
+  if (!estimate?.rule) return null;
+
+  return (
+    <div className="w-full overflow-hidden rounded-2xl border border-white/40 bg-[linear-gradient(135deg,#0f766e,#2563eb_52%,#7c3aed)] px-4 py-3 text-white shadow-[0_0_28px_rgba(45,212,191,0.45)] transition duration-200 hover:scale-[1.02] hover:shadow-[0_0_36px_rgba(45,212,191,0.62)] md:min-w-[260px]">
+      <div className="animate-pulse">
+        <p className="text-xs font-semibold uppercase tracking-wide text-cyan-100/90">
+          Lương tạm tính
+        </p>
+        <p className="mt-1 text-2xl font-extrabold leading-tight tracking-tight text-white drop-shadow-sm">
+          {fmtVndDong(Math.round(estimate.totalEstimatedSalary))}
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -450,7 +468,7 @@ function SalaryEstimateCard({ estimate }: { estimate: SalaryEstimate | null }) {
             Bạn chưa điểm danh hôm nay
           </div>
         ) : null}
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Mini
             label="Ngày công"
             value={`${estimate.attendedDays}/${estimate.expectedWorkdays} ngày`}
@@ -458,10 +476,6 @@ function SalaryEstimateCard({ estimate }: { estimate: SalaryEstimate | null }) {
           <Mini label="Lương cứng" value={fmtVndDong(Math.round(estimate.baseSalaryProrated))} />
           <Mini label="Thưởng mốc" value={fmtVndDong(estimate.milestoneBonus)} />
           <Mini label="Thưởng KPI" value={fmtVndDong(estimate.overKpiBonus)} />
-          <Mini
-            label="Tổng tạm tính"
-            value={fmtVndDong(Math.round(estimate.totalEstimatedSalary))}
-          />
         </div>
       </CardContent>
     </Card>

@@ -26,6 +26,7 @@ import type { Enums, Tables, TablesInsert } from "@/integrations/supabase/types"
 import { useAuth } from "@/lib/auth";
 import { getLeaderTeamIds } from "@/lib/dailyAggregates";
 import { formatYmd } from "@/lib/dateRange";
+import { getTaskDeadlineState, type TaskDeadlineState } from "@/lib/taskDeadline";
 import {
   insertNotificationsWithTelegram,
   sendTelegramForNotification,
@@ -68,7 +69,7 @@ type TaskStatus = Enums<"task_status">;
 type BoardStatus = TaskStatus;
 type TaskPriority = "low" | "medium" | "high";
 type DeadlineFilter = "all" | "today" | "overdue" | "future" | "none";
-type DeadlineState = "none" | "overdue" | "today" | "future";
+type DeadlineState = TaskDeadlineState;
 type CompletionTarget =
   | { type: "task"; id: string; title: string; teamId: string | null }
   | { type: "template"; id: string; title: string; teamId: string | null };
@@ -2612,16 +2613,7 @@ function getDeadlineState(
   statusValue: string | null | undefined,
   today: string,
 ): DeadlineState {
-  const status = normalizeTaskStatus(statusValue);
-  if (!deadline || status === "done") return "none" as const;
-  const due = new Date(deadline);
-  if (Number.isNaN(due.getTime())) return "none" as const;
-  const start = new Date(`${today}T00:00:00`);
-  const next = new Date(start);
-  next.setDate(start.getDate() + 1);
-  if (due < start) return "overdue" as const;
-  if (due < next) return "today" as const;
-  return "future" as const;
+  return getTaskDeadlineState({ deadline, status: statusValue }, new Date(), today);
 }
 
 function deadlineStateLabel(state: ReturnType<typeof getDeadlineState>) {

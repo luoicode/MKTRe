@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Enums, Tables } from "@/integrations/supabase/types";
+import { isTaskOverdue } from "@/lib/taskDeadline";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -329,7 +330,7 @@ function getDeadlineBadgeState(deadline: string | null, status: BoardStatus) {
   if (!deadline) return "none" as const;
   const due = new Date(deadline);
   if (Number.isNaN(due.getTime())) return "none" as const;
-  return due.getTime() < Date.now() ? ("overdue" as const) : ("upcoming" as const);
+  return isTaskOverdue({ deadline, status }) ? ("overdue" as const) : ("upcoming" as const);
 }
 
 function deadlineLabel(state: ReturnType<typeof getDeadlineBadgeState>) {

@@ -3,6 +3,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Box,
   BriefcaseBusiness,
+  Copy,
+  Eye,
+  EyeOff,
   ExternalLink,
   Info,
   Loader2,
@@ -17,6 +20,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
 import { useAuth, type AppRole } from "@/lib/auth";
 import { getLeaderTeamIds, getManagerTeamIds } from "@/lib/dailyAggregates";
+import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,7 +40,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader, PageShell, ScrollArea } from "@/components/layout/PageShell";
 import { RefreshButton } from "@/components/RefreshButton";
@@ -44,6 +55,7 @@ import { toast } from "sonner";
 
 type Asset = Tables<"assets">;
 type AssetGroup = "common" | "fixed" | "flexible" | "personal";
+type AssetStatus = "active" | "paused" | "revoked";
 type TeamRow = Pick<Tables<"teams">, "id" | "name">;
 type ProfileRow = Pick<Tables<"profiles">, "id" | "full_name" | "username">;
 type MembershipRow = Pick<Tables<"team_memberships">, "user_id" | "team_id">;
@@ -51,6 +63,8 @@ type MembershipRow = Pick<Tables<"team_memberships">, "user_id" | "team_id">;
 const ALL = "all";
 const NONE = "__none__";
 const OTHER_TYPE = "__other__";
+const ASSET_META_START = "[MKTRE_ASSET_META]";
+const ASSET_META_END = "[/MKTRE_ASSET_META]";
 
 const GROUP_LABELS: Record<AssetGroup, string> = {
   common: "Chung",
@@ -66,12 +80,23 @@ const GROUP_STYLES: Record<AssetGroup, string> = {
   personal: "bg-violet-50 text-violet-700 border-violet-100",
 };
 
+const ASSET_STATUS_LABELS: Record<AssetStatus, string> = {
+  active: "Đang hoạt động",
+  paused: "Tạm dừng",
+  revoked: "Thu hồi",
+};
+
 const STANDARD_TYPES = [
   "hotline",
   "odoo",
   "landing",
+  "pancake",
+  "flowchat",
+  "canva",
+  "capcut",
   "media",
   "link",
+  "ads_account",
   "facebook",
   "tiktok",
   "google",
@@ -88,6 +113,8 @@ const defaultForm = {
   value: "",
   link_url: "",
   description: "",
+  sensitive_note: "",
+  status: "active" as AssetStatus,
   owner_profile_id: "",
   owner_team_id: "",
   is_active: true,
@@ -96,20 +123,24 @@ const defaultForm = {
 export function AssetsWorkspace() {
   const { profile, role } = useAuth();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<AssetGroup | typeof ALL>(ALL);
   const [query, setQuery] = useState("");
   const [teamFilter, setTeamFilter] = useState(ALL);
   const [userFilter, setUserFilter] = useState(ALL);
+  const [groupFilter, setGroupFilter] = useState<AssetGroup | typeof ALL>(ALL);
   const [typeFilter, setTypeFilter] = useState(ALL);
   const [assignerFilter, setAssignerFilter] = useState(ALL);
+  const [statusFilter, setStatusFilter] = useState(ALL);
+  const [visibleSecretIds, setVisibleSecretIds] = useState<Set<string>>(() => new Set());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailAsset, setDetailAsset] = useState<Asset | null>(null);
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
+  const [showSensitiveInput, setShowSensitiveInput] = useState(false);
 
   const isAdmin = role === "admin";
   const isLeader = role === "leader";
   const isEmployee = role === "employee";
+  const canFilterAssigner = role === "admin" || role === "manager" || role === "leader";
   const canCreate = !!role && role !== null;
 
   const { data, isLoading, isFetching, refetch } = useQuery({
@@ -215,7 +246,7 @@ export function AssetsWorkspace() {
   ) as string[];
 
   const filteredAssets = assets.filter((asset) => {
-    if (tab !== ALL && asset.asset_group !== tab) return false;
+    if (groupFilter !== ALL && asset.asset_group !== groupFilter) return false;
     if (
       !isEmployee &&
       teamFilter !== ALL &&
@@ -243,11 +274,13 @@ export function AssetsWorkspace() {
       }
     }
     if (assignerFilter !== ALL && asset.assigned_by !== assignerFilter) return false;
+    if (statusFilter !== ALL && getAssetStatus(asset) !== statusFilter) return false;
     const haystack = [
       asset.title,
       asset.asset_type,
       asset.value,
-      asset.description,
+      asset.link_url,
+      getPublicAssetDescription(asset),
       asset.owner_profile_id ? profileMap.get(asset.owner_profile_id)?.full_name : "",
       asset.owner_team_id ? teamMap.get(asset.owner_team_id) : "",
     ]
@@ -266,8 +299,8 @@ export function AssetsWorkspace() {
 
   const openCreate = () => {
     const nextGroup =
-      tab !== ALL && groupOptions.includes(tab as AssetGroup)
-        ? (tab as AssetGroup)
+      groupFilter !== ALL && groupOptions.includes(groupFilter as AssetGroup)
+        ? (groupFilter as AssetGroup)
         : (groupOptions[0] as AssetGroup);
     const nextType = defaultTypeFor(nextGroup);
     setForm({
@@ -279,6 +312,7 @@ export function AssetsWorkspace() {
       owner_profile_id: nextGroup === "personal" ? (profile?.id ?? "") : "",
       owner_team_id: nextGroup === "flexible" ? (teams[0]?.id ?? "") : "",
     });
+    setShowSensitiveInput(false);
     setDialogOpen(true);
   };
 
@@ -286,6 +320,8 @@ export function AssetsWorkspace() {
     const group = asset.asset_group as AssetGroup;
     const isCustom = isCustomTypeForGroup(group, asset.asset_type);
     const normalizedType = normalizeAssetType(asset.asset_type);
+    const descriptionParts = parseAssetDescription(asset.description);
+    const status = descriptionParts.status ?? getAssetStatus(asset);
     setForm({
       id: asset.id,
       asset_group: group,
@@ -294,11 +330,14 @@ export function AssetsWorkspace() {
       title: asset.title,
       value: asset.value ?? "",
       link_url: asset.link_url ?? "",
-      description: asset.description ?? "",
+      description: descriptionParts.note,
+      sensitive_note: descriptionParts.sensitive,
+      status,
       owner_profile_id: asset.owner_profile_id ?? "",
       owner_team_id: asset.owner_team_id ?? "",
-      is_active: asset.is_active,
+      is_active: status === "active",
     });
+    setShowSensitiveInput(false);
     setDialogOpen(true);
   };
 
@@ -307,6 +346,8 @@ export function AssetsWorkspace() {
     const title = form.title.trim();
     const value = form.value.trim();
     const description = form.description.trim();
+    const sensitiveNote = form.sensitive_note.trim();
+    const status = form.status;
     const linkUrl = normalizeUrl(form.link_url);
     const assetType =
       form.asset_type === OTHER_TYPE ? form.asset_type_custom.trim() : form.asset_type.trim();
@@ -316,6 +357,10 @@ export function AssetsWorkspace() {
     }
     if (!title) {
       toast.error("Nhập tên tài sản");
+      return;
+    }
+    if (!isAssetStatus(status)) {
+      toast.error("Chọn trạng thái tài sản");
       return;
     }
     if (form.link_url.trim() && !linkUrl) {
@@ -362,12 +407,12 @@ export function AssetsWorkspace() {
       title,
       value: value || null,
       link_url: linkUrl,
-      description: description || null,
+      description: composeAssetDescription(description, sensitiveNote, status) || null,
       owner_profile_id: ownerProfileId,
       owner_team_id: ownerTeamId,
       assigned_by: form.asset_group === "personal" ? null : profile.id,
       created_by: profile.id,
-      is_active: form.is_active,
+      is_active: status === "active",
     };
 
     setSaving(true);
@@ -393,6 +438,24 @@ export function AssetsWorkspace() {
     }
     toast.success("Đã xóa tài sản");
     qc.invalidateQueries({ queryKey: ["assets-workspace"] });
+  };
+
+  const copyText = async (value: string, label = "Đã copy") => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(label);
+    } catch {
+      toast.error("Không thể copy dữ liệu");
+    }
+  };
+
+  const toggleSecretVisible = (assetId: string) => {
+    setVisibleSecretIds((current) => {
+      const next = new Set(current);
+      if (next.has(assetId)) next.delete(assetId);
+      else next.add(assetId);
+      return next;
+    });
   };
 
   return (
@@ -421,79 +484,92 @@ export function AssetsWorkspace() {
           </div>
         </div>
 
-        <Tabs value={tab} onValueChange={(value) => setTab(value as AssetGroup | typeof ALL)}>
-          <TabsList>
-            <TabsTrigger value={ALL}>Tất cả</TabsTrigger>
-            <TabsTrigger value="common">Chung</TabsTrigger>
-            <TabsTrigger value="fixed">Cố định</TabsTrigger>
-            <TabsTrigger value="flexible">Linh động</TabsTrigger>
-            <TabsTrigger value="personal">Cá nhân</TabsTrigger>
-          </TabsList>
-        </Tabs>
-
         <Card>
-          <CardContent
-            className={
-              isLeader
-                ? "grid gap-3 p-3 lg:grid-cols-[1fr_220px_180px]"
-                : isEmployee
-                  ? "grid gap-3 p-3 lg:grid-cols-[1fr_180px]"
-                  : "grid gap-3 p-3 lg:grid-cols-[1fr_180px_180px_180px_180px]"
-            }
-          >
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Tìm theo tên tài sản..."
-              />
-            </div>
-            {!isLeader && !isEmployee && (
-              <FilterSelect value={teamFilter} onChange={setTeamFilter} placeholder="Team">
-                <SelectItem value={ALL}>Tất cả team</SelectItem>
-                {teams.map((team) => (
-                  <SelectItem key={team.id} value={team.id}>
-                    {team.name}
-                  </SelectItem>
-                ))}
+          <CardContent className="grid gap-3 p-3 lg:grid-cols-6">
+            <Field label="Tìm kiếm">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Tên tài sản / giá trị / tài khoản"
+                />
+              </div>
+            </Field>
+            <Field label="Nhóm">
+              <FilterSelect
+                value={groupFilter}
+                onChange={(value) => setGroupFilter(value as AssetGroup | typeof ALL)}
+                placeholder="Nhóm"
+              >
+                <SelectItem value={ALL}>Tất cả nhóm</SelectItem>
+                <SelectItem value="common">Chung</SelectItem>
+                <SelectItem value="fixed">Cố định</SelectItem>
+                <SelectItem value="flexible">Linh động</SelectItem>
+                <SelectItem value="personal">Cá nhân</SelectItem>
               </FilterSelect>
+            </Field>
+            {!isLeader && !isEmployee && (
+              <Field label="Team">
+                <FilterSelect value={teamFilter} onChange={setTeamFilter} placeholder="Team">
+                  <SelectItem value={ALL}>Tất cả team</SelectItem>
+                  {teams.map((team) => (
+                    <SelectItem key={team.id} value={team.id}>
+                      {team.name}
+                    </SelectItem>
+                  ))}
+                </FilterSelect>
+              </Field>
             )}
             {!isEmployee && (
-              <FilterSelect value={userFilter} onChange={setUserFilter} placeholder="User">
-                <SelectItem value={ALL}>
-                  {isLeader ? "Tất cả team" : "Tất cả người dùng"}
-                </SelectItem>
-                {ownerFilterProfiles.map((user) => (
-                  <SelectItem key={user.id} value={user.id}>
-                    {user.full_name}
+              <Field label="Chủ sở hữu">
+                <FilterSelect value={userFilter} onChange={setUserFilter} placeholder="Chủ sở hữu">
+                  <SelectItem value={ALL}>
+                    {isLeader ? "Tất cả team" : "Tất cả người dùng"}
+                  </SelectItem>
+                  {ownerFilterProfiles.map((user) => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.full_name}
+                    </SelectItem>
+                  ))}
+                </FilterSelect>
+              </Field>
+            )}
+            <Field label="Loại tài sản">
+              <FilterSelect value={typeFilter} onChange={setTypeFilter} placeholder="Loại">
+                <SelectItem value={ALL}>Tất cả loại</SelectItem>
+                {visibleTypes.map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {assetTypeLabel(type)}
                   </SelectItem>
                 ))}
               </FilterSelect>
+            </Field>
+            {canFilterAssigner && (
+              <Field label="Người cấp">
+                <FilterSelect
+                  value={assignerFilter}
+                  onChange={setAssignerFilter}
+                  placeholder="Người cấp"
+                >
+                  <SelectItem value={ALL}>Tất cả người cấp</SelectItem>
+                  {assigners.map((id) => (
+                    <SelectItem key={id} value={id}>
+                      {profileMap.get(id)?.full_name ?? "Không rõ"}
+                    </SelectItem>
+                  ))}
+                </FilterSelect>
+              </Field>
             )}
-            <FilterSelect value={typeFilter} onChange={setTypeFilter} placeholder="Loại">
-              <SelectItem value={ALL}>Tất cả loại</SelectItem>
-              {visibleTypes.map((type) => (
-                <SelectItem key={type} value={type}>
-                  {assetTypeLabel(type)}
-                </SelectItem>
-              ))}
-            </FilterSelect>
-            {isAdmin && (
-              <FilterSelect
-                value={assignerFilter}
-                onChange={setAssignerFilter}
-                placeholder="Người cấp"
-              >
-                <SelectItem value={ALL}>Tất cả người cấp</SelectItem>
-                {assigners.map((id) => (
-                  <SelectItem key={id} value={id}>
-                    {profileMap.get(id)?.full_name ?? "Không rõ"}
-                  </SelectItem>
-                ))}
+            <Field label="Trạng thái">
+              <FilterSelect value={statusFilter} onChange={setStatusFilter} placeholder="Status">
+                <SelectItem value={ALL}>Tất cả trạng thái</SelectItem>
+                <SelectItem value="active">{ASSET_STATUS_LABELS.active}</SelectItem>
+                <SelectItem value="paused">{ASSET_STATUS_LABELS.paused}</SelectItem>
+                <SelectItem value="revoked">{ASSET_STATUS_LABELS.revoked}</SelectItem>
               </FilterSelect>
-            )}
+            </Field>
           </CardContent>
         </Card>
       </PageHeader>
@@ -504,25 +580,19 @@ export function AssetsWorkspace() {
             <Loader2 className="h-6 w-6 animate-spin" />
           </div>
         ) : filteredAssets.length ? (
-          <div className="grid gap-4 pb-6 md:grid-cols-2 xl:grid-cols-3">
-            {filteredAssets.map((asset) => (
-              <AssetCard
-                key={asset.id}
-                asset={asset}
-                teamName={asset.owner_team_id ? teamMap.get(asset.owner_team_id) : null}
-                ownerName={
-                  asset.owner_profile_id ? profileMap.get(asset.owner_profile_id)?.full_name : null
-                }
-                assignerName={
-                  asset.assigned_by ? profileMap.get(asset.assigned_by)?.full_name : null
-                }
-                canEdit={canEditAsset(asset, role, profile?.id)}
-                onDetail={() => setDetailAsset(asset)}
-                onEdit={() => openEdit(asset)}
-                onDelete={() => deleteAsset(asset)}
-              />
-            ))}
-          </div>
+          <AssetTable
+            assets={filteredAssets}
+            teamMap={teamMap}
+            profileMap={profileMap}
+            role={role}
+            profileId={profile?.id}
+            visibleSecretIds={visibleSecretIds}
+            onToggleSecret={toggleSecretVisible}
+            onCopy={copyText}
+            onDetail={setDetailAsset}
+            onEdit={openEdit}
+            onDelete={deleteAsset}
+          />
         ) : (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
@@ -627,6 +697,25 @@ export function AssetsWorkspace() {
               />
             </Field>
 
+            <Field label="Trạng thái">
+              <Select
+                value={form.status}
+                onValueChange={(value) => {
+                  const status = value as AssetStatus;
+                  setForm({ ...form, status, is_active: status === "active" });
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">{ASSET_STATUS_LABELS.active}</SelectItem>
+                  <SelectItem value="paused">{ASSET_STATUS_LABELS.paused}</SelectItem>
+                  <SelectItem value="revoked">{ASSET_STATUS_LABELS.revoked}</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+
             {(form.asset_group === "fixed" || form.asset_group === "flexible") && (
               <Field label={form.asset_group === "fixed" ? "User nhận" : "Team nhận"}>
                 {form.asset_group === "fixed" ? (
@@ -701,6 +790,34 @@ export function AssetsWorkspace() {
             )}
 
             <div className="md:col-span-2">
+              <Field label="Mật khẩu / Nhạy cảm">
+                <div className="flex gap-2">
+                  <Input
+                    type={showSensitiveInput ? "text" : "password"}
+                    value={form.sensitive_note}
+                    onChange={(event) => setForm({ ...form, sensitive_note: event.target.value })}
+                    placeholder="Mật khẩu, token, ghi chú nhạy cảm..."
+                    autoComplete="off"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="shrink-0"
+                    onClick={() => setShowSensitiveInput((current) => !current)}
+                    title={showSensitiveInput ? "Ẩn thông tin nhạy cảm" : "Hiện thông tin nhạy cảm"}
+                  >
+                    {showSensitiveInput ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </Field>
+            </div>
+
+            <div className="md:col-span-2">
               <Field label="Mô tả">
                 <Textarea
                   value={form.description}
@@ -733,6 +850,7 @@ export function AssetsWorkspace() {
         assignerName={
           detailAsset?.assigned_by ? profileMap.get(detailAsset.assigned_by)?.full_name : null
         }
+        canViewSensitive={detailAsset ? canEditAsset(detailAsset, role, profile?.id) : false}
         onOpenChange={(open) => !open && setDetailAsset(null)}
       />
     </PageShell>
@@ -756,92 +874,426 @@ async function getMemberships(role: AppRole, teamIds: string[]) {
   return query;
 }
 
-function AssetCard({
-  asset,
-  teamName,
-  ownerName,
-  canEdit,
+function AssetTable({
+  assets,
+  teamMap,
+  profileMap,
+  role,
+  profileId,
+  visibleSecretIds,
+  onToggleSecret,
+  onCopy,
   onDetail,
   onEdit,
   onDelete,
 }: {
+  assets: Asset[];
+  teamMap: Map<string, string>;
+  profileMap: Map<string, ProfileRow>;
+  role: AppRole | null;
+  profileId?: string;
+  visibleSecretIds: Set<string>;
+  onToggleSecret: (assetId: string) => void;
+  onCopy: (value: string, label?: string) => void;
+  onDetail: (asset: Asset) => void;
+  onEdit: (asset: Asset) => void;
+  onDelete: (asset: Asset) => void;
+}) {
+  return (
+    <div className="space-y-3 pb-6">
+      <Card className="hidden overflow-hidden rounded-3xl border-slate-200 shadow-sm lg:block">
+        <Table>
+          <TableHeader className="bg-slate-50">
+            <TableRow>
+              <TableHead className="min-w-[220px] px-4">Tên tài sản</TableHead>
+              <TableHead>Loại</TableHead>
+              <TableHead>Nhóm</TableHead>
+              <TableHead className="min-w-[180px]">Giá trị / Tài khoản</TableHead>
+              <TableHead className="min-w-[170px]">Mật khẩu / Nhạy cảm</TableHead>
+              <TableHead>Trạng thái</TableHead>
+              <TableHead>Chủ sở hữu</TableHead>
+              <TableHead>Người cấp</TableHead>
+              <TableHead>Ngày cấp</TableHead>
+              <TableHead className="w-[180px] text-right">Thao tác</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {assets.map((asset) => {
+              const canEdit = canEditAsset(asset, role, profileId);
+              return (
+                <AssetTableRow
+                  key={asset.id}
+                  asset={asset}
+                  teamMap={teamMap}
+                  profileMap={profileMap}
+                  canEdit={canEdit}
+                  canViewSensitive={canEdit}
+                  isSecretVisible={visibleSecretIds.has(asset.id)}
+                  onToggleSecret={() => onToggleSecret(asset.id)}
+                  onCopy={onCopy}
+                  onDetail={() => onDetail(asset)}
+                  onEdit={() => onEdit(asset)}
+                  onDelete={() => onDelete(asset)}
+                />
+              );
+            })}
+          </TableBody>
+        </Table>
+      </Card>
+
+      <div className="grid gap-3 lg:hidden">
+        {assets.map((asset) => {
+          const canEdit = canEditAsset(asset, role, profileId);
+          return (
+            <AssetMobileCard
+              key={asset.id}
+              asset={asset}
+              teamMap={teamMap}
+              profileMap={profileMap}
+              canEdit={canEdit}
+              canViewSensitive={canEdit}
+              isSecretVisible={visibleSecretIds.has(asset.id)}
+              onToggleSecret={() => onToggleSecret(asset.id)}
+              onCopy={onCopy}
+              onDetail={() => onDetail(asset)}
+              onEdit={() => onEdit(asset)}
+              onDelete={() => onDelete(asset)}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function AssetTableRow({
+  asset,
+  teamMap,
+  profileMap,
+  canEdit,
+  canViewSensitive,
+  isSecretVisible,
+  onToggleSecret,
+  onCopy,
+  onDetail,
+  onEdit,
+  onDelete,
+}: AssetRowProps) {
+  const group = asset.asset_group as AssetGroup;
+  const link = normalizeUrl(asset.link_url ?? "");
+  const value = formatAssetValue(asset);
+  const sensitiveNote = getSensitiveNote(asset);
+  const publicDescription = getPublicAssetDescription(asset);
+  return (
+    <TableRow className="bg-white">
+      <TableCell className="px-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
+            <AssetGroupIcon group={group} />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate font-bold text-slate-950">{asset.title}</p>
+            {publicDescription && (
+              <p className="line-clamp-1 text-xs text-muted-foreground">{publicDescription}</p>
+            )}
+          </div>
+        </div>
+      </TableCell>
+      <TableCell>
+        <Badge className={cn("rounded-full border", assetTypeBadgeClass(asset.asset_type))}>
+          {assetTypeLabel(asset.asset_type)}
+        </Badge>
+      </TableCell>
+      <TableCell>
+        <Badge className={`rounded-full border ${GROUP_STYLES[group]}`}>
+          {GROUP_LABELS[group]}
+        </Badge>
+      </TableCell>
+      <TableCell>
+        <AssetValueCell asset={asset} link={link} value={value} onCopy={onCopy} />
+      </TableCell>
+      <TableCell>
+        <SensitiveCell
+          value={sensitiveNote}
+          canView={canViewSensitive}
+          visible={isSecretVisible}
+          onToggle={onToggleSecret}
+          onCopy={onCopy}
+        />
+      </TableCell>
+      <TableCell>
+        <AssetStatusBadge asset={asset} />
+      </TableCell>
+      <TableCell className="max-w-[180px] truncate">
+        {assetOwnerLabel(asset, teamMap, profileMap)}
+      </TableCell>
+      <TableCell className="max-w-[160px] truncate">
+        {assetAssignerLabel(asset, profileMap)}
+      </TableCell>
+      <TableCell className="whitespace-nowrap">{formatDate(asset.created_at)}</TableCell>
+      <TableCell>
+        <AssetActions
+          asset={asset}
+          canEdit={canEdit}
+          onDetail={onDetail}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      </TableCell>
+    </TableRow>
+  );
+}
+
+type AssetRowProps = {
   asset: Asset;
-  teamName?: string | null;
-  ownerName?: string | null;
-  assignerName?: string | null;
+  teamMap: Map<string, string>;
+  profileMap: Map<string, ProfileRow>;
   canEdit: boolean;
+  canViewSensitive: boolean;
+  isSecretVisible: boolean;
+  onToggleSecret: () => void;
+  onCopy: (value: string, label?: string) => void;
   onDetail: () => void;
   onEdit: () => void;
   onDelete: () => void;
-}) {
+};
+
+function AssetMobileCard(props: AssetRowProps) {
+  const {
+    asset,
+    teamMap,
+    profileMap,
+    canEdit,
+    canViewSensitive,
+    isSecretVisible,
+    onToggleSecret,
+    onCopy,
+  } = props;
   const group = asset.asset_group as AssetGroup;
-  const owner = group === "common" ? "Toàn công ty" : (ownerName ?? teamName ?? "Cá nhân");
   const link = normalizeUrl(asset.link_url ?? "");
   const value = formatAssetValue(asset);
+  const sensitiveNote = getSensitiveNote(asset);
 
   return (
-    <Card className="overflow-hidden rounded-3xl border-slate-200 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-      <CardContent className="space-y-3 p-4">
+    <Card className="overflow-hidden rounded-3xl border-slate-200 shadow-sm">
+      <CardContent className="space-y-4 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
               <AssetGroupIcon group={group} />
             </span>
             <div className="min-w-0">
-              <h3 className="line-clamp-1 text-base font-bold">{asset.title}</h3>
-              <p className="text-xs font-medium text-muted-foreground">
-                {assetTypeLabel(asset.asset_type)}
-              </p>
+              <p className="line-clamp-2 font-bold text-slate-950">{asset.title}</p>
+              <p className="text-xs text-muted-foreground">{assetTypeLabel(asset.asset_type)}</p>
             </div>
           </div>
-          <Badge className={`shrink-0 rounded-full border ${GROUP_STYLES[group]}`}>
-            {GROUP_LABELS[group]}
-          </Badge>
+          <AssetStatusBadge asset={asset} />
         </div>
-
-        <div className="rounded-2xl bg-slate-50 px-3 py-2">
-          <p className="text-xs text-muted-foreground">Giá trị</p>
-          <p className="truncate text-sm font-semibold">{value}</p>
+        <div className="grid gap-3 text-sm sm:grid-cols-2">
+          <MobileMeta label="Nhóm" value={GROUP_LABELS[group]} />
+          <MobileMeta label="Chủ sở hữu" value={assetOwnerLabel(asset, teamMap, profileMap)} />
+          <div className="sm:col-span-2">
+            <p className="mb-1 text-xs text-muted-foreground">Giá trị / Tài khoản</p>
+            <AssetValueCell asset={asset} link={link} value={value} onCopy={onCopy} />
+          </div>
+          <div className="sm:col-span-2">
+            <p className="mb-1 text-xs text-muted-foreground">Mật khẩu / Nhạy cảm</p>
+            <SensitiveCell
+              value={sensitiveNote}
+              canView={canViewSensitive}
+              visible={isSecretVisible}
+              onToggle={onToggleSecret}
+              onCopy={onCopy}
+            />
+          </div>
         </div>
-
-        <div className="flex items-center justify-between gap-3 text-sm">
-          <span className="truncate text-muted-foreground">Chủ sở hữu</span>
-          <span className="truncate font-semibold">{owner}</span>
-        </div>
-
-        <div className="flex gap-2 pt-1">
-          {link && (
-            <Button
-              className="flex-1"
-              variant="secondary"
-              onClick={() => window.open(link, "_blank", "noopener,noreferrer")}
-            >
-              Mở
-              <ExternalLink className="ml-2 h-4 w-4" />
-            </Button>
-          )}
-          <Button className="flex-1" variant="outline" onClick={onDetail}>
-            <Info className="mr-2 h-4 w-4" />
-            Chi tiết
-          </Button>
-          {canEdit && (
-            <>
-              <Button variant="outline" size="icon" onClick={onEdit}>
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="text-destructive hover:text-destructive"
-                onClick={onDelete}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </>
-          )}
-        </div>
+        <AssetActions
+          asset={asset}
+          canEdit={canEdit}
+          onDetail={props.onDetail}
+          onEdit={props.onEdit}
+          onDelete={props.onDelete}
+          align="left"
+        />
       </CardContent>
     </Card>
+  );
+}
+
+function AssetValueCell({
+  asset,
+  link,
+  value,
+  onCopy,
+}: {
+  asset: Asset;
+  link: string | null;
+  value: string;
+  onCopy: (value: string, label?: string) => void;
+}) {
+  const hasValue = Boolean(asset.value?.trim());
+  if (link && !hasValue) {
+    return (
+      <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-2.5 py-1 text-sm font-semibold text-sky-700">
+        Có liên kết
+        <button
+          type="button"
+          className="rounded-full p-1 transition hover:bg-sky-100"
+          onClick={() => window.open(link, "_blank", "noopener,noreferrer")}
+          title="Mở liên kết"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <span className="truncate font-semibold text-slate-900">{value}</span>
+      {hasValue && (
+        <button
+          type="button"
+          className="shrink-0 rounded-full p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+          onClick={() => onCopy(asset.value?.trim() ?? "", "Đã copy giá trị tài sản")}
+          title="Copy giá trị"
+        >
+          <Copy className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {link && (
+        <button
+          type="button"
+          className="shrink-0 rounded-full p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+          onClick={() => window.open(link, "_blank", "noopener,noreferrer")}
+          title="Mở liên kết"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SensitiveCell({
+  value,
+  canView,
+  visible,
+  onToggle,
+  onCopy,
+}: {
+  value: string | null;
+  canView: boolean;
+  visible: boolean;
+  onToggle: () => void;
+  onCopy: (value: string, label?: string) => void;
+}) {
+  if (!value) return <span className="text-muted-foreground">Không có</span>;
+  if (!canView) return <span className="text-muted-foreground">Không có quyền</span>;
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <span className="truncate font-semibold text-slate-900">{visible ? value : "••••••••"}</span>
+      <button
+        type="button"
+        className="shrink-0 rounded-full p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+        onClick={onToggle}
+        title={visible ? "Ẩn" : "Hiện"}
+      >
+        {visible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+      </button>
+      <button
+        type="button"
+        className="shrink-0 rounded-full p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+        onClick={() => onCopy(value, "Đã copy thông tin nhạy cảm")}
+        title="Copy"
+      >
+        <Copy className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+function AssetActions({
+  asset,
+  canEdit,
+  onDetail,
+  onEdit,
+  onDelete,
+  align = "right",
+}: {
+  asset: Asset;
+  canEdit: boolean;
+  onDetail: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  align?: "left" | "right";
+}) {
+  const link = normalizeUrl(asset.link_url ?? "");
+  return (
+    <div className={cn("flex flex-wrap items-center gap-1.5", align === "right" && "justify-end")}>
+      {link && (
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => window.open(link, "_blank", "noopener,noreferrer")}
+          title="Mở link"
+        >
+          <ExternalLink className="h-4 w-4" />
+        </Button>
+      )}
+      <Button variant="outline" size="icon" className="h-8 w-8" onClick={onDetail} title="Chi tiết">
+        <Info className="h-4 w-4" />
+      </Button>
+      {canEdit && (
+        <>
+          <Button variant="outline" size="icon" className="h-8 w-8" onClick={onEdit} title="Sửa">
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 text-destructive hover:text-destructive"
+            onClick={onDelete}
+            title="Xóa"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function MobileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-slate-50 px-3 py-2">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 truncate font-semibold text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+function AssetStatusBadge({ asset }: { asset: Asset }) {
+  const status = getAssetStatus(asset);
+  if (status === "active") {
+    return (
+      <Badge className="rounded-full border-emerald-100 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
+        {ASSET_STATUS_LABELS.active}
+      </Badge>
+    );
+  }
+  if (status === "revoked") {
+    return (
+      <Badge className="rounded-full border-red-100 bg-red-50 text-red-700 hover:bg-red-50">
+        {ASSET_STATUS_LABELS.revoked}
+      </Badge>
+    );
+  }
+  return (
+    <Badge className="rounded-full border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-50">
+      {ASSET_STATUS_LABELS.paused}
+    </Badge>
   );
 }
 
@@ -850,17 +1302,30 @@ function AssetDetailDialog({
   teamName,
   ownerName,
   assignerName,
+  canViewSensitive,
   onOpenChange,
 }: {
   asset: Asset | null;
   teamName?: string | null;
   ownerName?: string | null;
   assignerName?: string | null;
+  canViewSensitive: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const group = (asset?.asset_group ?? "flexible") as AssetGroup;
   const owner = group === "common" ? "Toàn công ty" : (ownerName ?? teamName ?? "Cá nhân");
   const link = normalizeUrl(asset?.link_url ?? "");
+  const sensitiveNote = asset ? getSensitiveNote(asset) : null;
+  const publicDescription = asset ? getPublicAssetDescription(asset) : "";
+  const [showSensitive, setShowSensitive] = useState(false);
+  const copySensitive = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success("Đã copy thông tin nhạy cảm");
+    } catch {
+      toast.error("Không thể copy dữ liệu");
+    }
+  };
 
   return (
     <Dialog open={!!asset} onOpenChange={onOpenChange}>
@@ -878,6 +1343,12 @@ function AssetDetailDialog({
             <div className="grid gap-3 text-sm md:grid-cols-2">
               <DetailMeta label="Nhóm tài sản" value={GROUP_LABELS[group]} />
               <DetailMeta label="Loại tài sản" value={assetTypeLabel(asset.asset_type)} />
+              <div className="rounded-2xl border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Trạng thái</p>
+                <div className="mt-2">
+                  <AssetStatusBadge asset={asset} />
+                </div>
+              </div>
               <DetailMeta label="Giá trị" value={asset.value || "Chưa có"} />
               <DetailMeta label="Chủ sở hữu" value={owner} />
               <DetailMeta
@@ -886,6 +1357,18 @@ function AssetDetailDialog({
               />
               <DetailMeta label="Ngày cấp" value={formatDate(asset.created_at)} />
               <DetailMeta label="Ngày cập nhật" value={formatDate(asset.updated_at)} />
+              <div className="rounded-2xl border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Mật khẩu / Ghi chú nhạy cảm</p>
+                <div className="mt-2">
+                  <SensitiveCell
+                    value={sensitiveNote}
+                    canView={canViewSensitive}
+                    visible={showSensitive}
+                    onToggle={() => setShowSensitive((current) => !current)}
+                    onCopy={(value) => void copySensitive(value)}
+                  />
+                </div>
+              </div>
               <div className="rounded-2xl border bg-muted/30 p-3">
                 <p className="text-xs text-muted-foreground">Link URL</p>
                 {link ? (
@@ -904,7 +1387,7 @@ function AssetDetailDialog({
               <div className="rounded-2xl border bg-muted/30 p-3 md:col-span-2">
                 <p className="text-xs text-muted-foreground">Mô tả</p>
                 <p className="mt-1 whitespace-pre-line font-medium">
-                  {asset.description || "Chưa có mô tả."}
+                  {publicDescription || "Chưa có mô tả."}
                 </p>
               </div>
             </div>
@@ -969,10 +1452,10 @@ function getAllowedGroups(role: AppRole | null): AssetGroup[] {
 }
 
 function canEditAsset(asset: Asset, role: AppRole | null, profileId?: string) {
-  if (role === "admin") return true;
+  if (role === "admin" || role === "manager") return true;
   if (asset.asset_group === "common") return false;
   if (asset.asset_group === "personal") return asset.created_by === profileId;
-  if (asset.asset_group === "flexible") return role === "manager" || role === "leader";
+  if (asset.asset_group === "flexible") return role === "leader";
   return false;
 }
 
@@ -991,26 +1474,39 @@ function assetTypeLabel(type: string) {
   const normalized = normalizeAssetType(type);
   if (normalized === OTHER_TYPE) return type === OTHER_TYPE ? "Khác" : type;
   if (normalized === "hotline") return "Hotline";
-  if (normalized === "odoo") return "Tài khoản Odoo";
+  if (normalized === "odoo") return "Odoo";
   if (normalized === "landing") return "Landing";
+  if (normalized === "pancake") return "Pancake";
+  if (normalized === "flowchat") return "FlowChat";
+  if (normalized === "canva") return "Canva";
+  if (normalized === "capcut") return "Capcut";
   if (normalized === "media") return "Media";
   if (normalized === "link") return "Link chung";
+  if (normalized === "ads_account") return "Tài khoản quảng cáo";
   if (normalized === "facebook") return "Facebook";
   if (normalized === "tiktok") return "TikTok";
   if (normalized === "google") return "Google";
   return type;
 }
 
+function assetTypeBadgeClass(type: string) {
+  const normalized = normalizeAssetType(type);
+  if (normalized === "hotline") return "border-emerald-100 bg-emerald-50 text-emerald-700";
+  if (normalized === "odoo") return "border-blue-100 bg-blue-50 text-blue-700";
+  if (["canva", "capcut", "media"].includes(normalized)) {
+    return "border-violet-100 bg-violet-50 text-violet-700";
+  }
+  if (["landing", "link", "pancake", "flowchat"].includes(normalized)) {
+    return "border-sky-100 bg-sky-50 text-sky-700";
+  }
+  if (normalized === "ads_account") return "border-amber-100 bg-amber-50 text-amber-700";
+  return "border-slate-200 bg-slate-50 text-slate-600";
+}
+
 function nextTitleForTypeChange(group: AssetGroup, type: string, currentTitle: string) {
   if (type === OTHER_TYPE) return "";
   if (group === "personal" && !currentTitle.trim()) return assetTypeLabel(type);
   return currentTitle;
-}
-
-function compareAssetTypeOptions(a: string, b: string) {
-  if (a === OTHER_TYPE) return 1;
-  if (b === OTHER_TYPE) return -1;
-  return assetTypeLabel(a).localeCompare(assetTypeLabel(b), "vi");
 }
 
 function isCustomTypeForGroup(group: AssetGroup, type: string) {
@@ -1025,7 +1521,21 @@ function normalizeAssetType(type: string) {
   if (normalized === "hotline") return "hotline";
   if (normalized === "odoo" || normalized.includes("odoo")) return "odoo";
   if (normalized === "landing" || normalized.includes("landing")) return "landing";
+  if (normalized === "pancake") return "pancake";
+  if (normalized === "flowchat" || normalized === "flow chat") return "flowchat";
+  if (normalized === "canva") return "canva";
+  if (normalized === "capcut" || normalized === "cap cut") return "capcut";
   if (normalized === "media") return "media";
+  if (
+    normalized === "ads" ||
+    normalized === "ads account" ||
+    normalized === "tài khoản quảng cáo" ||
+    normalized === "tai khoan quang cao" ||
+    normalized.includes("quảng cáo") ||
+    normalized.includes("quang cao")
+  ) {
+    return "ads_account";
+  }
   if (
     normalized === "link" ||
     normalized === "link chung" ||
@@ -1071,6 +1581,95 @@ function formatAssetValue(asset: Asset) {
   if (asset.value?.trim()) return asset.value.trim();
   if (asset.link_url?.trim()) return "Có liên kết";
   return "Chưa có";
+}
+
+function assetOwnerLabel(
+  asset: Asset,
+  teamMap: Map<string, string>,
+  profileMap: Map<string, ProfileRow>,
+) {
+  const group = asset.asset_group as AssetGroup;
+  if (group === "common") return "Toàn công ty";
+  if (asset.owner_profile_id) {
+    return profileMap.get(asset.owner_profile_id)?.full_name ?? "Không rõ";
+  }
+  if (asset.owner_team_id) return teamMap.get(asset.owner_team_id) ?? "Không rõ team";
+  return group === "personal" ? "Cá nhân" : "Chưa gán";
+}
+
+function assetAssignerLabel(asset: Asset, profileMap: Map<string, ProfileRow>) {
+  if (asset.assigned_by) return profileMap.get(asset.assigned_by)?.full_name ?? "Không rõ";
+  return asset.asset_group === "personal" ? "Self" : "—";
+}
+
+function getAssetStatus(asset: Asset) {
+  const parsed = parseAssetDescription(asset.description);
+  if (parsed.status) return parsed.status;
+  if (!asset.is_active) return "paused";
+  const normalized = (asset.description ?? "").toLowerCase();
+  if (
+    normalized.includes("thu hồi") ||
+    normalized.includes("thu hoi") ||
+    normalized.includes("revoked")
+  ) {
+    return "revoked";
+  }
+  return "active";
+}
+
+function getSensitiveNote(asset: Asset) {
+  return parseAssetDescription(asset.description).sensitive || null;
+}
+
+function getPublicAssetDescription(asset: Asset) {
+  return parseAssetDescription(asset.description).note;
+}
+
+function parseAssetDescription(description?: string | null) {
+  const raw = description?.trim() ?? "";
+  if (!raw) return { note: "", sensitive: "", status: null as AssetStatus | null };
+
+  const startIndex = raw.indexOf(ASSET_META_START);
+  const endIndex = raw.indexOf(ASSET_META_END);
+  if (startIndex >= 0 && endIndex > startIndex) {
+    const note = raw.slice(0, startIndex).trim();
+    const metaText = raw.slice(startIndex + ASSET_META_START.length, endIndex).trim();
+    try {
+      const meta = JSON.parse(metaText) as {
+        sensitive_note?: unknown;
+        status?: unknown;
+      };
+      return {
+        note,
+        sensitive: typeof meta.sensitive_note === "string" ? meta.sensitive_note : "",
+        status: isAssetStatus(meta.status) ? meta.status : null,
+      };
+    } catch {
+      return { note: raw, sensitive: "", status: null };
+    }
+  }
+
+  if (/(password|pass|token|secret|mật khẩu|mat khau|nhạy cảm|nhay cam)/i.test(raw)) {
+    return { note: "", sensitive: raw, status: null };
+  }
+  return { note: raw, sensitive: "", status: null };
+}
+
+function composeAssetDescription(note: string, sensitive: string, status: AssetStatus) {
+  const cleanNote = note.trim();
+  const cleanSensitive = sensitive.trim();
+  if (!cleanSensitive && status === "active") return cleanNote;
+
+  const meta = {
+    status,
+    ...(cleanSensitive ? { sensitive_note: cleanSensitive } : {}),
+  };
+  const metaBlock = `${ASSET_META_START}\n${JSON.stringify(meta)}\n${ASSET_META_END}`;
+  return [cleanNote, metaBlock].filter(Boolean).join("\n\n");
+}
+
+function isAssetStatus(value: unknown): value is AssetStatus {
+  return value === "active" || value === "paused" || value === "revoked";
 }
 
 function normalizeUrl(value: string) {
