@@ -1,3 +1,5 @@
+/// <reference types="https://esm.sh/@supabase/functions-js/src/edge-runtime.d.ts" />
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -51,21 +53,107 @@ type TelegramReplyMarkup = {
   inline_keyboard: Array<Array<{ text: string; callback_data?: string; url?: string }>>;
 };
 
+type IdRow = {
+  id: string;
+};
+
+type RoleRow = {
+  role: string;
+};
+
+type ProfileNameRow = {
+  full_name: string | null;
+  username: string | null;
+};
+
+type TeamNameRow = {
+  name: string | null;
+};
+
+type TeamMembershipRow = {
+  team_id: string | null;
+};
+
+type LeaveRequestRow = {
+  start_date: string;
+  end_date: string;
+  reason: string | null;
+  user_id: string;
+  created_at: string;
+};
+
+type TaskRow = {
+  title: string | null;
+  description: string | null;
+  deadline: string | null;
+  completion_note: string | null;
+  proof_url: string | null;
+  assigned_to: string | null;
+  team_id: string | null;
+  priority: string | null;
+  onboarding_template_id?: string | null;
+};
+
+type TaskCompletionRow = {
+  completion_date: string | null;
+  completion_note: string | null;
+  note: string | null;
+  proof_url: string | null;
+  priority: string | null;
+  user_id: string | null;
+  template_id: string | null;
+};
+
+type DailyTaskTemplateRow = {
+  id?: string;
+  title: string | null;
+  description?: string | null;
+  team_id?: string | null;
+};
+
+type ReportSlotRow = {
+  slot_name: string | null;
+  slot_time: string | null;
+};
+
+type AttendanceStatusRow = {
+  status: string | null;
+};
+
+type NotificationLookupRow = {
+  target_profile_id: string | null;
+  user_id: string | null;
+  actor_profile_id: string | null;
+  created_by: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+  type: string | null;
+  kind: string | null;
+};
+
+type TelegramAccountRow = {
+  telegram_chat_id: string | null;
+};
+
 const EMPTY_TEXT = "Không có";
 const ADMIN_MANAGER_TELEGRAM_TYPES = new Set([
   "leave_request_created",
   "task_pending_review",
   "checklist_pending_review",
-  "task_assigned",
-  "task_overdue",
-  "employee_task_missing",
-  "employee_task_late",
-  "daily_checklist_incomplete_summary",
-  "report_slot_submitted_summary",
-  "report_slot_missing_summary",
-  "report_slot_overdue_summary",
-  "daily_report_missing_summary",
 ]);
+
+const PERSONAL_TELEGRAM_TYPES = new Set([
+  "announcement",
+  "leave_request_approved",
+  "leave_request_rejected",
+  "task_approved",
+  "task_rejected",
+  "checklist_approved",
+  "checklist_rejected",
+  "task_assigned",
+]);
+
+const LEADER_REVIEW_TELEGRAM_TYPES = new Set(["task_pending_review", "checklist_pending_review"]);
 
 function canonicalTelegramType(
   type: string | null | undefined,
@@ -75,20 +163,26 @@ function canonicalTelegramType(
     return entityType === "task_completion" ? "checklist_pending_review" : "task_pending_review";
   }
   if (type === "task_completion_pending_review") return "checklist_pending_review";
+  if (type === "task_approved" && entityType === "task_completion") return "checklist_approved";
+  if (type === "task_rejected" && entityType === "task_completion") return "checklist_rejected";
   return type ?? null;
 }
 
 function shouldSendTelegramNotification(
   role: string | null | undefined,
   notificationType: string | null | undefined,
+  metadata?: Record<string, unknown> | null,
 ) {
   const normalizedRole = String(role ?? "").toLowerCase();
   const normalizedType = String(notificationType ?? "");
   if (!normalizedType) return false;
+  const recipientMode = String(metadata?.recipient_mode ?? metadata?.audience_type ?? "");
+  if (normalizedType === "announcement" && recipientMode === "all_users") return false;
   if (normalizedRole === "admin" || normalizedRole === "manager") {
     return ADMIN_MANAGER_TELEGRAM_TYPES.has(normalizedType);
   }
-  return true;
+  if (normalizedRole === "leader" && LEADER_REVIEW_TELEGRAM_TYPES.has(normalizedType)) return true;
+  return PERSONAL_TELEGRAM_TYPES.has(normalizedType);
 }
 
 function typeLabel(type: string | null | undefined) {
@@ -254,7 +348,8 @@ async function getProfileName(
     .select("full_name, username")
     .eq("id", profileId)
     .maybeSingle();
-  return data?.full_name ?? data?.username ?? EMPTY_TEXT;
+  const profile = data as ProfileNameRow | null;
+  return profile?.full_name ?? profile?.username ?? EMPTY_TEXT;
 }
 
 async function getTeamName(
@@ -267,7 +362,8 @@ async function getTeamName(
       .select("name")
       .eq("id", params.teamId)
       .maybeSingle();
-    if (data?.name) return data.name;
+    const team = data as TeamNameRow | null;
+    if (team?.name) return team.name;
   }
 
   if (!params.profileId) return EMPTY_TEXT;
@@ -279,14 +375,16 @@ async function getTeamName(
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (!data?.team_id) return EMPTY_TEXT;
+  const membership = data as TeamMembershipRow | null;
+  if (!membership?.team_id) return EMPTY_TEXT;
 
   const { data: team } = await service
     .from("teams")
     .select("name")
-    .eq("id", data.team_id)
+    .eq("id", membership.team_id)
     .maybeSingle();
-  return team?.name ?? EMPTY_TEXT;
+  const teamRow = team as TeamNameRow | null;
+  return teamRow?.name ?? EMPTY_TEXT;
 }
 
 async function getPrimaryTeamIdForProfile(
@@ -302,7 +400,8 @@ async function getPrimaryTeamIdForProfile(
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  return data?.team_id ?? null;
+  const membership = data as TeamMembershipRow | null;
+  return membership?.team_id ?? null;
 }
 
 async function routeForProfile(
@@ -311,7 +410,8 @@ async function routeForProfile(
   page: "attendance" | "tasks",
 ) {
   const { data } = await service.from("user_roles").select("role").eq("user_id", profileId);
-  const roles = new Set((data ?? []).map((row) => String(row.role)));
+  const roleRows = (data ?? []) as RoleRow[];
+  const roles = new Set(roleRows.map((row: RoleRow) => String(row.role)));
   const role = roles.has("admin")
     ? "admin"
     : roles.has("manager")
@@ -324,7 +424,8 @@ async function routeForProfile(
 
 async function getRecipientRole(service: ReturnType<typeof createClient>, profileId: string) {
   const { data } = await service.from("user_roles").select("role").eq("user_id", profileId);
-  const roles = new Set((data ?? []).map((row) => String(row.role)));
+  const roleRows = (data ?? []) as RoleRow[];
+  const roles = new Set(roleRows.map((row: RoleRow) => String(row.role)));
   if (roles.has("admin")) return "admin";
   if (roles.has("manager")) return "manager";
   if (roles.has("leader")) return "leader";
@@ -356,13 +457,14 @@ async function buildLeaveRequestMessageAndMarkup(
     .eq("id", leaveRequestId)
     .maybeSingle();
 
-  if (data) {
-    startDate = compactDateOnly(data.start_date);
-    endDate = compactDateOnly(data.end_date);
-    reason = valueOrEmpty(data.reason);
-    sentAt = compactDate(data.created_at);
-    requesterName = await getProfileName(service, data.user_id);
-    teamName = await getTeamName(service, { profileId: data.user_id });
+  const leaveRequest = data as LeaveRequestRow | null;
+  if (leaveRequest) {
+    startDate = compactDateOnly(leaveRequest.start_date);
+    endDate = compactDateOnly(leaveRequest.end_date);
+    reason = valueOrEmpty(leaveRequest.reason);
+    sentAt = compactDate(leaveRequest.created_at);
+    requesterName = await getProfileName(service, leaveRequest.user_id);
+    teamName = await getTeamName(service, { profileId: leaveRequest.user_id });
   }
 
   const text = [
@@ -422,16 +524,17 @@ async function buildReviewMessageAndMarkup(
       )
       .eq("id", entityId)
       .maybeSingle();
-    if (data) {
-      title = data.title ?? title;
-      deadline = compactDate(data.deadline);
-      description = valueOrEmpty(data.description);
-      note = valueOrEmpty(data.completion_note);
-      proofUrl = data.proof_url ?? "";
-      priority = priorityLabel(data.priority);
-      itemType = data.onboarding_template_id ? "Onboarding" : "Task";
-      assigneeName = await getProfileName(service, data.assigned_to);
-      teamName = await getTeamName(service, { teamId: data.team_id, profileId: data.assigned_to });
+    const task = data as TaskRow | null;
+    if (task) {
+      title = task.title ?? title;
+      deadline = compactDate(task.deadline);
+      description = valueOrEmpty(task.description);
+      note = valueOrEmpty(task.completion_note);
+      proofUrl = task.proof_url ?? "";
+      priority = priorityLabel(task.priority);
+      itemType = task.onboarding_template_id ? "Onboarding" : "Task";
+      assigneeName = await getProfileName(service, task.assigned_to);
+      teamName = await getTeamName(service, { teamId: task.team_id, profileId: task.assigned_to });
     }
   } else {
     const { data } = await service
@@ -439,20 +542,25 @@ async function buildReviewMessageAndMarkup(
       .select("completion_date, completion_note, note, proof_url, priority, user_id, template_id")
       .eq("id", entityId)
       .maybeSingle();
-    if (data) {
+    const completion = data as TaskCompletionRow | null;
+    if (completion) {
       const { data: template } = await service
         .from("daily_task_templates")
         .select("title, description, team_id")
-        .eq("id", data.template_id)
+        .eq("id", completion.template_id)
         .maybeSingle();
-      title = template?.title ?? title;
-      description = valueOrEmpty(template?.description);
-      deadline = compactDateOnly(data.completion_date);
-      note = valueOrEmpty(data.completion_note ?? data.note);
-      proofUrl = data.proof_url ?? "";
-      priority = priorityLabel(data.priority);
-      assigneeName = await getProfileName(service, data.user_id);
-      teamName = await getTeamName(service, { teamId: template?.team_id, profileId: data.user_id });
+      const templateRow = template as DailyTaskTemplateRow | null;
+      title = templateRow?.title ?? title;
+      description = valueOrEmpty(templateRow?.description);
+      deadline = compactDateOnly(completion.completion_date);
+      note = valueOrEmpty(completion.completion_note ?? completion.note);
+      proofUrl = completion.proof_url ?? "";
+      priority = priorityLabel(completion.priority);
+      assigneeName = await getProfileName(service, completion.user_id);
+      teamName = await getTeamName(service, {
+        teamId: templateRow?.team_id,
+        profileId: completion.user_id,
+      });
     }
   }
 
@@ -505,6 +613,7 @@ async function buildTaskMessage(service: ReturnType<typeof createClient>, payloa
     .eq("id", payload.entity_id)
     .maybeSingle();
   if (!data) return null;
+  const task = data as TaskRow;
 
   const header =
     payload.type === "task_assigned"
@@ -516,14 +625,14 @@ async function buildTaskMessage(service: ReturnType<typeof createClient>, payloa
   return [
     header,
     "",
-    `👤 Người phụ trách: ${await getProfileName(service, data.assigned_to)}`,
-    `👥 Team: ${await getTeamName(service, { teamId: data.team_id, profileId: data.assigned_to })}`,
-    `🧩 Tên việc: ${valueOrEmpty(data.title)}`,
-    `🔥 Ưu tiên: ${priorityLabel(data.priority)}`,
-    `📅 Deadline: ${compactDate(data.deadline)}`,
-    `📝 Mô tả: ${valueOrEmpty(data.description)}`,
-    `🗒 Ghi chú: ${valueOrEmpty(data.completion_note)}`,
-    `🔗 Chứng từ: ${valueOrEmpty(data.proof_url)}`,
+    `👤 Người phụ trách: ${await getProfileName(service, task.assigned_to)}`,
+    `👥 Team: ${await getTeamName(service, { teamId: task.team_id, profileId: task.assigned_to })}`,
+    `🧩 Tên việc: ${valueOrEmpty(task.title)}`,
+    `🔥 Ưu tiên: ${priorityLabel(task.priority)}`,
+    `📅 Deadline: ${compactDate(task.deadline)}`,
+    `📝 Mô tả: ${valueOrEmpty(task.description)}`,
+    `🗒 Ghi chú: ${valueOrEmpty(task.completion_note)}`,
+    `🔗 Chứng từ: ${valueOrEmpty(task.proof_url)}`,
   ].join("\n");
 }
 
@@ -542,7 +651,9 @@ async function buildReportMessage(service: ReturnType<typeof createClient>, payl
       .select("slot_name, slot_time")
       .eq("id", slotLookupId)
       .maybeSingle();
-    slotLabel = slot?.slot_name ?? (slot?.slot_time ? formatSlotTime(slot.slot_time) : slotLabel);
+    const slotRow = slot as ReportSlotRow | null;
+    slotLabel =
+      slotRow?.slot_name ?? (slotRow?.slot_time ? formatSlotTime(slotRow.slot_time) : slotLabel);
   }
 
   if (type === "report_slot_overdue") {
@@ -601,7 +712,10 @@ async function buildReminderMessage(
     ? await templatesQuery.or(`team_id.eq.${teamId},team_id.is.null`)
     : await templatesQuery.is("team_id", null);
 
-  const templateIds = (templates ?? []).map((template) => template.id);
+  const templateRows = (templates ?? []) as DailyTaskTemplateRow[];
+  const templateIds = templateRows
+    .map((template: DailyTaskTemplateRow) => template.id)
+    .filter((id): id is string => Boolean(id));
   const { data: completions } = templateIds.length
     ? await service
         .from("task_completions")
@@ -612,19 +726,21 @@ async function buildReminderMessage(
         .in("status", ["done", "completed"])
     : { data: [] };
 
-  const completedIds = new Set((completions ?? []).map((completion) => completion.template_id));
-  const missingTitles = (templates ?? [])
-    .filter((template) => !completedIds.has(template.id))
-    .map((template) => template.title)
+  const completionRows = (completions ?? []) as Array<{ template_id: string }>;
+  const completedIds = new Set(completionRows.map((completion) => completion.template_id));
+  const missingTitles = templateRows
+    .filter((template: DailyTaskTemplateRow) => !template.id || !completedIds.has(template.id))
+    .map((template: DailyTaskTemplateRow) => template.title ?? EMPTY_TEXT)
     .slice(0, 5);
+  const attendanceRow = attendance as AttendanceStatusRow | null;
 
   return [
     "⏰ Nhắc việc",
     "",
     `👤 Nhân sự: ${await getProfileName(service, userId)}`,
     `📅 Ngày: ${compactDateOnly(date)}`,
-    `✅ Điểm danh: ${attendanceStatusLabel(attendance?.status)}`,
-    `📋 Checklist hôm nay: ${completedIds.size}/${templates?.length ?? 0}`,
+    `✅ Điểm danh: ${attendanceStatusLabel(attendanceRow?.status)}`,
+    `📋 Checklist hôm nay: ${completedIds.size}/${templateRows.length}`,
     `📝 Việc còn thiếu: ${missingTitles.length ? missingTitles.join(", ") : EMPTY_TEXT}`,
   ].join("\n");
 }
@@ -674,7 +790,7 @@ function buildSummaryMessage(payload: SendPayload) {
   return null;
 }
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") {
     return Response.json({ error: "Method not allowed" }, { status: 405, headers: corsHeaders });
@@ -741,7 +857,8 @@ Deno.serve(async (req) => {
         .eq("notification_id", payload.notification_id)
         .eq("status", "sent")
         .limit(1);
-      if (previousLog?.length) {
+      const previousLogRows = (previousLog ?? []) as IdRow[];
+      if (previousLogRows.length) {
         return Response.json(
           { ok: true, status: "skipped", reason: "duplicate" },
           { headers: corsHeaders },
@@ -755,20 +872,21 @@ Deno.serve(async (req) => {
         )
         .eq("id", payload.notification_id)
         .maybeSingle();
-      payload.entity_type ??= notification?.entity_type ?? null;
-      payload.entity_id ??= notification?.entity_id ?? null;
+      const notificationRow = notification as NotificationLookupRow | null;
+      payload.entity_type ??= notificationRow?.entity_type ?? null;
+      payload.entity_id ??= notificationRow?.entity_id ?? null;
       payload.type = canonicalTelegramType(
-        payload.type ?? notification?.type ?? notification?.kind,
+        payload.type ?? notificationRow?.type ?? notificationRow?.kind,
         payload.entity_type,
       );
-      const targetId = notification?.target_profile_id ?? notification?.user_id;
+      const targetId = notificationRow?.target_profile_id ?? notificationRow?.user_id;
       const canSend =
         targetId === payload.recipient_profile_id &&
         [
-          notification?.actor_profile_id,
-          notification?.created_by,
-          notification?.target_profile_id,
-          notification?.user_id,
+          notificationRow?.actor_profile_id,
+          notificationRow?.created_by,
+          notificationRow?.target_profile_id,
+          notificationRow?.user_id,
         ].includes(callerProfile.id);
       if (!canSend) {
         return Response.json({ error: "Forbidden" }, { status: 403, headers: corsHeaders });
@@ -778,7 +896,8 @@ Deno.serve(async (req) => {
         .from("user_roles")
         .select("role")
         .eq("user_id", callerProfile.id);
-      const canSendByRole = (roles ?? []).some((row) =>
+      const roleRows = (roles ?? []) as RoleRow[];
+      const canSendByRole = roleRows.some((row: RoleRow) =>
         ["admin", "manager", "leader"].includes(String(row.role)),
       );
       const canSendOwnLeaveRequest =
@@ -792,7 +911,7 @@ Deno.serve(async (req) => {
 
     payload.type = canonicalTelegramType(payload.type, payload.entity_type);
     const recipientRole = await getRecipientRole(service, payload.recipient_profile_id);
-    if (!shouldSendTelegramNotification(recipientRole, payload.type)) {
+    if (!shouldSendTelegramNotification(recipientRole, payload.type, payload.metadata)) {
       await log("skipped", `Telegram disabled for ${recipientRole}:${payload.type ?? "unknown"}`);
       return Response.json(
         { ok: true, status: "skipped", reason: "role_scope" },
@@ -807,7 +926,8 @@ Deno.serve(async (req) => {
         .eq("dedupe_key", payload.dedupe_key)
         .eq("status", "sent")
         .limit(1);
-      if (previousDedupe?.length) {
+      const previousDedupeRows = (previousDedupe ?? []) as IdRow[];
+      if (previousDedupeRows.length) {
         return Response.json(
           { ok: true, status: "skipped", reason: "duplicate" },
           { headers: corsHeaders },
@@ -822,7 +942,8 @@ Deno.serve(async (req) => {
       .eq("is_active", true)
       .maybeSingle();
     if (accountError) throw accountError;
-    if (!account?.telegram_chat_id) {
+    const accountRow = account as TelegramAccountRow | null;
+    if (!accountRow?.telegram_chat_id) {
       await log("skipped", "Telegram account not linked");
       return Response.json({ ok: true, status: "skipped" }, { headers: corsHeaders });
     }
@@ -851,8 +972,8 @@ Deno.serve(async (req) => {
         .filter((line, index, lines) => line || lines[index - 1] !== "")
         .join("\n");
 
-    await sendTelegramMessage(account.telegram_chat_id, text, interactiveMessage?.replyMarkup);
-    await log("sent", null, account.telegram_chat_id);
+    await sendTelegramMessage(accountRow.telegram_chat_id, text, interactiveMessage?.replyMarkup);
+    await log("sent", null, accountRow.telegram_chat_id);
     return Response.json({ ok: true, status: "sent" }, { headers: corsHeaders });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

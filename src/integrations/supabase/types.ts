@@ -909,6 +909,7 @@ export type Database = {
           created_at: string;
           end_date: string;
           id: string;
+          leave_type: string;
           reason: string;
           review_note: string | null;
           reviewed_at: string | null;
@@ -922,6 +923,7 @@ export type Database = {
           created_at?: string;
           end_date: string;
           id?: string;
+          leave_type?: string;
           reason: string;
           review_note?: string | null;
           reviewed_at?: string | null;
@@ -935,6 +937,7 @@ export type Database = {
           created_at?: string;
           end_date?: string;
           id?: string;
+          leave_type?: string;
           reason?: string;
           review_note?: string | null;
           reviewed_at?: string | null;

@@ -77,6 +77,7 @@ type AttendanceStatus =
 
 type LeaveStatus = "pending" | "approved" | "rejected";
 type ReviewDecision = "approved" | "rejected";
+type LeaveType = "full_day" | "half_day" | "early_leave" | "late_arrival";
 
 const attendanceLabels: Record<string, string> = {
   present: "Đã điểm danh",
@@ -91,6 +92,17 @@ const leaveLabels: Record<string, string> = {
   approved: "Đã duyệt",
   rejected: "Từ chối",
 };
+
+const leaveTypeLabels: Record<LeaveType, string> = {
+  full_day: "Nghỉ cả ngày",
+  half_day: "Nghỉ nửa ngày",
+  early_leave: "Về sớm",
+  late_arrival: "Đến muộn",
+};
+
+function leaveTypeLabel(type: string | null | undefined) {
+  return leaveTypeLabels[(type as LeaveType) || "full_day"] ?? "Nghỉ cả ngày";
+}
 
 function addDays(date: string, days: number) {
   const next = new Date(`${date}T00:00:00`);
@@ -126,6 +138,20 @@ function dayRangeIso(date: string) {
   const end = new Date(start);
   end.setDate(start.getDate() + 1);
   return { start: start.toISOString(), end: end.toISOString() };
+}
+
+function tomorrowStr(today: string) {
+  return addDays(today, 1);
+}
+
+function enumerateDates(from: string, to: string) {
+  const dates: string[] = [];
+  let cursor = from;
+  while (cursor <= to) {
+    dates.push(cursor);
+    cursor = addDays(cursor, 1);
+  }
+  return dates;
 }
 
 function daysInMonth(month: string) {
@@ -201,6 +227,12 @@ function isAttendanceTrackedMembership(membership: MembershipLite) {
   return ATTENDANCE_TRACKED_TEAM_ROLES.has(String(membership.role_in_team ?? ""));
 }
 
+function isRejectedLeaveVisible(leave: LeaveRequest, now = new Date()) {
+  if (leave.status !== "rejected") return true;
+  if (!leave.reviewed_at) return true;
+  return now.getTime() - new Date(leave.reviewed_at).getTime() < 24 * 60 * 60 * 1000;
+}
+
 function statusBadgeClass(status: string | null) {
   if (status === "present" || status === "approved" || status === "approved_leave") {
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
@@ -272,7 +304,13 @@ export function AttendanceWorkspace() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewingLeave, setReviewingLeave] = useState<LeaveRequest | null>(null);
   const [reviewDecision, setReviewDecision] = useState<ReviewDecision>("approved");
-  const [leaveForm, setLeaveForm] = useState({ start_date: today, end_date: today, reason: "" });
+  const initialLeaveDate = tomorrowStr(today);
+  const [leaveForm, setLeaveForm] = useState({
+    start_date: initialLeaveDate,
+    end_date: initialLeaveDate,
+    leave_type: "full_day" as LeaveType,
+    reason: "",
+  });
   const [reviewNote, setReviewNote] = useState("");
 
   const isEmployeeView = role === "employee";
@@ -355,7 +393,7 @@ export function AttendanceWorkspace() {
         attendance,
         completions,
         leaves,
-        dayTasks,
+        monthTasks,
       ] = await Promise.all([
         supabase
           .from("daily_task_templates")
@@ -393,8 +431,8 @@ export function AttendanceWorkspace() {
               .from("tasks")
               .select("id, assigned_to, status, deadline")
               .in("assigned_to", visibleUserIds)
-              .gte("deadline", dayRangeIso(selectedDate).start)
-              .lt("deadline", dayRangeIso(selectedDate).end)
+              .gte("deadline", dayRangeIso(from).start)
+              .lt("deadline", dayRangeIso(to).end)
           : Promise.resolve({ data: [], error: null }),
       ]);
 
@@ -402,7 +440,7 @@ export function AttendanceWorkspace() {
       if (attendance.error) throw attendance.error;
       if (completions.error) throw completions.error;
       if (leaves.error) throw leaves.error;
-      if (dayTasks.error) throw dayTasks.error;
+      if (monthTasks.error) throw monthTasks.error;
 
       return {
         teams,
@@ -412,8 +450,8 @@ export function AttendanceWorkspace() {
         templates: templates ?? [],
         attendance: attendance.data ?? [],
         completions: completions.data ?? [],
-        leaveRequests: leaves.data ?? [],
-        dayTasks: (dayTasks.data ?? []) as TaskRow[],
+        leaveRequests: (leaves.data ?? []).filter((leave) => isRejectedLeaveVisible(leave)),
+        dayTasks: (monthTasks.data ?? []) as TaskRow[],
       };
     },
   });
@@ -427,6 +465,8 @@ export function AttendanceWorkspace() {
       .forEach((record) => map.set(record.attendance_date, record));
     return map;
   }, [data?.attendance, profile?.id]);
+  const todayAttendance = recordsByDate.get(today);
+  const hasCheckedInToday = todayAttendance?.status === "present";
 
   const filteredProfiles = useMemo(() => {
     const selectedTeamUserIds =
@@ -532,6 +572,10 @@ export function AttendanceWorkspace() {
       toast.error("Admin/Manager không cần điểm danh");
       return;
     }
+    if (hasCheckedInToday) {
+      toast.info("Bạn đã điểm danh hôm nay");
+      return;
+    }
     const { error } = await supabase.from("attendance_records").upsert(
       {
         user_id: profile.id,
@@ -551,9 +595,41 @@ export function AttendanceWorkspace() {
 
   const submitLeaveRequest = async () => {
     if (!profile) return;
+    if (leaveForm.start_date <= today || leaveForm.end_date <= today) {
+      toast.error("Đơn xin nghỉ cần được tạo trước ít nhất 1 ngày.");
+      return;
+    }
+    if (leaveForm.end_date < leaveForm.start_date) {
+      toast.error("Ngày kết thúc không hợp lệ");
+      return;
+    }
     if (!leaveForm.reason.trim()) {
       toast.error("Nhập lý do xin nghỉ");
       return;
+    }
+    const { data: existingLeaves, error: existingError } = await supabase
+      .from("leave_requests")
+      .select("start_date, end_date, status")
+      .eq("user_id", profile.id)
+      .lte("start_date", leaveForm.end_date)
+      .gte("end_date", leaveForm.start_date);
+    if (existingError) {
+      toast.error(existingError.message);
+      return;
+    }
+    const requestedDates = enumerateDates(leaveForm.start_date, leaveForm.end_date);
+    for (const date of requestedDates) {
+      const overlapping = (existingLeaves ?? []).filter(
+        (leave) => leave.start_date <= date && leave.end_date >= date,
+      );
+      if (overlapping.some((leave) => leave.status === "pending")) {
+        toast.error("Bạn đang có đơn xin nghỉ chờ duyệt trong ngày này");
+        return;
+      }
+      if (overlapping.length >= 2) {
+        toast.error("Mỗi ngày chỉ được tạo tối đa 2 đơn xin nghỉ");
+        return;
+      }
     }
     const { data: leaveRequest, error } = await supabase
       .from("leave_requests")
@@ -561,6 +637,7 @@ export function AttendanceWorkspace() {
         user_id: profile.id,
         start_date: leaveForm.start_date,
         end_date: leaveForm.end_date,
+        leave_type: leaveForm.leave_type,
         reason: leaveForm.reason.trim(),
         status: "pending" satisfies LeaveStatus,
       })
@@ -576,7 +653,12 @@ export function AttendanceWorkspace() {
       });
     }
     setLeaveOpen(false);
-    setLeaveForm({ start_date: today, end_date: today, reason: "" });
+    setLeaveForm({
+      start_date: initialLeaveDate,
+      end_date: initialLeaveDate,
+      leave_type: "full_day",
+      reason: "",
+    });
     toast.success("Đã gửi đơn xin nghỉ");
     await refetch();
   };
@@ -638,13 +720,15 @@ export function AttendanceWorkspace() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
-          <Button variant="outline" onClick={() => setLeaveOpen(true)}>
-            Xin nghỉ phép
-          </Button>
           {canSelfCheckIn ? (
-            <Button onClick={checkInToday}>
+            <Button variant="outline" onClick={() => setLeaveOpen(true)}>
+              Xin nghỉ phép
+            </Button>
+          ) : null}
+          {canSelfCheckIn ? (
+            <Button onClick={checkInToday} disabled={hasCheckedInToday}>
               <UserCheck className="mr-2 h-4 w-4" />
-              Điểm danh hôm nay
+              {hasCheckedInToday ? "Đã điểm danh" : "Điểm danh"}
             </Button>
           ) : null}
         </div>
@@ -665,6 +749,7 @@ export function AttendanceWorkspace() {
           memberships={data?.memberships ?? []}
           profileId={profile.id}
           leaveRequests={data?.leaveRequests ?? []}
+          dayTasks={data?.dayTasks ?? []}
         />
       ) : (
         <ManagementAttendanceView
@@ -703,16 +788,46 @@ export function AttendanceWorkspace() {
             <Field label="Từ ngày">
               <Input
                 type="date"
+                min={initialLeaveDate}
                 value={leaveForm.start_date}
-                onChange={(event) => setLeaveForm({ ...leaveForm, start_date: event.target.value })}
+                onChange={(event) =>
+                  setLeaveForm({
+                    ...leaveForm,
+                    start_date: event.target.value,
+                    end_date:
+                      leaveForm.end_date < event.target.value
+                        ? event.target.value
+                        : leaveForm.end_date,
+                  })
+                }
               />
             </Field>
             <Field label="Đến ngày">
               <Input
                 type="date"
+                min={leaveForm.start_date || initialLeaveDate}
                 value={leaveForm.end_date}
                 onChange={(event) => setLeaveForm({ ...leaveForm, end_date: event.target.value })}
               />
+            </Field>
+            <Field label="Loại đơn">
+              <Select
+                value={leaveForm.leave_type}
+                onValueChange={(value) =>
+                  setLeaveForm({ ...leaveForm, leave_type: value as LeaveType })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(leaveTypeLabels).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </Field>
             <div className="md:col-span-2">
               <Label>Lý do</Label>
@@ -796,6 +911,7 @@ function EmployeeAttendanceView({
   memberships,
   profileId,
   leaveRequests,
+  dayTasks,
 }: {
   month: string;
   setMonth: (value: string) => void;
@@ -806,11 +922,25 @@ function EmployeeAttendanceView({
   memberships: MembershipLite[];
   profileId: string;
   leaveRequests: LeaveRequest[];
+  dayTasks: TaskRow[];
 }) {
   const monthDays = daysInMonth(month);
   const presentCount = monthDays.filter(
     (day) => recordsByDate.get(day.date)?.status === "present",
   ).length;
+  const approvedLeaveDays = useMemo(() => {
+    const weights = new Map<string, number>();
+    for (const leave of leaveRequests.filter((request) => request.status === "approved")) {
+      for (const date of enumerateDates(leave.start_date, leave.end_date)) {
+        const weight =
+          leave.leave_type === "full_day" ? 1 : leave.leave_type === "half_day" ? 0.5 : 0;
+        weights.set(date, Math.max(weights.get(date) ?? 0, weight));
+      }
+    }
+    return Array.from(weights.entries())
+      .filter(([date]) => date.startsWith(month))
+      .reduce((sum, [, weight]) => sum + weight, 0);
+  }, [leaveRequests, month]);
   const streak = computeStreak(Array.from(recordsByDate.values()));
   const historyDays = monthDays
     .filter((day) => day.date <= today)
@@ -824,6 +954,15 @@ function EmployeeAttendanceView({
     memberships,
     completions,
   });
+  const taskDeadlineDates = useMemo(
+    () =>
+      new Set(
+        dayTasks
+          .filter((task) => task.deadline)
+          .map((task) => toDateKey(new Date(task.deadline as string))),
+      ),
+    [dayTasks],
+  );
 
   return (
     <ScrollArea className="space-y-4 md:pr-2">
@@ -863,6 +1002,16 @@ function EmployeeAttendanceView({
         </CardContent>
       </Card>
 
+      <div className="grid gap-3 md:grid-cols-2">
+        <StatCard icon={UserCheck} label="Số ngày đã điểm danh trong tháng" value={presentCount} />
+        <StatCard
+          icon={ShieldCheck}
+          label="Số ngày nghỉ phép trong tháng"
+          value={approvedLeaveDays}
+          tone="amber"
+        />
+      </div>
+
       <div className="grid gap-4 xl:grid-cols-[minmax(280px,0.85fr)_minmax(0,1.45fr)]">
         <Card className="rounded-3xl">
           <CardHeader className="flex flex-row items-center justify-between gap-3">
@@ -882,14 +1031,21 @@ function EmployeeAttendanceView({
               {monthDays.map((day) => {
                 const record = recordsByDate.get(day.date);
                 const isToday = day.date === today;
+                const leave = leaveRequests.find(
+                  (request) =>
+                    request.status === "approved" &&
+                    request.start_date <= day.date &&
+                    request.end_date >= day.date,
+                );
+                const hasDeadline = taskDeadlineDates.has(day.date);
                 return (
                   <div
                     key={day.date}
                     className={cn(
-                      "flex aspect-square items-center justify-center rounded-2xl border text-sm font-semibold",
+                      "relative flex aspect-square items-center justify-center rounded-2xl border text-sm font-semibold",
                       record?.status === "present" &&
                         "border-emerald-200 bg-emerald-50 text-emerald-700",
-                      record?.status?.includes("leave") &&
+                      (record?.status?.includes("leave") || leave) &&
                         "border-violet-200 bg-violet-50 text-violet-700",
                       record?.status === "absent" && "border-rose-200 bg-rose-50 text-rose-700",
                       isToday && "ring-2 ring-violet-400",
@@ -897,9 +1053,27 @@ function EmployeeAttendanceView({
                     title={record ? attendanceLabels[record.status] : "Chưa điểm danh"}
                   >
                     {day.day}
+                    <span className="absolute bottom-1 left-1/2 flex -translate-x-1/2 gap-0.5">
+                      {record?.status === "present" ? (
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      ) : null}
+                      {hasDeadline ? (
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                      ) : null}
+                      {leave ? <span className="h-1.5 w-1.5 rounded-full bg-violet-500" /> : null}
+                      {!record && !leave && day.date < today ? (
+                        <span className="h-1.5 w-1.5 rounded-full bg-rose-300" />
+                      ) : null}
+                    </span>
                   </div>
                 );
               })}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-3 text-xs text-muted-foreground">
+              <LegendDot className="bg-emerald-500" label="Đã điểm danh" />
+              <LegendDot className="bg-amber-400" label="Có deadline" />
+              <LegendDot className="bg-violet-500" label="Nghỉ phép" />
+              <LegendDot className="bg-rose-300" label="Chưa điểm danh" />
             </div>
             <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-sm font-medium text-slate-700">
               ✅ Điểm danh đầy đủ: {presentCount}/{monthDays.length} ngày
@@ -951,9 +1125,17 @@ function EmployeeAttendanceView({
                       <TableCell>
                         {leave ? (
                           <div className="space-y-1">
-                            <Badge variant="outline" className={statusBadgeClass(leave.status)}>
-                              {leaveLabels[leave.status]}
-                            </Badge>
+                            <div className="flex flex-wrap gap-1.5">
+                              <Badge variant="outline" className={statusBadgeClass(leave.status)}>
+                                {leaveLabels[leave.status]}
+                              </Badge>
+                              <Badge
+                                variant="outline"
+                                className="border-slate-200 bg-slate-50 text-slate-600"
+                              >
+                                {leaveTypeLabel(leave.leave_type)}
+                              </Badge>
+                            </div>
                             {leave.review_note ? (
                               <p className="max-w-xs text-xs text-muted-foreground">
                                 {leave.review_note}
@@ -1160,7 +1342,10 @@ function ManagementAttendanceView({
                   memberships,
                   completions,
                 });
-                const userTasks = dayTasks.filter((task) => task.assigned_to === user.id);
+                const userTasks = dayTasks.filter(
+                  (task) =>
+                    task.assigned_to === user.id && task.deadline?.slice(0, 10) === selectedDate,
+                );
                 const doneTasks = userTasks.filter((task) => isDoneStatus(task.status)).length;
                 const leave = leaveRequests.find(
                   (request) =>
@@ -1203,9 +1388,17 @@ function ManagementAttendanceView({
                     <TableCell className="pr-6">
                       {leave ? (
                         <div className="flex items-center gap-2">
-                          <Badge variant="outline" className={statusBadgeClass(leave.status)}>
-                            {leaveLabels[leave.status]}
-                          </Badge>
+                          <div className="flex flex-wrap gap-1.5">
+                            <Badge variant="outline" className={statusBadgeClass(leave.status)}>
+                              {leaveLabels[leave.status]}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="border-slate-200 bg-slate-50 text-slate-600"
+                            >
+                              {leaveTypeLabel(leave.leave_type)}
+                            </Badge>
+                          </div>
                           {leave.status === "pending" && canReviewLeave(leave) ? (
                             <>
                               <Button

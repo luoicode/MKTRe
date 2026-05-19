@@ -1,3 +1,5 @@
+/// <reference types="https://esm.sh/@supabase/functions-js/src/edge-runtime.d.ts" />
+
 // Bootstrap default admin account if none exists. Safe to call repeatedly.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
@@ -13,7 +15,7 @@ const ADMIN_FULLNAME = "System Admin";
 const sanitize = (u: string) => u.toLowerCase().replace(/[^a-z0-9._-]/g, "_");
 const ADMIN_EMAIL = `${sanitize(ADMIN_USERNAME)}@mktre.local`;
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {

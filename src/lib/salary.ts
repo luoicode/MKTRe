@@ -12,6 +12,13 @@ export type SalaryAttendanceRecord = {
   status: string | null;
 };
 
+export type SalaryLeaveRequest = {
+  start_date: string;
+  end_date: string;
+  status: string | null;
+  leave_type: string | null;
+};
+
 export type SalaryEstimate = {
   rule: SalaryRule | null;
   attendedDays: number;
@@ -33,6 +40,12 @@ function toDateString(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function addDays(date: string, days: number) {
+  const next = toLocalDate(date);
+  next.setDate(next.getDate() + days);
+  return toDateString(next);
 }
 
 export function todayLocalDateString() {
@@ -80,6 +93,7 @@ export function calculateSalaryEstimate({
   revenue,
   kpiTarget,
   attendanceRecords,
+  leaveRequests = [],
   from,
   to,
   today = todayLocalDateString(),
@@ -89,16 +103,39 @@ export function calculateSalaryEstimate({
   revenue: number;
   kpiTarget: number;
   attendanceRecords: SalaryAttendanceRecord[];
+  leaveRequests?: SalaryLeaveRequest[];
   from: string;
   to: string;
   today?: string;
 }): SalaryEstimate {
   const expectedWorkdays = getExpectedWorkdaysForRange(from, to, today);
-  const attendedDays = new Set(
+  const presentDates = new Set(
     attendanceRecords
       .filter((record) => record.status === "present")
       .map((record) => record.attendance_date),
-  ).size;
+  );
+  const approvedLeaves = leaveRequests.filter((request) => request.status === "approved");
+  const leaveWeightByDate = new Map<string, number>();
+  for (const request of approvedLeaves) {
+    let cursor = request.start_date;
+    while (cursor <= request.end_date) {
+      const weight =
+        request.leave_type === "full_day" ? 0 : request.leave_type === "half_day" ? 0.5 : 1;
+      leaveWeightByDate.set(cursor, Math.min(leaveWeightByDate.get(cursor) ?? 1, weight));
+      cursor = addDays(cursor, 1);
+    }
+  }
+  let attendedDays = 0;
+  let cursor = from;
+  const effectiveTo = from <= today && today <= to ? today : to;
+  while (cursor <= effectiveTo) {
+    if (leaveWeightByDate.has(cursor)) {
+      attendedDays += leaveWeightByDate.get(cursor) ?? 0;
+    } else if (presentDates.has(cursor)) {
+      attendedDays += 1;
+    }
+    cursor = addDays(cursor, 1);
+  }
   const hasCheckedInToday = attendanceRecords.some(
     (record) => record.attendance_date === today && record.status === "present",
   );

@@ -18,16 +18,20 @@ const ADMIN_MANAGER_TELEGRAM_TYPES = new Set([
   "leave_request_created",
   "task_pending_review",
   "checklist_pending_review",
-  "task_assigned",
-  "task_overdue",
-  "employee_task_missing",
-  "employee_task_late",
-  "daily_checklist_incomplete_summary",
-  "report_slot_submitted_summary",
-  "report_slot_missing_summary",
-  "report_slot_overdue_summary",
-  "daily_report_missing_summary",
 ]);
+
+const PERSONAL_TELEGRAM_TYPES = new Set([
+  "announcement",
+  "leave_request_approved",
+  "leave_request_rejected",
+  "task_approved",
+  "task_rejected",
+  "checklist_approved",
+  "checklist_rejected",
+  "task_assigned",
+]);
+
+const LEADER_REVIEW_TELEGRAM_TYPES = new Set(["task_pending_review", "checklist_pending_review"]);
 
 type TelegramRecipientRole = "admin" | "manager" | "leader" | "employee";
 
@@ -38,14 +42,18 @@ export function getTelegramTypeLabel(type: string | null | undefined) {
 export function shouldSendTelegramNotification(
   role: string | null | undefined,
   notificationType: string | null | undefined,
+  metadata?: Record<string, unknown> | null,
 ) {
   const normalizedRole = String(role ?? "").toLowerCase();
   const normalizedType = String(notificationType ?? "");
   if (!normalizedType) return false;
+  const recipientMode = String(metadata?.recipient_mode ?? metadata?.audience_type ?? "");
+  if (normalizedType === "announcement" && recipientMode === "all_users") return false;
   if (normalizedRole === "admin" || normalizedRole === "manager") {
     return ADMIN_MANAGER_TELEGRAM_TYPES.has(normalizedType);
   }
-  return true;
+  if (normalizedRole === "leader" && LEADER_REVIEW_TELEGRAM_TYPES.has(normalizedType)) return true;
+  return PERSONAL_TELEGRAM_TYPES.has(normalizedType);
 }
 
 function canonicalTelegramType(
@@ -56,6 +64,8 @@ function canonicalTelegramType(
     return entityType === "task_completion" ? "checklist_pending_review" : "task_pending_review";
   }
   if (type === "task_completion_pending_review") return "checklist_pending_review";
+  if (type === "task_approved" && entityType === "task_completion") return "checklist_approved";
+  if (type === "task_rejected" && entityType === "task_completion") return "checklist_rejected";
   return type ?? null;
 }
 
@@ -147,7 +157,7 @@ export async function sendTelegramForNotification(notification: {
     notification.entity_type ?? null,
   );
   const recipientRole = await getRecipientRole(recipientId);
-  if (!shouldSendTelegramNotification(recipientRole, telegramType)) {
+  if (!shouldSendTelegramNotification(recipientRole, telegramType, metadata)) {
     console.debug("[MKTRe telegram] skipped by role scope", {
       notificationId: notification.id,
       recipientRole,

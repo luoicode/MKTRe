@@ -36,6 +36,7 @@ import {
   calculateSalaryEstimate,
   type SalaryAttendanceRecord,
   type SalaryEstimate,
+  type SalaryLeaveRequest,
   type SalaryRole,
   type SalaryRule,
 } from "@/lib/salary";
@@ -95,9 +96,10 @@ export function AnalyticsDashboard({
 
       let salaryRules: SalaryRule[] = [];
       let salaryAttendance: SalaryAttendanceRecord[] = [];
+      let salaryLeaveRequests: SalaryLeaveRequest[] = [];
       const salaryUserId = scope === "employee" || scope === "leader" ? profile!.id : null;
       if (salaryUserId) {
-        const [rulesResult, attendanceResult] = await Promise.all([
+        const [rulesResult, attendanceResult, leaveResult] = await Promise.all([
           supabase
             .from("salary_rules")
             .select("role, revenue_min, revenue_max, base_salary, milestone_bonus, over_kpi_bonus")
@@ -108,11 +110,20 @@ export function AnalyticsDashboard({
             .eq("user_id", salaryUserId)
             .gte("attendance_date", from)
             .lte("attendance_date", to),
+          supabase
+            .from("leave_requests")
+            .select("start_date, end_date, status, leave_type")
+            .eq("user_id", salaryUserId)
+            .eq("status", "approved")
+            .lte("start_date", to)
+            .gte("end_date", from),
         ]);
         if (rulesResult.error) throw rulesResult.error;
         if (attendanceResult.error) throw attendanceResult.error;
+        if (leaveResult.error) throw leaveResult.error;
         salaryRules = rulesResult.data ?? [];
         salaryAttendance = attendanceResult.data ?? [];
+        salaryLeaveRequests = leaveResult.data ?? [];
       }
 
       return {
@@ -123,6 +134,7 @@ export function AnalyticsDashboard({
         teamIds: teamIds ?? [],
         salaryRules,
         salaryAttendance,
+        salaryLeaveRequests,
       };
     },
   });
@@ -159,6 +171,7 @@ export function AnalyticsDashboard({
         revenue: scope === "leader" ? leaderPersonalTotals.total_revenue : totals.total_revenue,
         kpiTarget: scope === "leader" ? leaderPersonalKpiRevenueTarget : kpiRevenueTarget,
         attendanceRecords: data?.salaryAttendance ?? [],
+        leaveRequests: data?.salaryLeaveRequests ?? [],
         from,
         to,
       })

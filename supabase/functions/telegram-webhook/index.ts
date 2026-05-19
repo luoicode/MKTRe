@@ -1,3 +1,5 @@
+/// <reference types="https://esm.sh/@supabase/functions-js/src/edge-runtime.d.ts" />
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -29,6 +31,32 @@ type CallbackPayload = {
   action: CallbackAction;
   entityType: "task" | "task_completion" | "leave_request";
   entityId: string;
+};
+
+type TelegramAccountRow = {
+  profile_id: string;
+};
+
+type ReviewerProfileRow = {
+  full_name: string | null;
+  username: string | null;
+};
+
+type LinkCodeRow = {
+  id: string;
+  profile_id: string;
+  expires_at: string;
+  used_at: string | null;
+};
+
+type NotificationRow = {
+  id: string;
+  target_profile_id: string | null;
+  user_id: string | null;
+  title: string;
+  message: string | null;
+  body: string | null;
+  type: string | null;
 };
 
 function parseStartCode(text: string | undefined) {
@@ -257,7 +285,8 @@ async function handleCallback(service: ReturnType<typeof createClient>, update: 
     .eq("is_active", true)
     .maybeSingle();
 
-  if (accountError || !account?.profile_id) {
+  const accountRow = account as TelegramAccountRow | null;
+  if (accountError || !accountRow?.profile_id) {
     await logCallback("denied", null, accountError?.message ?? "Telegram account not linked");
     await telegramApi("answerCallbackQuery", {
       callback_query_id: callbackId,
@@ -267,7 +296,7 @@ async function handleCallback(service: ReturnType<typeof createClient>, update: 
     return Response.json({ ok: true }, { headers: corsHeaders });
   }
 
-  const reviewerProfileId = account.profile_id;
+  const reviewerProfileId = accountRow.profile_id;
   const isLeaveRequest = parsed.entityType === "leave_request";
   const approved = parsed.action === "approve_task" || parsed.action === "approve_leave";
   const { data: result, error: reviewError } = isLeaveRequest
@@ -327,7 +356,8 @@ async function handleCallback(service: ReturnType<typeof createClient>, update: 
     .select("full_name, username")
     .eq("id", reviewerProfileId)
     .maybeSingle();
-  const reviewerName = reviewer?.full_name ?? reviewer?.username ?? "MKTRe";
+  const reviewerRow = reviewer as ReviewerProfileRow | null;
+  const reviewerName = reviewerRow?.full_name ?? reviewerRow?.username ?? "MKTRe";
 
   await telegramApi("answerCallbackQuery", {
     callback_query_id: callbackId,
@@ -358,14 +388,15 @@ async function handleCallback(service: ReturnType<typeof createClient>, update: 
     .order("created_at", { ascending: false })
     .limit(3);
 
+  const notificationRows = (notifications ?? []) as NotificationRow[];
   await Promise.allSettled(
-    (notifications ?? []).map((row) => sendNotificationTelegram(service, row)),
+    notificationRows.map((row: NotificationRow) => sendNotificationTelegram(service, row)),
   );
 
   return Response.json({ ok: true }, { headers: corsHeaders });
 }
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") {
     return Response.json({ error: "Method not allowed" }, { status: 405, headers: corsHeaders });
@@ -422,16 +453,19 @@ Deno.serve(async (req) => {
     console.log("[telegram-webhook] link code lookup", {
       code: maskCode(code),
       found: Boolean(linkCode),
-      used: Boolean(linkCode?.used_at),
-      expired: linkCode ? new Date(linkCode.expires_at).getTime() < Date.now() : null,
+      used: Boolean((linkCode as LinkCodeRow | null)?.used_at),
+      expired: linkCode
+        ? new Date((linkCode as LinkCodeRow).expires_at).getTime() < Date.now()
+        : null,
       error: codeError?.message ?? null,
     });
 
+    const linkCodeRow = linkCode as LinkCodeRow | null;
     if (
       codeError ||
-      !linkCode ||
-      linkCode.used_at ||
-      new Date(linkCode.expires_at).getTime() < Date.now()
+      !linkCodeRow ||
+      linkCodeRow.used_at ||
+      new Date(linkCodeRow.expires_at).getTime() < Date.now()
     ) {
       await sendTelegramMessage(chatId, "Mã liên kết không hợp lệ hoặc đã hết hạn.");
       return Response.json({ ok: true, linked: false }, { headers: corsHeaders });
@@ -440,13 +474,13 @@ Deno.serve(async (req) => {
     const { error: deleteError } = await service
       .from("telegram_accounts")
       .delete()
-      .or(`profile_id.eq.${linkCode.profile_id},telegram_chat_id.eq.${chatId}`);
+      .or(`profile_id.eq.${linkCodeRow.profile_id},telegram_chat_id.eq.${chatId}`);
     if (deleteError) throw deleteError;
 
     const linkedAt = new Date().toISOString();
     const { error: accountError } = await service.from("telegram_accounts").upsert(
       {
-        profile_id: linkCode.profile_id,
+        profile_id: linkCodeRow.profile_id,
         telegram_chat_id: chatId,
         telegram_user_id: telegramUserId,
         telegram_username: telegramUsername,
@@ -460,11 +494,11 @@ Deno.serve(async (req) => {
     const { error: markUsedError } = await service
       .from("telegram_link_codes")
       .update({ used_at: linkedAt })
-      .eq("id", linkCode.id);
+      .eq("id", linkCodeRow.id);
     if (markUsedError) throw markUsedError;
 
     console.log("[telegram-webhook] linked account", {
-      profileId: linkCode.profile_id,
+      profileId: linkCodeRow.profile_id,
       chatId,
       telegramUserId,
       username: telegramUsername,

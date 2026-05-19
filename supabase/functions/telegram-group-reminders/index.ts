@@ -1,3 +1,5 @@
+/// <reference types="https://esm.sh/@supabase/functions-js/src/edge-runtime.d.ts" />
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -35,6 +37,68 @@ type OperationalUser = {
   full_name: string | null;
   username: string | null;
   teamIds: string[];
+};
+
+type IdRow = {
+  id: string;
+};
+
+type UserRoleRow = {
+  user_id: string;
+  role: string;
+};
+
+type ProfileRow = {
+  id: string;
+  full_name: string | null;
+  username: string | null;
+  status: string | null;
+};
+
+type TeamMembershipRow = {
+  user_id: string;
+  team_id: string | null;
+};
+
+type ReportSlotRow = {
+  id: string;
+  slot_name: string | null;
+  slot_time: string | null;
+};
+
+type AttendanceUserRow = {
+  user_id: string;
+};
+
+type SlotReportUserRow = {
+  user_id: string;
+};
+
+type DailyTaskTemplateRow = {
+  id: string;
+  team_id: string | null;
+};
+
+type TaskCompletionRow = {
+  template_id: string;
+  user_id: string;
+  completed: boolean | null;
+  status: string | null;
+};
+
+type TaskDeadlineRow = {
+  assigned_to: string | null;
+  status: string | null;
+};
+
+type AdminProfileRow = {
+  id: string;
+  full_name: string | null;
+  username: string | null;
+};
+
+type RoleOnlyRow = {
+  role: string;
 };
 
 function env(name: string) {
@@ -231,7 +295,8 @@ async function sendGroupTelegramMessage(
       .eq("status", "sent")
       .limit(1),
   );
-  if (previous?.length) {
+  const previousRows = (previous ?? []) as IdRow[];
+  if (previousRows.length) {
     console.log("[group-reminder] skipped: already_sent", { reminderType, reminderKey });
     return { status: "skipped" as const, reason: "already_sent" };
   }
@@ -310,7 +375,10 @@ async function getOperationalUsers(ctx: DebugContext, service: ReturnType<typeof
   if (profilesError) throw profilesError;
 
   const roleMap = new Map<string, Set<string>>();
-  for (const row of roles ?? []) {
+  const roleRows = (roles ?? []) as UserRoleRow[];
+  const profileRows = (profiles ?? []) as ProfileRow[];
+
+  for (const row of roleRows) {
     const set = roleMap.get(row.user_id) ?? new Set<string>();
     set.add(String(row.role));
     roleMap.set(row.user_id, set);
@@ -325,25 +393,26 @@ async function getOperationalUsers(ctx: DebugContext, service: ReturnType<typeof
 
   const { data: memberships, error: membershipsError } = operationalIds.size
     ? await runStep(ctx, "query team memberships", async () =>
-      service
-        .from("team_memberships")
-        .select("user_id, team_id")
-        .in("user_id", Array.from(operationalIds))
-        .eq("is_active", true),
-    )
+        service
+          .from("team_memberships")
+          .select("user_id, team_id")
+          .in("user_id", Array.from(operationalIds))
+          .eq("is_active", true),
+      )
     : { data: [], error: null };
   if (membershipsError) throw membershipsError;
 
   const teamMap = new Map<string, string[]>();
-  for (const membership of memberships ?? []) {
+  const membershipRows = (memberships ?? []) as TeamMembershipRow[];
+  for (const membership of membershipRows) {
     const list = teamMap.get(membership.user_id) ?? [];
     if (membership.team_id) list.push(membership.team_id);
     teamMap.set(membership.user_id, list);
   }
 
-  return (profiles ?? [])
-    .filter((profile) => operationalIds.has(profile.id))
-    .map((profile) => ({
+  return profileRows
+    .filter((profile: ProfileRow) => operationalIds.has(profile.id))
+    .map((profile: ProfileRow) => ({
       id: profile.id,
       full_name: profile.full_name,
       username: profile.username,
@@ -367,7 +436,7 @@ async function getReportSlot(
   );
   if (error) throw error;
   if (!data) throw new Error(`Report slot not found: ${slotTime ?? "unknown"}`);
-  return data;
+  return data as ReportSlotRow;
 }
 
 async function getApprovedLeaveUserIds(
@@ -386,7 +455,8 @@ async function getApprovedLeaveUserIds(
       .eq("status", "approved_leave"),
   );
   if (error) throw error;
-  return new Set((data ?? []).map((row) => row.user_id));
+  const rows = (data ?? []) as AttendanceUserRow[];
+  return new Set(rows.map((row: AttendanceUserRow) => row.user_id));
 }
 
 function reminderKey(type: string, ...parts: Array<string | null | undefined>) {
@@ -435,21 +505,22 @@ async function sendReportMissing(
 
   const { data: reports, error } = expectedUsers.length
     ? await runStep(ctx, "query reports submitted users", async () =>
-      service
-        .from("slot_reports")
-        .select("user_id")
-        .eq("slot_id", slot.id)
-        .eq("report_date", reportDate)
-        .in(
-          "user_id",
-          expectedUsers.map((user) => user.id),
-        )
-        .in("status", ["submitted", "approved"]),
-    )
+        service
+          .from("slot_reports")
+          .select("user_id")
+          .eq("slot_id", slot.id)
+          .eq("report_date", reportDate)
+          .in(
+            "user_id",
+            expectedUsers.map((user: OperationalUser) => user.id),
+          )
+          .in("status", ["submitted", "approved"]),
+      )
     : { data: [], error: null };
   if (error) throw error;
 
-  const submittedIds = new Set((reports ?? []).map((report) => report.user_id));
+  const reportRows = (reports ?? []) as SlotReportUserRow[];
+  const submittedIds = new Set(reportRows.map((report: SlotReportUserRow) => report.user_id));
   const missing = expectedUsers.filter((user) => !submittedIds.has(user.id));
   console.log("[group-reminder] pendingReports:", missing.length, {
     slot: slot.slot_name ?? formatSlot(slot.slot_time),
@@ -495,10 +566,10 @@ async function sendChecklistReminder(
     variant === "morning"
       ? ["📝 Checklist đầu ngày", "", "Hãy hoàn thành checklist daily/task trên Workspace MIZ"]
       : [
-        "📝 Checklist buổi chiều",
-        "",
-        "Nhân sự hãy kiểm tra lại checklist/task daily và hoàn thành các task còn thiếu.",
-      ];
+          "📝 Checklist buổi chiều",
+          "",
+          "Nhân sự hãy kiểm tra lại checklist/task daily và hoàn thành các task còn thiếu.",
+        ];
   return sendGroupTelegramMessage(ctx, service, text.join("\n"), type, key);
 }
 
@@ -514,9 +585,10 @@ async function getChecklistIncompleteUsers(
     async () => service.from("daily_task_templates").select("id, team_id").eq("is_active", true),
   );
   if (templatesError) throw templatesError;
-  if (!templates?.length) return [];
+  const templateRows = (templates ?? []) as DailyTaskTemplateRow[];
+  if (!templateRows.length) return [];
 
-  const templateIds = templates.map((template) => template.id);
+  const templateIds = templateRows.map((template: DailyTaskTemplateRow) => template.id);
   const { data: completions, error: completionsError } = await runStep(
     ctx,
     "query checklist completions",
@@ -529,21 +601,25 @@ async function getChecklistIncompleteUsers(
   );
   if (completionsError) throw completionsError;
 
+  const completionRows = (completions ?? []) as TaskCompletionRow[];
   const completionKeys = new Set(
-    (completions ?? [])
+    completionRows
       .filter(
-        (completion) =>
+        (completion: TaskCompletionRow) =>
           completion.completed || ["done", "completed"].includes(String(completion.status)),
       )
-      .map((completion) => `${completion.user_id}:${completion.template_id}`),
+      .map((completion: TaskCompletionRow) => `${completion.user_id}:${completion.template_id}`),
   );
 
-  return users.filter((user) => {
-    const relevantTemplates = templates.filter(
-      (template) => !template.team_id || user.teamIds.includes(template.team_id),
+  return users.filter((user: OperationalUser) => {
+    const relevantTemplates = templateRows.filter(
+      (template: DailyTaskTemplateRow) =>
+        !template.team_id || user.teamIds.includes(template.team_id),
     );
     if (!relevantTemplates.length) return false;
-    return relevantTemplates.some((template) => !completionKeys.has(`${user.id}:${template.id}`));
+    return relevantTemplates.some(
+      (template: DailyTaskTemplateRow) => !completionKeys.has(`${user.id}:${template.id}`),
+    );
   });
 }
 
@@ -568,14 +644,16 @@ async function getTaskDeadlineIncompleteUsers(
   );
   if (error) throw error;
 
+  const taskRows = (tasks ?? []) as TaskDeadlineRow[];
   const incompleteIds = new Set(
-    (tasks ?? [])
+    taskRows
       .filter(
-        (task) => !["done", "completed", "approved", "archived"].includes(String(task.status)),
+        (task: TaskDeadlineRow) =>
+          !["done", "completed", "approved", "archived"].includes(String(task.status)),
       )
-      .map((task) => task.assigned_to),
+      .map((task: TaskDeadlineRow) => task.assigned_to),
   );
-  return users.filter((user) => incompleteIds.has(user.id));
+  return users.filter((user: OperationalUser) => incompleteIds.has(user.id));
 }
 
 async function sendChecklistOverdueSummary(
@@ -718,10 +796,11 @@ async function assertAdmin(
     service.from("user_roles").select("role").eq("user_id", profile.id),
   );
   if (rolesError) throw rolesError;
-  if (!(roles ?? []).some((row) => row.role === "admin")) {
+  const roleRows = (roles ?? []) as RoleOnlyRow[];
+  if (!roleRows.some((row: RoleOnlyRow) => row.role === "admin")) {
     throw new Error("Only admin can broadcast group announcements");
   }
-  return profile;
+  return profile as AdminProfileRow;
 }
 
 async function sendGroupAnnouncement(
@@ -762,7 +841,7 @@ async function sendGroupAnnouncement(
   );
 }
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") {
     return Response.json({ error: "Method not allowed" }, { status: 405, headers: corsHeaders });
