@@ -102,6 +102,30 @@ type RoleOnlyRow = {
   role: string;
 };
 
+class TelegramApiError extends Error {
+  status: number;
+  body: string;
+  migrateToChatId: string | null;
+
+  constructor(status: number, body: string) {
+    super(`Telegram API ${status}: ${body.slice(0, 500)}`);
+    this.name = "TelegramApiError";
+    this.status = status;
+    this.body = body;
+    this.migrateToChatId = TelegramApiError.parseMigrateToChatId(body);
+  }
+
+  private static parseMigrateToChatId(body: string) {
+    try {
+      const parsed = JSON.parse(body) as { parameters?: { migrate_to_chat_id?: number | string } };
+      const nextChatId = parsed.parameters?.migrate_to_chat_id;
+      return nextChatId == null ? null : String(nextChatId);
+    } catch {
+      return null;
+    }
+  }
+}
+
 function env(name: string) {
   return Deno.env.get(name) ?? "";
 }
@@ -258,7 +282,7 @@ async function telegramApi(ctx: DebugContext, method: string, body: Record<strin
         step: ctx.step,
         currentVNTime: nowVNParts(),
       });
-      throw new Error(`Telegram API ${response.status}: ${errorText.slice(0, 500)}`);
+      throw new TelegramApiError(response.status, errorText);
     }
   });
 }
@@ -302,21 +326,38 @@ async function sendGroupTelegramMessage(
     return { status: "skipped" as const, reason: "already_sent" };
   }
 
+  let sentChatId = chatId;
   try {
-    await telegramApi(ctx, "sendMessage", {
-      chat_id: chatId,
-      text,
-      disable_web_page_preview: true,
-    });
-    console.log("[group-reminder] sent", { reminderType, reminderKey, chatId });
-    await logGroupReminder(ctx, service, "sent", reminderType, reminderKey, chatId, null);
-    await logTelegram(ctx, service, "sent", reminderKey, chatId, null);
+    try {
+      await telegramApi(ctx, "sendMessage", {
+        chat_id: sentChatId,
+        text,
+        disable_web_page_preview: true,
+      });
+    } catch (error) {
+      if (!(error instanceof TelegramApiError) || !error.migrateToChatId) throw error;
+      sentChatId = error.migrateToChatId;
+      console.log("[group-reminder] retry migrated group chat", {
+        reminderType,
+        reminderKey,
+        oldChatId: chatId,
+        migratedChatId: sentChatId,
+      });
+      await telegramApi(ctx, "sendMessage", {
+        chat_id: sentChatId,
+        text,
+        disable_web_page_preview: true,
+      });
+    }
+    console.log("[group-reminder] sent", { reminderType, reminderKey, chatId: sentChatId });
+    await logGroupReminder(ctx, service, "sent", reminderType, reminderKey, sentChatId, null);
+    await logTelegram(ctx, service, "sent", reminderKey, sentChatId, null);
     return { status: "sent" as const };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.log("[group-reminder] failed", { reminderType, reminderKey, error: message });
-    await logGroupReminder(ctx, service, "failed", reminderType, reminderKey, chatId, message);
-    await logTelegram(ctx, service, "failed", reminderKey, chatId, message);
+    await logGroupReminder(ctx, service, "failed", reminderType, reminderKey, sentChatId, message);
+    await logTelegram(ctx, service, "failed", reminderKey, sentChatId, message);
     throw error;
   }
 }
@@ -544,7 +585,8 @@ async function sendReportMissing(
 
   const slotLabel = slot.slot_name ?? formatSlot(slot.slot_time);
   const type = options.test ? "test_report_missing" : "report_missing";
-  const key = reminderKey(type, formatSlot(slot.slot_time), today);
+  const slotKey = formatSlot(slot.slot_time);
+  const key = `${type}:${today}:${slotKey}:plus_30m`;
   return sendGroupTelegramMessage(
     ctx,
     service,
@@ -556,7 +598,7 @@ async function sendReportMissing(
       "Các nhân sự chưa báo cáo:",
       listNames(missing),
       "",
-      "Vui lòng hoàn thành ngay trên MKTRe.",
+      "Vui lòng hoàn thành trước khi hết hạn chỉnh sửa.",
     ].join("\n"),
     type,
     key,
@@ -723,10 +765,10 @@ async function runSchedulerTick(ctx: DebugContext, service: ReturnType<typeof cr
   const matched: string[] = [];
   const reportSlots = ["11:55", "13:55", "16:55", "21:00"];
   const missingSlots: Record<string, string> = {
-    "12:55": "11:55",
-    "14:55": "13:55",
-    "17:55": "16:55",
-    "22:00": "21:00",
+    "12:25": "11:55",
+    "14:25": "13:55",
+    "17:25": "16:55",
+    "21:30": "21:00",
   };
 
   console.log("[group-reminder] current VN time", now);
@@ -770,6 +812,8 @@ async function runTestMode(
   if (mode === "test_checklist")
     return sendChecklistReminder(ctx, service, "morning", { test: true });
   if (mode === "test_report") return sendReportDue(ctx, service, "16:55", { test: true });
+  if (mode === "test_report_missing")
+    return sendReportMissing(ctx, service, "11:55", { test: true });
   if (mode === "test_overdue") return sendChecklistOverdueSummary(ctx, service, { test: true });
   return null;
 }

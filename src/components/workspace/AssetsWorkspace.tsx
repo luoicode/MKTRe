@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Info,
   Loader2,
+  MoreHorizontal,
   Package,
   Pencil,
   Plus,
@@ -40,6 +41,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { PageShell, ScrollArea } from "@/components/layout/PageShell";
@@ -122,7 +129,6 @@ export function AssetsWorkspace() {
   const [userFilter, setUserFilter] = useState(ALL);
   const [groupFilter, setGroupFilter] = useState<AssetGroup | typeof ALL>(ALL);
   const [typeFilter, setTypeFilter] = useState(ALL);
-  const [assignerFilter, setAssignerFilter] = useState(ALL);
   const [statusFilter, setStatusFilter] = useState(ALL);
   const [visibleSecretIds, setVisibleSecretIds] = useState<Set<string>>(() => new Set());
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -134,7 +140,6 @@ export function AssetsWorkspace() {
   const isAdmin = role === "admin";
   const isLeader = role === "leader";
   const isEmployee = role === "employee";
-  const canFilterAssigner = role === "admin" || role === "manager" || role === "leader";
   const canCreate = !!role && role !== null;
 
   const { data, isLoading, isFetching, refetch } = useQuery({
@@ -241,9 +246,6 @@ export function AssetsWorkspace() {
     return profiles;
   }, [isLeader, profileTeamMap, profiles]);
   const visibleTypes = STANDARD_TYPES;
-  const assigners = Array.from(
-    new Set(assets.map((asset) => asset.assigned_by).filter(Boolean)),
-  ) as string[];
 
   const filteredAssets = assets.filter((asset) => {
     if (groupFilter !== ALL && asset.asset_group !== groupFilter) return false;
@@ -273,7 +275,6 @@ export function AssetsWorkspace() {
         return false;
       }
     }
-    if (assignerFilter !== ALL && asset.assigned_by !== assignerFilter) return false;
     if (statusFilter !== ALL && getAssetStatus(asset) !== statusFilter) return false;
     const haystack = [
       asset.title,
@@ -477,15 +478,15 @@ export function AssetsWorkspace() {
         }
       >
         <Card>
-          <CardContent className="grid gap-3 p-3 lg:grid-cols-6">
+          <CardContent className="grid min-w-0 grid-cols-1 gap-2 p-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <Field label="Tìm kiếm">
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  className="pl-9"
+                  className="h-10 min-w-0 pl-9 text-sm"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Tên tài sản / giá trị / tài khoản"
+                  placeholder="Tên tài sản / mô tả"
                 />
               </div>
             </Field>
@@ -538,22 +539,6 @@ export function AssetsWorkspace() {
                 ))}
               </FilterSelect>
             </Field>
-            {canFilterAssigner && (
-              <Field label="Người cấp">
-                <FilterSelect
-                  value={assignerFilter}
-                  onChange={setAssignerFilter}
-                  placeholder="Người cấp"
-                >
-                  <SelectItem value={ALL}>Tất cả người cấp</SelectItem>
-                  {assigners.map((id) => (
-                    <SelectItem key={id} value={id}>
-                      {profileMap.get(id)?.full_name ?? "Không rõ"}
-                    </SelectItem>
-                  ))}
-                </FilterSelect>
-              </Field>
-            )}
             <Field label="Trạng thái">
               <FilterSelect value={statusFilter} onChange={setStatusFilter} placeholder="Status">
                 <SelectItem value={ALL}>Tất cả trạng thái</SelectItem>
@@ -839,9 +824,7 @@ export function AssetsWorkspace() {
             ? profileMap.get(detailAsset.owner_profile_id)?.full_name
             : null
         }
-        assignerName={
-          detailAsset?.assigned_by ? profileMap.get(detailAsset.assigned_by)?.full_name : null
-        }
+        assignerName={detailAsset ? assetAssignerLabel(detailAsset, profileMap) : null}
         canViewSensitive={detailAsset ? canEditAsset(detailAsset, role, profile?.id) : false}
         onOpenChange={(open) => !open && setDetailAsset(null)}
       />
@@ -932,19 +915,18 @@ function AssetTable({
     <div className="h-full min-h-0 space-y-3 pb-6 lg:pb-0">
       <Card className="hidden h-full min-h-0 rounded-3xl border-slate-200 shadow-sm lg:block">
         <div className="h-full min-h-0 overflow-auto rounded-3xl">
-          <table className="w-full caption-bottom border-separate border-spacing-0 text-sm">
+          <table className="min-w-[1040px] w-full table-fixed caption-bottom border-separate border-spacing-0 text-sm">
             <thead>
               <tr className="hover:bg-transparent">
-                <AssetStickyHead className="min-w-[220px] px-4">Tên tài sản</AssetStickyHead>
-                <AssetStickyHead>Loại</AssetStickyHead>
-                <AssetStickyHead>Nhóm</AssetStickyHead>
-                <AssetStickyHead className="min-w-[180px]">Giá trị / Tài khoản</AssetStickyHead>
-                <AssetStickyHead className="min-w-[170px]">Mật khẩu / Nhạy cảm</AssetStickyHead>
-                <AssetStickyHead>Trạng thái</AssetStickyHead>
-                <AssetStickyHead>Chủ sở hữu</AssetStickyHead>
-                <AssetStickyHead>Người cấp</AssetStickyHead>
-                <AssetStickyHead>Ngày cấp</AssetStickyHead>
-                <AssetStickyHead className="w-[180px] text-right">Thao tác</AssetStickyHead>
+                <AssetStickyHead className="w-[108px] px-4">Ngày cấp</AssetStickyHead>
+                <AssetStickyHead className="w-[240px] px-4">Tên tài sản</AssetStickyHead>
+                <AssetStickyHead className="w-[116px]">Loại</AssetStickyHead>
+                <AssetStickyHead className="w-[104px]">Nhóm</AssetStickyHead>
+                <AssetStickyHead className="w-[180px]">Mô tả</AssetStickyHead>
+                <AssetStickyHead className="w-[170px]">Mật khẩu</AssetStickyHead>
+                <AssetStickyHead className="w-[72px] text-center">TT</AssetStickyHead>
+                <AssetStickyHead className="w-[150px]">Chủ sở hữu</AssetStickyHead>
+                <AssetStickyHead className="w-[64px] text-right" aria-label="Thao tác" />
               </tr>
             </thead>
             <TableBody>
@@ -1017,33 +999,46 @@ function AssetTableRow({
   const publicDescription = getPublicAssetDescription(asset);
   return (
     <TableRow className="bg-white">
-      <TableCell className="px-4">
+      <TableCell className="whitespace-nowrap px-4 py-2.5 text-slate-400">
+        {formatDate(asset.created_at)}
+      </TableCell>
+      <TableCell className="px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
             <AssetGroupIcon group={group} />
           </span>
           <div className="min-w-0">
-            <p className="truncate font-bold text-slate-950">{asset.title}</p>
+            <p className="truncate font-bold text-slate-950" title={asset.title}>
+              {asset.title}
+            </p>
             {publicDescription && (
-              <p className="line-clamp-1 text-xs text-muted-foreground">{publicDescription}</p>
+              <p className="truncate text-xs text-muted-foreground" title={publicDescription}>
+                {publicDescription}
+              </p>
             )}
           </div>
         </div>
       </TableCell>
-      <TableCell>
+      <TableCell className="py-2.5">
         <Badge className={cn("rounded-full border", assetTypeBadgeClass(asset.asset_type))}>
           {assetTypeLabel(asset.asset_type)}
         </Badge>
       </TableCell>
-      <TableCell>
+      <TableCell className="py-2.5">
         <Badge className={`rounded-full border ${GROUP_STYLES[group]}`}>
           {GROUP_LABELS[group]}
         </Badge>
       </TableCell>
-      <TableCell>
-        <AssetValueCell asset={asset} link={link} value={value} onCopy={onCopy} />
+      <TableCell className="py-2.5">
+        <AssetDescriptionCell
+          description={publicDescription}
+          asset={asset}
+          link={link}
+          value={value}
+          onCopy={onCopy}
+        />
       </TableCell>
-      <TableCell>
+      <TableCell className="py-2.5">
         <SensitiveCell
           value={sensitiveNote}
           canView={canViewSensitive}
@@ -1052,17 +1047,15 @@ function AssetTableRow({
           onCopy={onCopy}
         />
       </TableCell>
-      <TableCell>
-        <AssetStatusBadge asset={asset} />
+      <TableCell className="py-2.5 text-center">
+        <AssetStatusIndicator asset={asset} />
       </TableCell>
-      <TableCell className="max-w-[180px] truncate">
-        {assetOwnerLabel(asset, teamMap, profileMap)}
+      <TableCell className="py-2.5">
+        <span className="block truncate" title={assetOwnerLabel(asset, teamMap, profileMap)}>
+          {assetOwnerLabel(asset, teamMap, profileMap)}
+        </span>
       </TableCell>
-      <TableCell className="max-w-[160px] truncate">
-        {assetAssignerLabel(asset, profileMap)}
-      </TableCell>
-      <TableCell className="whitespace-nowrap">{formatDate(asset.created_at)}</TableCell>
-      <TableCell>
+      <TableCell className="py-2.5">
         <AssetActions
           asset={asset}
           canEdit={canEdit}
@@ -1130,17 +1123,24 @@ function AssetMobileCard(props: AssetRowProps) {
               <p className="text-xs text-muted-foreground">{assetTypeLabel(asset.asset_type)}</p>
             </div>
           </div>
-          <AssetStatusBadge asset={asset} />
+          <AssetStatusIndicator asset={asset} showText />
         </div>
         <div className="grid gap-3 text-sm sm:grid-cols-2">
+          <MobileMeta label="Ngày cấp" value={formatDate(asset.created_at)} />
           <MobileMeta label="Nhóm" value={GROUP_LABELS[group]} />
           <MobileMeta label="Chủ sở hữu" value={assetOwnerLabel(asset, teamMap, profileMap)} />
           <div className="sm:col-span-2">
-            <p className="mb-1 text-xs text-muted-foreground">Giá trị / Tài khoản</p>
-            <AssetValueCell asset={asset} link={link} value={value} onCopy={onCopy} />
+            <p className="mb-1 text-xs text-muted-foreground">Mô tả</p>
+            <AssetDescriptionCell
+              description={getPublicAssetDescription(asset)}
+              asset={asset}
+              link={link}
+              value={value}
+              onCopy={onCopy}
+            />
           </div>
           <div className="sm:col-span-2">
-            <p className="mb-1 text-xs text-muted-foreground">Mật khẩu / Nhạy cảm</p>
+            <p className="mb-1 text-xs text-muted-foreground">Mật khẩu</p>
             <SensitiveCell
               value={sensitiveNote}
               canView={canViewSensitive}
@@ -1161,6 +1161,30 @@ function AssetMobileCard(props: AssetRowProps) {
       </CardContent>
     </Card>
   );
+}
+
+function AssetDescriptionCell({
+  description,
+  asset,
+  link,
+  value,
+  onCopy,
+}: {
+  description: string;
+  asset: Asset;
+  link: string | null;
+  value: string;
+  onCopy: (value: string, label?: string) => void;
+}) {
+  if (description.trim()) {
+    return (
+      <p className="truncate text-sm font-medium text-slate-700" title={description}>
+        {description}
+      </p>
+    );
+  }
+
+  return <AssetValueCell asset={asset} link={link} value={value} onCopy={onCopy} />;
 }
 
 function AssetValueCell({
@@ -1273,37 +1297,46 @@ function AssetActions({
 }) {
   const link = normalizeUrl(asset.link_url ?? "");
   return (
-    <div className={cn("flex flex-wrap items-center gap-1.5", align === "right" && "justify-end")}>
-      {link && (
-        <Button
-          variant="outline"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => window.open(link, "_blank", "noopener,noreferrer")}
-          title="Mở link"
-        >
-          <ExternalLink className="h-4 w-4" />
-        </Button>
-      )}
-      <Button variant="outline" size="icon" className="h-8 w-8" onClick={onDetail} title="Chi tiết">
-        <Info className="h-4 w-4" />
-      </Button>
-      {canEdit && (
-        <>
-          <Button variant="outline" size="icon" className="h-8 w-8" onClick={onEdit} title="Sửa">
-            <Pencil className="h-4 w-4" />
-          </Button>
+    <div className={cn("flex items-center", align === "right" && "justify-end")}>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
           <Button
-            variant="outline"
+            variant="ghost"
             size="icon"
-            className="h-8 w-8 text-destructive hover:text-destructive"
-            onClick={onDelete}
-            title="Xóa"
+            className="h-8 w-8 rounded-full"
+            aria-label="Mở menu thao tác tài sản"
           >
-            <Trash2 className="h-4 w-4" />
+            <MoreHorizontal className="h-4 w-4" />
           </Button>
-        </>
-      )}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align={align === "right" ? "end" : "start"} className="w-44">
+          <DropdownMenuItem onClick={onDetail}>
+            <Info className="mr-2 h-4 w-4" />
+            Xem chi tiết
+          </DropdownMenuItem>
+          {link && (
+            <DropdownMenuItem onClick={() => window.open(link, "_blank", "noopener,noreferrer")}>
+              <ExternalLink className="mr-2 h-4 w-4" />
+              Mở link
+            </DropdownMenuItem>
+          )}
+          {canEdit && (
+            <>
+              <DropdownMenuItem onClick={onEdit}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Chỉnh sửa
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={onDelete}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Xóa
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
@@ -1317,26 +1350,23 @@ function MobileMeta({ label, value }: { label: string; value: string }) {
   );
 }
 
-function AssetStatusBadge({ asset }: { asset: Asset }) {
+function AssetStatusIndicator({ asset, showText = false }: { asset: Asset; showText?: boolean }) {
   const status = getAssetStatus(asset);
-  if (status === "active") {
-    return (
-      <Badge className="rounded-full border-emerald-100 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
-        {ASSET_STATUS_LABELS.active}
-      </Badge>
-    );
-  }
-  if (status === "revoked") {
-    return (
-      <Badge className="rounded-full border-red-100 bg-red-50 text-red-700 hover:bg-red-50">
-        {ASSET_STATUS_LABELS.revoked}
-      </Badge>
-    );
-  }
+  const label = ASSET_STATUS_LABELS[status];
+  const dotClass =
+    status === "active" ? "bg-emerald-500" : status === "revoked" ? "bg-red-500" : "bg-amber-400";
   return (
-    <Badge className="rounded-full border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-50">
-      {ASSET_STATUS_LABELS.paused}
-    </Badge>
+    <span
+      className={cn(
+        "inline-flex items-center justify-center gap-2 rounded-full",
+        showText && "border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold",
+      )}
+      title={label}
+      aria-label={label}
+    >
+      <span className={cn("h-2.5 w-2.5 rounded-full ring-2 ring-white", dotClass)} />
+      {showText && <span className="text-slate-700">{label}</span>}
+    </span>
   );
 }
 
@@ -1389,15 +1419,12 @@ function AssetDetailDialog({
               <div className="rounded-2xl border bg-muted/30 p-3">
                 <p className="text-xs text-muted-foreground">Trạng thái</p>
                 <div className="mt-2">
-                  <AssetStatusBadge asset={asset} />
+                  <AssetStatusIndicator asset={asset} showText />
                 </div>
               </div>
               <DetailMeta label="Giá trị" value={asset.value || "Chưa có"} />
               <DetailMeta label="Chủ sở hữu" value={owner} />
-              <DetailMeta
-                label="Người cấp"
-                value={assignerName ?? (group === "personal" ? "Self" : "—")}
-              />
+              <DetailMeta label="Người cấp" value={assignerName ?? "Không rõ"} />
               <DetailMeta label="Ngày cấp" value={formatDate(asset.created_at)} />
               <DetailMeta label="Ngày cập nhật" value={formatDate(asset.updated_at)} />
               <div className="rounded-2xl border bg-muted/30 p-3">
@@ -1457,10 +1484,18 @@ function AssetGroupIcon({ group }: { group: AssetGroup }) {
   return <UserRound className="h-5 w-5" />;
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="space-y-1.5">
-      <Label>{label}</Label>
+    <div className={cn("min-w-0 space-y-1", className)}>
+      <Label className="text-xs font-semibold text-slate-600">{label}</Label>
       {children}
     </div>
   );
@@ -1479,7 +1514,7 @@ function FilterSelect({
 }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger>
+      <SelectTrigger className="h-10 min-w-0 text-sm [&>span]:truncate">
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>{children}</SelectContent>
@@ -1641,8 +1676,9 @@ function assetOwnerLabel(
 }
 
 function assetAssignerLabel(asset: Asset, profileMap: Map<string, ProfileRow>) {
-  if (asset.assigned_by) return profileMap.get(asset.assigned_by)?.full_name ?? "Không rõ";
-  return asset.asset_group === "personal" ? "Self" : "—";
+  const assignerId = asset.assigned_by ?? asset.created_by;
+  if (assignerId) return profileMap.get(assignerId)?.full_name ?? "Không rõ";
+  return "Không rõ";
 }
 
 function getAssetStatus(asset: Asset) {

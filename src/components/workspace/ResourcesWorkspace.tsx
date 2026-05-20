@@ -223,12 +223,10 @@ export function ResourcesWorkspace() {
         canViewProgress
           ? supabase.from("user_roles").select("user_id, role").eq("role", "employee")
           : Promise.resolve({ data: [], error: null }),
-        canViewProgress
-          ? supabase
-              .from("team_memberships")
-              .select("team_id, user_id, is_active")
-              .eq("is_active", true)
-          : Promise.resolve({ data: [], error: null }),
+        supabase
+          .from("team_memberships")
+          .select("team_id, user_id, is_active")
+          .eq("is_active", true),
       ]);
 
       const firstError =
@@ -721,18 +719,39 @@ export function ResourcesWorkspace() {
       return;
     }
 
-    const leaderIds = [...new Set((leaderRoles ?? []).map((item) => item.user_id))];
-    if (!leaderIds.length) return;
+    const { data: adminManagerRoles, error: adminRoleError } = await supabase
+      .from("user_roles")
+      .select("user_id")
+      .in("role", ["admin", "manager"]);
+    if (adminRoleError) {
+      console.debug("[MKTRe onboarding notification]", adminRoleError.message);
+      return;
+    }
 
-    const notifications: TablesInsert<"notifications">[] = leaderIds.map((leaderId) => ({
-      target_profile_id: leaderId,
-      user_id: leaderId,
+    const leaderIds = (leaderRoles ?? []).map((item) => item.user_id);
+    const adminManagerIds = (adminManagerRoles ?? []).map((item) => item.user_id);
+    const reviewerIds = [...new Set([...leaderIds, ...adminManagerIds])].filter(
+      (id) => id !== profile.id,
+    );
+    if (!reviewerIds.length) return;
+
+    const { data: teamRows } = teamIds.length
+      ? await supabase.from("teams").select("id, name").in("id", teamIds)
+      : { data: [] };
+    const teamName = (teamRows ?? [])
+      .map((team) => team.name)
+      .filter(Boolean)
+      .join(", ");
+
+    const notifications: TablesInsert<"notifications">[] = reviewerIds.map((reviewerId) => ({
+      target_profile_id: reviewerId,
+      user_id: reviewerId,
       actor_profile_id: profile.id,
       created_by: profile.id,
       scope: "team",
       target_scope: "team",
-      type: "onboarding_review",
-      kind: "onboarding_review",
+      type: "onboarding_pending_review",
+      kind: "onboarding_pending_review",
       entity_type: "onboarding_answer",
       entity_id: answer.id,
       title: "Duyệt onboarding",
@@ -743,7 +762,14 @@ export function ResourcesWorkspace() {
       metadata: {
         section_id: section.id,
         section_title: section.title,
+        section_description: section.description ?? null,
         answer_id: answer.id,
+        submitter_id: profile.id,
+        submitter_name: profile.full_name,
+        team_id: teamIds[0] ?? null,
+        team_name: teamName || null,
+        submitted_at: answer.submitted_at ?? answer.completed_at ?? new Date().toISOString(),
+        dedupe_key: `onboarding_pending_review:${answer.id}:recipient:${reviewerId}`,
       } as Json,
     }));
 

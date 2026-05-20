@@ -523,7 +523,7 @@ export function EmployeeReport() {
   return (
     <div className="relative h-full min-h-0 w-full">
       <div
-        className={`w-full min-w-0 space-y-3 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden ${
+        className={`w-full min-w-0 space-y-2 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden ${
           reportLocked ? "pointer-events-none select-none blur-sm" : ""
         }`}
         aria-hidden={reportLocked}
@@ -556,13 +556,13 @@ export function EmployeeReport() {
             }}
             className="md:flex md:min-h-0 md:flex-1 md:flex-col"
           >
-            <div className="grid shrink-0 gap-2 md:grid-cols-[1fr_180px] xl:grid-cols-[1fr_200px]">
+            <div className="grid shrink-0 gap-2 md:grid-cols-[1fr_168px] xl:grid-cols-[1fr_190px]">
               <Card>
-                <CardHeader className="px-3 py-2">
+                <CardHeader className="px-2.5 py-1.5 md:px-3 md:py-2">
                   <CardTitle className="text-base">Hôm nay</CardTitle>
-                  <CardDescription>11h55, 16h55, 21h00</CardDescription>
+                  <CardDescription className="text-xs">11h55, 16h55, 21h00</CardDescription>
                 </CardHeader>
-                <CardContent className="px-3 pb-3 pt-0">
+                <CardContent className="px-2.5 pb-2.5 pt-0 md:px-3">
                   <TabsList className="grid h-auto w-full grid-cols-1 gap-1 bg-muted/50 p-1 sm:grid-cols-3">
                     {todaySlots.map((s) => {
                       const visual = slotVisual(
@@ -575,7 +575,7 @@ export function EmployeeReport() {
                         <TabsTrigger
                           key={s.id}
                           value={s.id}
-                          className={`h-auto items-start justify-start gap-2 border py-1.5 text-left ${visual.className}`}
+                          className={`h-auto items-start justify-start gap-2 border px-2 py-1 text-left ${visual.className}`}
                         >
                           <Icon className="mt-0.5 h-4 w-4 shrink-0" />
                           <span className="min-w-0">
@@ -594,11 +594,13 @@ export function EmployeeReport() {
               </Card>
 
               <Card>
-                <CardHeader className="px-3 py-2">
+                <CardHeader className="px-2.5 py-1.5 md:px-3 md:py-2">
                   <CardTitle className="text-base">Hôm trước</CardTitle>
-                  <CardDescription>{formatDateVN(addDays(date, -1))}</CardDescription>
+                  <CardDescription className="text-xs">
+                    {formatDateVN(addDays(date, -1))}
+                  </CardDescription>
                 </CardHeader>
-                <CardContent className="px-3 pb-3 pt-0">
+                <CardContent className="px-2.5 pb-2.5 pt-0 md:px-3">
                   <TabsList className="grid h-auto w-full grid-cols-1 bg-muted/50 p-1">
                     {previousDaySlots.map((s) => {
                       const visual = slotVisual(
@@ -611,7 +613,7 @@ export function EmployeeReport() {
                         <TabsTrigger
                           key={s.id}
                           value={s.id}
-                          className={`h-auto items-start justify-start gap-2 border py-1.5 text-left ${visual.className}`}
+                          className={`h-auto items-start justify-start gap-2 border px-2 py-1 text-left ${visual.className}`}
                         >
                           <Icon className="mt-0.5 h-4 w-4 shrink-0" />
                           <span className="min-w-0">
@@ -633,7 +635,7 @@ export function EmployeeReport() {
               <TabsContent
                 key={s.id}
                 value={s.id}
-                className="mt-2 md:min-h-0 md:flex-1 md:overflow-hidden data-[state=active]:md:block data-[state=inactive]:md:hidden"
+                className="mt-2 md:min-h-0 md:flex-1 md:overflow-hidden data-[state=active]:md:flex data-[state=active]:md:flex-col data-[state=inactive]:md:hidden"
               >
                 {profile && activeSlot === s.id && (
                   <SlotForm
@@ -950,9 +952,9 @@ function SlotForm({
   const recoveredNeg = computed.recovered < 0;
 
   return (
-    <div className="grid gap-3 md:h-full md:min-h-0 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
+    <div className="grid w-full min-w-0 gap-2 md:h-full md:min-h-0 lg:grid-cols-[minmax(0,1.2fr)_minmax(270px,0.8fr)] xl:gap-3">
       <Card className="md:flex md:min-h-0 md:flex-col md:overflow-hidden">
-        <CardHeader className="px-3 py-2">
+        <CardHeader className="px-3 py-1.5 md:py-2">
           <CardTitle className="flex items-center justify-between gap-2 text-base">
             <span>Khung {slotName}</span>
             <span className="flex flex-wrap justify-end gap-1.5">
@@ -1044,14 +1046,14 @@ function SlotForm({
       </Card>
 
       <Card className="md:flex md:min-h-0 md:flex-col md:overflow-hidden">
-        <CardHeader className="px-3 py-2">
+        <CardHeader className="px-3 py-1.5 md:py-2">
           <CardTitle className="text-base">Chỉ số tự tính</CardTitle>
           <CardDescription className="text-xs">
             Cập nhật real-time theo số liệu nhập
           </CardDescription>
         </CardHeader>
         <CardContent className="px-3 pb-3 md:min-h-0 md:flex-1 md:overflow-y-auto">
-          <dl className="grid grid-cols-2 gap-1.5 text-sm">
+          <dl className="grid grid-cols-2 gap-1.5 text-sm lg:grid-cols-1 xl:grid-cols-2">
             <Metric label="Chi phí ADS/MESS" value={formatVnd(computed.cp_mess)} />
             <Metric label="Chi phí ADS/Data" value={formatVnd(computed.cp_data)} />
             <Metric label="Tỉ lệ chốt DATA trong ngày" value={formatPercent(computed.conv_rate)} />

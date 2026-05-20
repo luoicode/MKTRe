@@ -1140,6 +1140,7 @@ export type Database = {
           description: string | null;
           id: string;
           is_active: boolean;
+          link_url: string | null;
           priority: string;
           sort_order: number;
           title: string;
@@ -1152,6 +1153,7 @@ export type Database = {
           description?: string | null;
           id?: string;
           is_active?: boolean;
+          link_url?: string | null;
           priority?: string;
           sort_order?: number;
           title: string;
@@ -1164,6 +1166,7 @@ export type Database = {
           description?: string | null;
           id?: string;
           is_active?: boolean;
+          link_url?: string | null;
           priority?: string;
           sort_order?: number;
           title?: string;
@@ -1858,6 +1861,7 @@ export type Database = {
           dedupe_key: string | null;
           description: string | null;
           id: string;
+          link_url: string | null;
           onboarding_template_id: string | null;
           proof_url: string | null;
           priority: string | null;
@@ -1882,6 +1886,7 @@ export type Database = {
           dedupe_key?: string | null;
           description?: string | null;
           id?: string;
+          link_url?: string | null;
           onboarding_template_id?: string | null;
           proof_url?: string | null;
           priority?: string | null;
@@ -1906,6 +1911,7 @@ export type Database = {
           dedupe_key?: string | null;
           description?: string | null;
           id?: string;
+          link_url?: string | null;
           onboarding_template_id?: string | null;
           proof_url?: string | null;
           priority?: string | null;
@@ -2182,6 +2188,28 @@ export type Database = {
       leads_team: { Args: { _team_id: string }; Returns: boolean };
       manager_leads_team: { Args: { _team_id: string }; Returns: boolean };
       manager_leads_user: { Args: { _user_id: string }; Returns: boolean };
+      telegram_review_leave_request: {
+        Args: { _approved: boolean; _leave_request_id: string; _reviewer_profile_id: string };
+        Returns: Json;
+      };
+      telegram_review_onboarding_answer: {
+        Args: {
+          _answer_id: string;
+          _approved: boolean;
+          _feedback?: string | null;
+          _reviewer_profile_id: string;
+        };
+        Returns: Json;
+      };
+      telegram_review_task: {
+        Args: {
+          _approved: boolean;
+          _entity_id: string;
+          _entity_type: string;
+          _reviewer_profile_id: string;
+        };
+        Returns: Json;
+      };
       user_active_in_team: {
         Args: { _team_id: string; _user_id: string };
         Returns: boolean;
@@ -2192,7 +2220,7 @@ export type Database = {
       app_role: "admin" | "leader" | "employee" | "manager";
       kpi_period: "day" | "week" | "month";
       report_status: "draft" | "submitted" | "approved" | "rejected" | "locked";
-      task_status: "todo" | "in_progress" | "pending_review" | "done";
+      task_status: "todo" | "in_progress" | "rejected" | "pending_review" | "done";
       team_member_role: "leader" | "employee";
       team_status: "active" | "inactive";
       user_status: "active" | "inactive";
@@ -2324,7 +2352,7 @@ export const Constants = {
       app_role: ["admin", "leader", "employee", "manager"],
       kpi_period: ["day", "week", "month"],
       report_status: ["draft", "submitted", "approved", "rejected", "locked"],
-      task_status: ["todo", "in_progress", "pending_review", "done"],
+      task_status: ["todo", "in_progress", "rejected", "pending_review", "done"],
       team_member_role: ["leader", "employee"],
       team_status: ["active", "inactive"],
       user_status: ["active", "inactive"],

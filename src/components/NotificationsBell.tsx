@@ -15,12 +15,14 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
 import { notificationTypeBadgeClass, notificationTypeLabel } from "@/lib/notifications";
+import { isApprovalNotification } from "@/lib/approvalNotifications";
 import { todayStr } from "@/lib/reports";
 import { sendTelegramForNotification } from "@/lib/telegram";
 import { playNotification } from "@/utils/playNotification";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ApprovalNotificationActions } from "@/components/ApprovalNotificationActions";
 import { toast } from "sonner";
 
 const APP_TITLE = "Workspace MIZ";
@@ -363,10 +365,17 @@ export function NotificationsBell() {
               const isUnread = isVirtualNotification(n) ? !virtualReadIds.has(n.id) : !n.is_read;
               const Icon = severityIcon(n.severity);
               return (
-                <button
-                  type="button"
+                <div
+                  role="button"
+                  tabIndex={0}
                   key={n.id}
                   onClick={() => openNotification(n)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      void openNotification(n);
+                    }
+                  }}
                   className={`block w-full border-b p-3 text-left transition last:border-0 hover:bg-muted/50 ${
                     isUnread ? "bg-primary/5" : ""
                   }`}
@@ -387,6 +396,21 @@ export function NotificationsBell() {
                   </div>
                   {(n.message ?? n.body) && (
                     <p className="mt-1 text-sm text-muted-foreground">{n.message ?? n.body}</p>
+                  )}
+                  {!isVirtualNotification(n) && isApprovalNotification(n) && (
+                    <ApprovalNotificationActions
+                      notification={n}
+                      compact
+                      onDone={async () => {
+                        await Promise.all([
+                          qc.invalidateQueries({ queryKey: ["notifications", profileId] }),
+                          qc.invalidateQueries({ queryKey: ["notifications-workspace"] }),
+                          qc.invalidateQueries({ queryKey: ["tasks-workspace"] }),
+                          qc.invalidateQueries({ queryKey: ["attendance-workspace"] }),
+                          qc.invalidateQueries({ queryKey: ["resources-workspace"] }),
+                        ]);
+                      }}
+                    />
                   )}
                   <div className="mt-2 flex items-center justify-between gap-2">
                     <p className="text-xs text-muted-foreground">
@@ -411,7 +435,7 @@ export function NotificationsBell() {
                       </span>
                     )}
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -646,6 +670,8 @@ function notificationToPath(
   if (notification.entity_type === "task" || notification.entity_type === "task_completion") {
     return `${base}/tasks`;
   }
+  if (notification.entity_type === "leave_request") return `${base}/attendance`;
+  if (notification.entity_type === "onboarding_answer") return `${base}/resources`;
   if (notification.entity_type === "kpi") return `${base}/kpi`;
   if (notification.entity_type === "report") {
     if (role === "employee") return "/employee/report";

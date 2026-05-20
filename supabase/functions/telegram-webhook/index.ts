@@ -29,7 +29,7 @@ type CallbackAction = "approve_task" | "reject_task" | "approve_leave" | "reject
 
 type CallbackPayload = {
   action: CallbackAction;
-  entityType: "task" | "task_completion" | "leave_request";
+  entityType: "task" | "task_completion" | "onboarding_answer" | "leave_request";
   entityId: string;
 };
 
@@ -141,7 +141,12 @@ function parseCallbackData(data: string | undefined): CallbackPayload | null {
   }
 
   if (action !== "approve_task" && action !== "reject_task") return null;
-  if (entityType !== "task" && entityType !== "task_completion") return null;
+  if (
+    entityType !== "task" &&
+    entityType !== "task_completion" &&
+    entityType !== "onboarding_answer"
+  )
+    return null;
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entityId ?? "")) {
     return null;
   }
@@ -305,12 +310,18 @@ async function handleCallback(service: ReturnType<typeof createClient>, update: 
         _leave_request_id: parsed.entityId,
         _approved: approved,
       })
-    : await service.rpc("telegram_review_task", {
-        _reviewer_profile_id: reviewerProfileId,
-        _entity_type: parsed.entityType,
-        _entity_id: parsed.entityId,
-        _approved: approved,
-      });
+    : parsed.entityType === "onboarding_answer"
+      ? await service.rpc("telegram_review_onboarding_answer", {
+          _reviewer_profile_id: reviewerProfileId,
+          _answer_id: parsed.entityId,
+          _approved: approved,
+        })
+      : await service.rpc("telegram_review_task", {
+          _reviewer_profile_id: reviewerProfileId,
+          _entity_type: parsed.entityType,
+          _entity_id: parsed.entityId,
+          _approved: approved,
+        });
 
   const status = String((result as { status?: string } | null)?.status ?? "failed");
   const message = String(
@@ -376,9 +387,13 @@ async function handleCallback(service: ReturnType<typeof createClient>, update: 
     ? approved
       ? "leave_request_approved"
       : "leave_request_rejected"
-    : approved
-      ? "task_approved"
-      : "task_rejected";
+    : parsed.entityType === "onboarding_answer"
+      ? approved
+        ? "onboarding_approved"
+        : "onboarding_rejected"
+      : approved
+        ? "task_approved"
+        : "task_rejected";
   const { data: notifications } = await service
     .from("notifications")
     .select("id, target_profile_id, user_id, title, message, body, type")

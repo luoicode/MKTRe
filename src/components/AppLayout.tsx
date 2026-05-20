@@ -17,6 +17,7 @@ import {
   Package,
   Bell,
   CalendarCheck,
+  Menu,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -39,6 +40,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -110,6 +112,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const items = NAV.filter((n) => role && n.roles.includes(role));
 
@@ -284,65 +287,126 @@ export function AppLayout({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-col bg-background md:h-screen md:overflow-hidden">
-      <header className="sticky top-0 z-40 shrink-0 border-b bg-card/95 shadow-sm backdrop-blur">
-        <div className="flex min-h-16 items-center gap-3 px-4 py-3 md:px-6 xl:px-8">
-          <div className="flex min-w-0 shrink-0 items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 via-blue-600 to-violet-600 text-lg font-black text-white shadow-lg shadow-blue-500/25">
-              M
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-base font-extrabold tracking-tight text-slate-950">
-                Workspace MIZ
-              </p>
-              <p className="truncate text-xs font-medium text-muted-foreground">
-                Nội bộ • Quản trị
-              </p>
-            </div>
-          </div>
+    <div className="flex h-full min-h-0 w-full min-w-0 bg-background md:h-screen md:overflow-hidden">
+      <aside className="hidden w-64 shrink-0 border-r bg-card md:flex md:min-h-0 md:flex-col">
+        <SidebarContent items={items} pathname={location.pathname} />
+      </aside>
 
-          <div className="ml-auto flex shrink-0 items-center gap-1.5 md:gap-2">
+      <div className="flex min-w-0 flex-1 flex-col md:min-h-0">
+        <header className="sticky top-0 z-40 flex min-h-14 shrink-0 items-center gap-2 border-b bg-card/95 px-3 py-2 shadow-sm backdrop-blur md:hidden">
+          <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+            <SheetTrigger asChild>
+              <Button size="icon" variant="ghost" aria-label="Mở menu">
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-72 p-0">
+              <SheetHeader className="sr-only">
+                <SheetTitle>Menu</SheetTitle>
+              </SheetHeader>
+              <SidebarContent
+                items={items}
+                pathname={location.pathname}
+                onNavigate={() => setMobileNavOpen(false)}
+              />
+            </SheetContent>
+          </Sheet>
+          <BrandMark compact />
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <NotificationsBell />
             {UserMenu}
           </div>
-        </div>
+        </header>
 
-        <nav className="overflow-x-auto border-t bg-card/95 px-4 md:px-6 xl:px-8">
-          <NavSection items={items} pathname={location.pathname} />
-        </nav>
-      </header>
+        <header className="hidden min-h-14 shrink-0 items-center border-b bg-card/95 px-4 py-2 shadow-sm backdrop-blur md:flex xl:px-6">
+          <div className="min-w-0 text-sm font-medium text-muted-foreground">
+            {items.find((item) => location.pathname.startsWith(item.to))?.label ?? ""}
+          </div>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <NotificationsBell />
+            {UserMenu}
+          </div>
+        </header>
 
-      <main className="min-w-0 flex-1 overflow-x-hidden md:min-h-0 md:overflow-hidden">
-        <div className="w-full min-w-0 px-4 py-4 md:h-full md:min-h-0 md:overflow-y-auto md:overflow-x-hidden md:px-6 md:py-6 xl:px-8">
-          <div className="h-auto min-h-0 w-full min-w-0 md:h-full">{children}</div>
-        </div>
-      </main>
+        <main className="min-w-0 flex-1 overflow-x-hidden md:min-h-0 md:overflow-hidden">
+          <div className="w-full min-w-0 px-3 py-3 md:h-full md:min-h-0 md:overflow-y-auto md:overflow-x-hidden md:px-4 md:py-4 xl:px-6">
+            <div className="h-auto min-h-full w-full min-w-0">{children}</div>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
 
-function NavSection({ items, pathname }: { items: NavItem[]; pathname: string }) {
+function BrandMark({ compact = false }: { compact?: boolean }) {
   return (
-    <div className="flex min-w-max items-center gap-1">
+    <div className="flex min-w-0 shrink-0 items-center gap-2.5">
+      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 via-blue-600 to-violet-600 text-base font-black text-white shadow-lg shadow-blue-500/25">
+        M
+      </div>
+      <div className="min-w-0">
+        <p
+          className={cn(
+            "truncate font-extrabold tracking-tight text-slate-950",
+            compact ? "text-sm" : "text-base",
+          )}
+        >
+          Workspace MIZ
+        </p>
+        <p className="truncate text-xs font-medium text-muted-foreground">Nội bộ • Quản trị</p>
+      </div>
+    </div>
+  );
+}
+
+function SidebarContent({
+  items,
+  pathname,
+  onNavigate,
+}: {
+  items: NavItem[];
+  pathname: string;
+  onNavigate?: () => void;
+}) {
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-card">
+      <div className="flex h-16 shrink-0 items-center border-b px-4">
+        <BrandMark />
+      </div>
+      <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
+        <NavSection items={items} pathname={pathname} onNavigate={onNavigate} />
+      </nav>
+    </div>
+  );
+}
+
+function NavSection({
+  items,
+  pathname,
+  onNavigate,
+}: {
+  items: NavItem[];
+  pathname: string;
+  onNavigate?: () => void;
+}) {
+  return (
+    <div className="space-y-1.5">
       {items.map((it) => {
         const active = pathname.startsWith(it.to);
         return (
           <Link
             key={it.to}
             to={it.to}
+            onClick={onNavigate}
             className={cn(
-              "relative flex h-12 items-center gap-2 whitespace-nowrap px-3 text-sm font-semibold transition-colors",
-              active ? "text-primary" : "text-muted-foreground hover:text-foreground",
+              "flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors",
+              active
+                ? "bg-blue-50 text-blue-700"
+                : "text-slate-600 hover:bg-slate-50 hover:text-slate-950",
             )}
           >
-            <it.icon className="h-4 w-4" />
-            <span>{it.label}</span>
-            <span
-              className={cn(
-                "absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary transition-opacity",
-                active ? "opacity-100" : "opacity-0",
-              )}
-            />
+            <it.icon className={cn("h-4 w-4 shrink-0", active ? "text-blue-700" : "")} />
+            <span className="truncate">{it.label}</span>
           </Link>
         );
       })}

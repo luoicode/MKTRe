@@ -1,16 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toPng } from "html-to-image";
 import {
   CalendarDays,
+  Camera,
   CheckCircle2,
+  ChevronDown,
   ClipboardList,
   FileText,
+  Link2,
   ListChecks,
   Loader2,
   MessageCircle,
   MoreHorizontal,
   Pencil,
-  Play,
   Plus,
   RotateCcw,
   Save,
@@ -57,6 +60,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { TaskDetailsModal, type TaskDetailsTask } from "@/components/workspace/TaskDetailsModal";
 import { RefreshButton } from "@/components/RefreshButton";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
+import { ReportImagePreviewDialog } from "@/components/ReportImagePreviewDialog";
 
 type TeamRow = Pick<Tables<"teams">, "id" | "name">;
 type UserRow = Pick<Tables<"profiles">, "id" | "full_name" | "username" | "avatar_url">;
@@ -67,7 +71,7 @@ type OnboardingTemplateRow = Tables<"onboarding_task_templates">;
 type CompletionRow = Tables<"task_completions">;
 type TaskReadStateRow = Tables<"task_read_states">;
 type TaskStatus = Enums<"task_status">;
-type BoardStatus = TaskStatus;
+type BoardStatus = "todo" | "rejected" | "pending_review" | "done";
 type TaskPriority = "low" | "medium" | "high";
 type DeadlineFilter = "all" | "today" | "overdue" | "future" | "none";
 type DeadlineState = TaskDeadlineState;
@@ -91,9 +95,9 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const boardColumns: Array<{ status: BoardStatus; title: string; tone: string }> = [
   { status: "todo", title: "Cần làm", tone: "border-amber-200 bg-amber-50 text-amber-700" },
   {
-    status: "in_progress",
-    title: "Đã làm",
-    tone: "border-sky-200 bg-sky-50 text-sky-700",
+    status: "rejected",
+    title: "Chưa duyệt",
+    tone: "border-amber-200 bg-amber-50 text-amber-700",
   },
   {
     status: "pending_review",
@@ -104,6 +108,32 @@ const boardColumns: Array<{ status: BoardStatus; title: string; tone: string }> 
     status: "done",
     title: "Hoàn thành",
     tone: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
+];
+const employeeBoardColumns: Array<{
+  status: BoardStatus;
+  title: string;
+  icon: string;
+  countClass: string;
+}> = [
+  { status: "todo", title: "Cần làm", icon: "📋", countClass: "bg-blue-100 text-blue-700" },
+  {
+    status: "rejected",
+    title: "Chưa duyệt",
+    icon: "📝",
+    countClass: "bg-amber-100 text-amber-700",
+  },
+  {
+    status: "pending_review",
+    title: "Đợi duyệt",
+    icon: "⏳",
+    countClass: "bg-violet-100 text-violet-700",
+  },
+  {
+    status: "done",
+    title: "Hoàn thành",
+    icon: "✅",
+    countClass: "bg-emerald-100 text-emerald-700",
   },
 ];
 
@@ -131,9 +161,23 @@ function normalizeTaskStatus(value: string | null | undefined): BoardStatus {
       "started",
       "processing",
       "process",
+      "assigned",
     ].includes(normalized)
   ) {
-    return "in_progress";
+    return "todo";
+  }
+  if (
+    [
+      "rejected",
+      "changes_requested",
+      "change_requested",
+      "tu_choi",
+      "khong_duyet",
+      "khong_dat",
+      "can_lam_lai",
+    ].includes(normalized)
+  ) {
+    return "rejected";
   }
   if (
     [
@@ -144,11 +188,14 @@ function normalizeTaskStatus(value: string | null | undefined): BoardStatus {
       "cho_duyet",
       "chờ_duyet",
       "waiting_review",
+      "submitted",
     ].includes(normalized)
   ) {
     return "pending_review";
   }
-  if (["done", "completed", "complete", "hoan_thanh", "finished"].includes(normalized)) {
+  if (
+    ["done", "completed", "complete", "approved", "hoan_thanh", "finished"].includes(normalized)
+  ) {
     return "done";
   }
   return "todo";
@@ -160,12 +207,14 @@ export function TasksWorkspace() {
   const canAssign = role === "admin" || role === "manager" || role === "leader";
   const canManageOnboardingTemplates = role === "admin" || role === "manager";
   const isEmployee = role === "employee";
+  const usesKanbanBoard = isEmployee || canAssign;
   const date = formatYmd(new Date());
   const [task, setTask] = useState({
     team_id: "",
     assigned_to: "",
     title: "",
     description: "",
+    link_url: "",
     deadline: "",
     priority: "medium" as TaskPriority,
   });
@@ -176,6 +225,8 @@ export function TasksWorkspace() {
   const [completionForm, setCompletionForm] = useState({ note: "", proof_url: "" });
   const [reviewTarget, setReviewTarget] = useState<ReviewTarget | null>(null);
   const [reviewFeedback, setReviewFeedback] = useState("");
+  const [commentTarget, setCommentTarget] = useState<ReviewTarget | null>(null);
+  const [commentFeedback, setCommentFeedback] = useState("");
   const [taskSearch, setTaskSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<BoardStatus | "all">("all");
   const [deadlineFilter, setDeadlineFilter] = useState<DeadlineFilter>("all");
@@ -184,11 +235,13 @@ export function TasksWorkspace() {
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [onboardingDialogOpen, setOnboardingDialogOpen] = useState(false);
+  const [onboardingTemplatesExpanded, setOnboardingTemplatesExpanded] = useState(false);
   const [editingOnboardingTemplate, setEditingOnboardingTemplate] =
     useState<OnboardingTemplateRow | null>(null);
   const [onboardingTemplate, setOnboardingTemplate] = useState({
     title: "",
     description: "",
+    link_url: "",
     priority: "medium" as TaskPriority,
     deadline_hours: 24,
     sort_order: 0,
@@ -196,10 +249,18 @@ export function TasksWorkspace() {
   });
   const [editingTask, setEditingTask] = useState<TaskRow | null>(null);
   const [selectedTask, setSelectedTask] = useState<TaskRow | null>(null);
+  const [employeeDetailItem, setEmployeeDetailItem] = useState<UnifiedChecklistItem | null>(null);
   const [taskDetailsOpen, setTaskDetailsOpen] = useState(false);
+  const [screenshotMode, setScreenshotMode] = useState(false);
+  const [screenshotBusy, setScreenshotBusy] = useState(false);
+  const [screenshotBlob, setScreenshotBlob] = useState<Blob | null>(null);
+  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
+  const [screenshotPreviewOpen, setScreenshotPreviewOpen] = useState(false);
+  const checklistBoardRef = useRef<HTMLDivElement>(null);
   const [editTaskForm, setEditTaskForm] = useState({
     title: "",
     description: "",
+    link_url: "",
     deadline: "",
     priority: "medium" as TaskPriority,
     status: "todo" as TaskStatus,
@@ -362,6 +423,18 @@ export function TasksWorkspace() {
       };
     },
   });
+
+  useEffect(() => {
+    return () => {
+      if (screenshotUrl) URL.revokeObjectURL(screenshotUrl);
+    };
+  }, [screenshotUrl]);
+
+  useEffect(() => {
+    if (screenshotMode) document.body.classList.add("screenshot-mode");
+    else document.body.classList.remove("screenshot-mode");
+    return () => document.body.classList.remove("screenshot-mode");
+  }, [screenshotMode]);
 
   useEffect(() => {
     if (role !== "leader" || !data?.teams.length) return;
@@ -641,6 +714,22 @@ export function TasksWorkspace() {
   ).length;
   const incompleteWorkCount = Math.max(0, totalWorkCount - completedWorkCount);
   const progressValue = totalWorkCount ? (completedWorkCount / totalWorkCount) * 100 : 0;
+  const employeeTotalCount = baseChecklistItems.length;
+  const employeeCompletedCount = baseChecklistItems.filter((item) => item.status === "done").length;
+  const employeeInProgressCount = baseChecklistItems.filter(
+    (item) => item.status === "rejected",
+  ).length;
+  const employeeOverdueCount = baseChecklistItems.filter(
+    (item) => item.deadlineState === "overdue",
+  ).length;
+  const employeeProgressValue = employeeTotalCount
+    ? (employeeCompletedCount / employeeTotalCount) * 100
+    : 0;
+  const compactTotalCount = employeeTotalCount;
+  const compactCompletedCount = employeeCompletedCount;
+  const compactInProgressCount = employeeInProgressCount;
+  const compactOverdueCount = employeeOverdueCount;
+  const compactProgressValue = employeeProgressValue;
   const boardEmptyText =
     baseChecklistItems.length > 0 && visibleChecklistItems.length === 0
       ? "Không có task phù hợp với bộ lọc"
@@ -648,6 +737,33 @@ export function TasksWorkspace() {
   const refreshData = async () => {
     await refetch();
     toast.success("Đã làm mới dữ liệu");
+  };
+
+  const captureChecklistBoard = async () => {
+    const target = checklistBoardRef.current;
+    if (!target) return;
+    setScreenshotBusy(true);
+    setScreenshotMode(true);
+    try {
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      const dataUrl = await toPng(target, {
+        cacheBust: true,
+        pixelRatio: 2,
+        backgroundColor: "#f8fafc",
+      });
+      const blob = await (await fetch(dataUrl)).blob();
+      setScreenshotBlob(blob);
+      setScreenshotUrl((currentUrl) => {
+        if (currentUrl) URL.revokeObjectURL(currentUrl);
+        return URL.createObjectURL(blob);
+      });
+      setScreenshotPreviewOpen(true);
+    } catch {
+      toast.error("Không tạo được ảnh checklist");
+    } finally {
+      setScreenshotMode(false);
+      setScreenshotBusy(false);
+    }
   };
 
   const canReviewTask = useCallback(
@@ -749,6 +865,17 @@ export function TasksWorkspace() {
     const createdTaskId = Array.isArray(createdTask)
       ? createdTask[0]?.id
       : (createdTask as { id?: string } | null)?.id;
+    const taskLinkUrl = task.link_url.trim() || null;
+    if (createdTaskId && taskLinkUrl) {
+      const { error: linkError } = await supabase
+        .from("tasks")
+        .update({ link_url: taskLinkUrl })
+        .eq("id", createdTaskId);
+      if (linkError) {
+        toast.error(linkError.message);
+        return;
+      }
+    }
     await sendTelegramNotification({
       recipient_profile_id: assignedTo,
       entity_type: "task",
@@ -767,6 +894,7 @@ export function TasksWorkspace() {
       ...current,
       title: "",
       description: "",
+      link_url: "",
       deadline: "",
       priority: "medium",
     }));
@@ -779,6 +907,26 @@ export function TasksWorkspace() {
   const createTemplate = async () => {
     if (!template.title.trim()) {
       toast.error("Nhập tên việc thường ngày");
+      return;
+    }
+    if (editingTemplateId) {
+      const { error } = await supabase
+        .from("daily_task_templates")
+        .update({
+          team_id: normalizeUuid(template.team_id),
+          title: template.title.trim(),
+          description: template.description.trim() || null,
+        })
+        .eq("id", editingTemplateId);
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      toast.success("Đã cập nhật checklist");
+      setEditingTemplateId(null);
+      setTemplate((current) => ({ ...current, title: "", description: "" }));
+      setTemplateDialogOpen(false);
+      await qc.invalidateQueries({ queryKey: ["tasks-workspace"] });
       return;
     }
     const payload: TablesInsert<"daily_task_templates"> = {
@@ -797,42 +945,6 @@ export function TasksWorkspace() {
     qc.invalidateQueries({ queryKey: ["tasks-workspace"] });
   };
 
-  const updateTaskStatus = async (id: string, status: TaskStatus) => {
-    const { error } = await supabase
-      .from("tasks")
-      .update({ status, completed_at: status === "done" ? new Date().toISOString() : null })
-      .eq("id", id);
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-    toast.success("Đã cập nhật task");
-    const currentTask = data?.tasks.find((item) => item.id === id);
-    if (currentTask) await markTasksSeen([{ ...currentTask, status }]);
-    await qc.invalidateQueries({ queryKey: ["tasks-workspace"] });
-  };
-
-  const startTemplate = async (item: TemplateRow) => {
-    if (!profile) return;
-    const payload: TablesInsert<"task_completions"> = {
-      template_id: item.id,
-      user_id: profile.id,
-      completion_date: date,
-      completed: false,
-      completed_at: null,
-      status: "in_progress",
-    };
-    const { error } = await supabase
-      .from("task_completions")
-      .upsert(payload, { onConflict: "template_id,user_id,completion_date" });
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-    toast.success("Đã bắt đầu checklist");
-    qc.invalidateQueries({ queryKey: ["tasks-workspace"] });
-  };
-
   const notifyPendingReviewTelegram = async (
     entityType: "task" | "task_completion",
     entityId: string,
@@ -845,7 +957,7 @@ export function TasksWorkspace() {
         )
         .eq("entity_type", entityType)
         .eq("entity_id", entityId)
-        .eq("type", "task_review");
+        .in("type", ["task_review", "task_pending_review", "checklist_pending_review"]);
 
       if (error) {
         if (import.meta.env.DEV) {
@@ -931,6 +1043,12 @@ export function TasksWorkspace() {
   const startEditTemplate = (row: TemplateRow) => {
     setEditingTemplateId(row.id);
     setEditingTemplate({ title: row.title ?? "", description: row.description ?? "" });
+    setTemplate({
+      team_id: row.team_id ?? "",
+      title: row.title ?? "",
+      description: row.description ?? "",
+    });
+    setTemplateDialogOpen(true);
   };
 
   const saveTemplate = async () => {
@@ -952,6 +1070,7 @@ export function TasksWorkspace() {
   };
 
   const deleteTemplate = async (id: string) => {
+    if (!window.confirm("Xóa checklist này?")) return;
     const { error } = await supabase
       .from("daily_task_templates")
       .update({ is_active: false })
@@ -971,6 +1090,7 @@ export function TasksWorkspace() {
         ? {
             title: row.title,
             description: row.description ?? "",
+            link_url: row.link_url ?? "",
             priority: normalizePriority(row.priority),
             deadline_hours: row.deadline_hours,
             sort_order: row.sort_order,
@@ -979,6 +1099,7 @@ export function TasksWorkspace() {
         : {
             title: "",
             description: "",
+            link_url: "",
             priority: "medium",
             deadline_hours: 24,
             sort_order: (data?.onboardingTemplates.length ?? 0) + 1,
@@ -1005,6 +1126,7 @@ export function TasksWorkspace() {
     const payload = {
       title: onboardingTemplate.title.trim(),
       description: onboardingTemplate.description.trim() || null,
+      link_url: onboardingTemplate.link_url.trim() || null,
       priority: onboardingTemplate.priority,
       deadline_hours: Number(onboardingTemplate.deadline_hours) || 24,
       sort_order: Number(onboardingTemplate.sort_order) || 0,
@@ -1049,6 +1171,7 @@ export function TasksWorkspace() {
   };
 
   const deleteOnboardingTemplate = async (id: string) => {
+    if (!window.confirm("Xóa template onboarding này?")) return;
     const { data: deletedRow, error } = await supabase
       .from("onboarding_task_templates")
       .delete()
@@ -1073,6 +1196,7 @@ export function TasksWorkspace() {
     setEditTaskForm({
       title: row.title ?? "",
       description: row.description ?? "",
+      link_url: row.link_url ?? "",
       deadline: formatDateTimeLocal(row.deadline),
       priority: normalizePriority(row.priority),
       status: normalizeTaskStatus(row.status),
@@ -1089,6 +1213,7 @@ export function TasksWorkspace() {
       .update({
         title: editTaskForm.title.trim(),
         description: editTaskForm.description.trim() || null,
+        link_url: editTaskForm.link_url.trim() || null,
         deadline: editTaskForm.deadline ? new Date(editTaskForm.deadline).toISOString() : null,
         priority: editTaskForm.priority,
         status: editTaskForm.status,
@@ -1109,6 +1234,7 @@ export function TasksWorkspace() {
   };
 
   const deleteTask = async (id: string) => {
+    if (!window.confirm("Xóa nhiệm vụ này?")) return;
     const { data: deletedTask, error } = await supabase
       .from("tasks")
       .delete()
@@ -1138,6 +1264,81 @@ export function TasksWorkspace() {
     setTaskDetailsOpen(true);
   };
 
+  const openEmployeeItemDetails = (item: UnifiedChecklistItem) => {
+    if (item.type === "task") void markTasksSeen([item.task]);
+    setEmployeeDetailItem(item);
+  };
+
+  const getTemplateCompletion = (templateId: string) =>
+    data?.completions.find((row) => row.template_id === templateId && row.user_id === profile?.id);
+
+  const getUnifiedItemLink = (item: UnifiedChecklistItem) => {
+    if (item.type === "task") {
+      return getTaskWorkLink(item.task);
+    }
+    const completion = getTemplateCompletion(item.template.id);
+    return completion?.proof_url || extractFirstUrl(item.template.description);
+  };
+
+  const openUnifiedItemLink = (item: UnifiedChecklistItem) => {
+    const link = getUnifiedItemLink(item);
+    if (!link) {
+      toast.info("Chưa có link cho công việc này");
+      return;
+    }
+    window.open(link, "_blank", "noopener,noreferrer");
+  };
+
+  const openUnifiedItemDetails = (item: UnifiedChecklistItem) => {
+    if (item.type === "task") {
+      openTaskDetails(item.task);
+      return;
+    }
+    setEmployeeDetailItem(item);
+  };
+
+  const getFirstReviewableTemplateCompletion = (item: TemplateRow) => {
+    const templateUsers = getTemplateScopedUsers(item, data?.users ?? [], data?.memberships ?? [], {
+      currentUserId: profile?.id,
+      isEmployee,
+      selectedTeamId,
+      selectedUserId,
+    });
+    const templateUserIds = new Set(templateUsers.map((user) => user.id));
+    return (
+      (data?.completions ?? []).find(
+        (row) =>
+          row.template_id === item.id &&
+          templateUserIds.has(row.user_id) &&
+          normalizeTaskStatus(row.status) === "pending_review" &&
+          canReviewTemplateCompletion(item, row),
+      ) ?? null
+    );
+  };
+
+  const openUnifiedItemReview = (item: UnifiedChecklistItem) => {
+    if (item.type === "task") {
+      openTaskReview(item.task);
+      return;
+    }
+    const completion = getFirstReviewableTemplateCompletion(item.template);
+    if (!completion) {
+      toast.error("Không có checklist đang chờ duyệt hoặc bạn không có quyền duyệt");
+      return;
+    }
+    const user = data?.users.find((entry) => entry.id === completion.user_id) ?? null;
+    setReviewTarget({ type: "template", template: item.template, completion, user });
+  };
+
+  const submitEmployeeItem = (item: UnifiedChecklistItem) => {
+    setCompletionTarget({
+      type: item.type === "task" ? "task" : "template",
+      id: item.type === "task" ? item.task.id : item.template.id,
+      title: item.type === "task" ? item.task.title : item.template.title,
+      teamId: item.type === "task" ? item.task.team_id : item.template.team_id,
+    });
+  };
+
   const openTaskSubmitReview = (row: TaskRow) => {
     setTaskDetailsOpen(false);
     setCompletionTarget({
@@ -1157,6 +1358,85 @@ export function TasksWorkspace() {
     setReviewTarget({ type: "task", task: row });
   };
 
+  const openTaskComment = (row: TaskRow) => {
+    if (!canAssign) {
+      toast.error("Bạn không có quyền comment mục này");
+      return;
+    }
+    setTaskDetailsOpen(false);
+    setCommentFeedback(row.review_feedback ?? "");
+    setCommentTarget({ type: "task", task: row });
+  };
+
+  const getFirstCommentableTemplateCompletion = (item: TemplateRow) => {
+    const templateUsers = getTemplateScopedUsers(item, data?.users ?? [], data?.memberships ?? [], {
+      currentUserId: profile?.id,
+      isEmployee,
+      selectedTeamId,
+      selectedUserId,
+    });
+    const templateUserIds = new Set(templateUsers.map((user) => user.id));
+    return (
+      (data?.completions ?? []).find(
+        (row) =>
+          row.template_id === item.id &&
+          templateUserIds.has(row.user_id) &&
+          ["pending_review", "rejected", "done"].includes(normalizeTaskStatus(row.status)) &&
+          canReviewTemplateCompletion(item, row),
+      ) ?? null
+    );
+  };
+
+  const openUnifiedItemComment = (item: UnifiedChecklistItem) => {
+    if (item.type === "task") {
+      openTaskComment(item.task);
+      return;
+    }
+    const completion = getFirstCommentableTemplateCompletion(item.template);
+    if (!completion) {
+      toast.error("Chưa có lượt gửi để comment hoặc bạn không có quyền");
+      return;
+    }
+    const user = data?.users.find((entry) => entry.id === completion.user_id) ?? null;
+    setCommentFeedback(completion.review_feedback ?? "");
+    setCommentTarget({ type: "template", template: item.template, completion, user });
+  };
+
+  const saveComment = async () => {
+    if (!profile || !commentTarget) return;
+    const feedback = commentFeedback.trim();
+    if (!feedback) {
+      toast.error("Nhập nội dung comment/feedback");
+      return;
+    }
+    const result =
+      commentTarget.type === "task"
+        ? await supabase
+            .from("tasks")
+            .update({
+              review_feedback: feedback,
+              reviewed_by: profile.id,
+              reviewed_at: new Date().toISOString(),
+            })
+            .eq("id", commentTarget.task.id)
+        : await supabase
+            .from("task_completions")
+            .update({
+              review_feedback: feedback,
+              reviewed_by: profile.id,
+              reviewed_at: new Date().toISOString(),
+            })
+            .eq("id", commentTarget.completion.id);
+    if (result.error) {
+      toast.error(result.error.message);
+      return;
+    }
+    toast.success("Đã lưu comment");
+    setCommentTarget(null);
+    setCommentFeedback("");
+    await qc.invalidateQueries({ queryKey: ["tasks-workspace"] });
+  };
+
   const reviewItem = async (approved: boolean) => {
     if (!profile || !reviewTarget) return;
     const allowed =
@@ -1168,8 +1448,9 @@ export function TasksWorkspace() {
       return;
     }
     const now = new Date().toISOString();
+    const feedback = reviewFeedback.trim() || (approved ? null : "Không duyệt, cần làm lại.");
     if (reviewTarget.type === "task") {
-      const nextStatus = approved ? "done" : "in_progress";
+      const nextStatus = approved ? "done" : "rejected";
       const { error } = await supabase
         .from("tasks")
         .update({
@@ -1177,7 +1458,7 @@ export function TasksWorkspace() {
           completed_at: approved ? now : null,
           reviewed_at: now,
           reviewed_by: profile.id,
-          review_feedback: reviewFeedback.trim() || null,
+          review_feedback: feedback,
         })
         .eq("id", reviewTarget.task.id);
       if (error) {
@@ -1189,12 +1470,12 @@ export function TasksWorkspace() {
       const { error } = await supabase
         .from("task_completions")
         .update({
-          status: approved ? "done" : "in_progress",
+          status: approved ? "done" : "rejected",
           completed: approved,
           completed_at: approved ? now : null,
           reviewed_at: now,
           reviewed_by: profile.id,
-          review_feedback: reviewFeedback.trim() || null,
+          review_feedback: feedback,
         })
         .eq("id", reviewTarget.completion.id);
       if (error) {
@@ -1264,6 +1545,15 @@ export function TasksWorkspace() {
         </Select>
       </Field>
       <div className="md:col-span-2">
+        <Field label="Link công việc">
+          <Input
+            value={task.link_url}
+            onChange={(event) => setTask({ ...task, link_url: event.target.value })}
+            placeholder="https://drive.google.com/..."
+          />
+        </Field>
+      </div>
+      <div className="md:col-span-2">
         <Label>Mô tả</Label>
         <Textarea
           value={task.description}
@@ -1310,11 +1600,290 @@ export function TasksWorkspace() {
       </Field>
       <div className="flex justify-end">
         <Button onClick={createTemplate}>
-          <Plus className="mr-2 h-4 w-4" /> Tạo checklist
+          {editingTemplateId ? (
+            <>
+              <Save className="mr-2 h-4 w-4" /> Lưu checklist
+            </>
+          ) : (
+            <>
+              <Plus className="mr-2 h-4 w-4" /> Tạo checklist
+            </>
+          )}
         </Button>
       </div>
     </div>
   );
+
+  const renderEmployeeTaskCard = (item: UnifiedChecklistItem) => {
+    const title = getUnifiedItemTitle(item);
+    const description = getUnifiedItemDescription(item);
+    const status = item.status;
+    const link = getUnifiedItemLink(item);
+    const feedback = getUnifiedItemFeedback(item, getTemplateCompletion);
+
+    return (
+      <button
+        key={getUnifiedItemKey(item)}
+        type="button"
+        onClick={() => openEmployeeItemDetails(item)}
+        className={cn(
+          "group w-full rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/25",
+          item.deadlineState === "overdue" ? "border-red-200" : "border-slate-200",
+        )}
+      >
+        <div className="min-w-0 space-y-3">
+          <div className="min-w-0">
+            <p className="line-clamp-2 text-base font-bold leading-snug text-slate-950">{title}</p>
+            {description && (
+              <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-500">{description}</p>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {item.type === "template" ? (
+              <Badge className="rounded-full border-pink-100 bg-pink-50 px-3 py-1 text-xs font-semibold text-pink-600 hover:bg-pink-50">
+                Hằng ngày
+              </Badge>
+            ) : (
+              <Badge className="rounded-full border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                {item.task.deadline
+                  ? `Deadline: ${formatDateOnly(item.task.deadline)}`
+                  : "Không deadline"}
+              </Badge>
+            )}
+            {item.deadlineState === "overdue" && (
+              <Badge className="rounded-full border-red-100 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50">
+                Quá hạn
+              </Badge>
+            )}
+          </div>
+
+          {feedback && status !== "done" && (
+            <p className="line-clamp-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+              Feedback: {feedback}
+            </p>
+          )}
+
+          {(status !== "done" || link) && (
+            <div
+              className="screenshot-hide flex flex-wrap items-center gap-2 pt-1"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {link && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-9 rounded-xl px-3 text-xs"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openUnifiedItemLink(item);
+                  }}
+                >
+                  <Link2 className="mr-1.5 h-3.5 w-3.5" /> Mở link
+                </Button>
+              )}
+
+              {status !== "done" && (status === "rejected" || status === "pending_review") && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-9 rounded-xl px-3 text-xs"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openEmployeeItemDetails(item);
+                  }}
+                >
+                  <MessageCircle className="mr-1.5 h-3.5 w-3.5" /> Feedback
+                </Button>
+              )}
+
+              {status !== "done" && status === "todo" && (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-9 rounded-xl px-4 text-xs"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    submitEmployeeItem(item);
+                  }}
+                >
+                  <Send className="mr-1.5 h-3.5 w-3.5" /> Gửi
+                </Button>
+              )}
+
+              {status !== "done" && status === "rejected" && (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-9 rounded-xl bg-amber-600 px-4 text-xs hover:bg-amber-700"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    submitEmployeeItem(item);
+                  }}
+                >
+                  <Send className="mr-1.5 h-3.5 w-3.5" /> Gửi lại
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+      </button>
+    );
+  };
+
+  const renderManagerTaskCard = (item: UnifiedChecklistItem) => {
+    const title = getUnifiedItemTitle(item);
+    const description = getUnifiedItemDescription(item);
+    const status = item.status;
+    const link = getUnifiedItemLink(item);
+    const feedback = getUnifiedItemFeedback(item, getTemplateCompletion);
+    const canReview =
+      item.type === "task"
+        ? canReviewTask(item.task)
+        : Boolean(getFirstReviewableTemplateCompletion(item.template));
+
+    return (
+      <button
+        key={getUnifiedItemKey(item)}
+        type="button"
+        onClick={() => openUnifiedItemDetails(item)}
+        className={cn(
+          "group w-full rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/25",
+          item.deadlineState === "overdue" ? "border-red-200" : "border-slate-200",
+        )}
+      >
+        <div className="min-w-0 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="line-clamp-2 text-base font-bold leading-snug text-slate-950">
+                {title}
+              </p>
+              {description && (
+                <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-500">{description}</p>
+              )}
+            </div>
+            {item.type === "task" && (
+              <UserAvatar user={item.task.profiles} className="h-9 w-9 border" />
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {item.type === "template" ? (
+              <Badge className="rounded-full border-pink-100 bg-pink-50 px-3 py-1 text-xs font-semibold text-pink-600 hover:bg-pink-50">
+                Hằng ngày
+              </Badge>
+            ) : (
+              <Badge className="rounded-full border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                {item.task.deadline
+                  ? `Deadline: ${formatDateOnly(item.task.deadline)}`
+                  : "Không deadline"}
+              </Badge>
+            )}
+            <Badge
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs font-semibold",
+                statusPillClass(status),
+              )}
+            >
+              {statusShortLabel(status)}
+            </Badge>
+            {item.deadlineState === "overdue" && (
+              <Badge className="rounded-full border-red-100 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50">
+                Quá hạn
+              </Badge>
+            )}
+          </div>
+
+          {feedback && status !== "done" && (
+            <p className="line-clamp-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+              Feedback: {feedback}
+            </p>
+          )}
+
+          {item.type === "template" && (
+            <TemplateProgressLine
+              users={getTemplateScopedUsers(
+                item.template,
+                data?.users ?? [],
+                data?.memberships ?? [],
+                { currentUserId: profile?.id, isEmployee, selectedTeamId, selectedUserId },
+              )}
+              completions={(data?.completions ?? []).filter(
+                (row) => row.template_id === item.template.id,
+              )}
+            />
+          )}
+
+          <div
+            className="screenshot-hide flex flex-wrap items-center gap-2 pt-1"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {link && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-9 rounded-xl px-3 text-xs"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openUnifiedItemLink(item);
+                }}
+              >
+                <Link2 className="mr-1.5 h-3.5 w-3.5" /> Mở link
+              </Button>
+            )}
+
+            {status === "todo" && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-9 rounded-xl px-3 text-xs"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (item.type === "task") startEditTask(item.task);
+                  else startEditTemplate(item.template);
+                }}
+              >
+                <Pencil className="mr-1.5 h-3.5 w-3.5" /> Chỉnh sửa
+              </Button>
+            )}
+
+            {(status === "rejected" || status === "pending_review") && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-9 rounded-xl px-3 text-xs"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openUnifiedItemComment(item);
+                }}
+              >
+                <MessageCircle className="mr-1.5 h-3.5 w-3.5" /> Comment
+              </Button>
+            )}
+
+            {status === "pending_review" && canReview && (
+              <Button
+                type="button"
+                size="sm"
+                className="h-9 rounded-xl px-4 text-xs"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openUnifiedItemReview(item);
+                }}
+              >
+                <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> Duyệt
+              </Button>
+            )}
+          </div>
+        </div>
+      </button>
+    );
+  };
 
   const renderTaskCard = (item: TaskRow) => {
     const status = normalizeTaskStatus(item.status);
@@ -1437,12 +2006,19 @@ export function TasksWorkspace() {
                 size="sm"
                 variant="outline"
                 className="h-7 rounded-lg px-2.5 text-xs"
-                onClick={() => updateTaskStatus(item.id, "in_progress")}
+                onClick={() =>
+                  setCompletionTarget({
+                    type: "task",
+                    id: item.id,
+                    title: item.title,
+                    teamId: item.team_id,
+                  })
+                }
               >
-                <Play className="mr-1.5 h-3.5 w-3.5" /> Đã làm
+                <Send className="mr-1.5 h-3.5 w-3.5" /> Gửi duyệt
               </Button>
             )}
-            {item.assigned_to === profile?.id && status === "in_progress" && (
+            {item.assigned_to === profile?.id && status === "rejected" && (
               <Button
                 size="sm"
                 className="h-7 rounded-lg px-2.5 text-xs"
@@ -1655,12 +2231,19 @@ export function TasksWorkspace() {
                 size="sm"
                 variant="outline"
                 className="h-7 rounded-lg px-2.5 text-xs"
-                onClick={() => startTemplate(item)}
+                onClick={() =>
+                  setCompletionTarget({
+                    type: "template",
+                    id: item.id,
+                    title: item.title,
+                    teamId: item.team_id,
+                  })
+                }
               >
-                <Play className="mr-1.5 h-3.5 w-3.5" /> Đã làm
+                <Send className="mr-1.5 h-3.5 w-3.5" /> Gửi duyệt
               </Button>
             )}
-            {isEmployee && currentStatus === "in_progress" && (
+            {isEmployee && currentStatus === "rejected" && (
               <Button
                 size="sm"
                 className="h-7 rounded-lg px-2.5 text-xs"
@@ -1741,6 +2324,17 @@ export function TasksWorkspace() {
               Deadline {item.deadline_hours}h
             </span>
             <span className="rounded-full bg-slate-100 px-2.5 py-1">Thứ tự {item.sort_order}</span>
+            {item.link_url && (
+              <a
+                href={item.link_url}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-full bg-blue-50 px-2.5 py-1 font-semibold text-blue-600"
+                onClick={(event) => event.stopPropagation()}
+              >
+                Mở link
+              </a>
+            )}
           </div>
         </div>
         <CardActionsMenu
@@ -1763,7 +2357,66 @@ export function TasksWorkspace() {
     : null;
 
   return (
-    <div className="space-y-4 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden md:pr-2">
+    <div
+      ref={usesKanbanBoard ? checklistBoardRef : undefined}
+      className={cn(
+        "space-y-4 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden md:pr-2",
+        screenshotMode && "bg-slate-50 p-4",
+      )}
+    >
+      <ReportImagePreviewDialog
+        open={screenshotPreviewOpen}
+        imageUrl={screenshotUrl}
+        blob={screenshotBlob}
+        filename={`checklist-${formatYmd(new Date())}.png`}
+        isGenerating={screenshotBusy}
+        onClose={() => setScreenshotPreviewOpen(false)}
+      />
+
+      <EmployeeTaskDetailDialog
+        open={!!employeeDetailItem}
+        item={employeeDetailItem}
+        assignee={profile ? { full_name: profile.full_name, username: profile.username } : null}
+        completion={
+          employeeDetailItem?.type === "template"
+            ? (getTemplateCompletion(employeeDetailItem.template.id) ?? null)
+            : null
+        }
+        canManage={canAssign && !isEmployee}
+        canReview={
+          employeeDetailItem?.type === "template"
+            ? Boolean(getFirstReviewableTemplateCompletion(employeeDetailItem.template))
+            : false
+        }
+        completedUsers={
+          employeeDetailItem?.type === "template"
+            ? getSubmittedTemplateUsers(
+                getTemplateScopedUsers(
+                  employeeDetailItem.template,
+                  data?.users ?? [],
+                  data?.memberships ?? [],
+                  { currentUserId: profile?.id, isEmployee, selectedTeamId, selectedUserId },
+                ),
+                (data?.completions ?? []).filter(
+                  (row) => row.template_id === employeeDetailItem.template.id,
+                ),
+              )
+            : []
+        }
+        onEdit={(item) => {
+          if (item.type === "template") startEditTemplate(item.template);
+        }}
+        onDelete={(item) => {
+          if (item.type === "template") void deleteTemplate(item.template.id);
+        }}
+        onComment={openUnifiedItemComment}
+        onReview={openUnifiedItemReview}
+        onReject={openUnifiedItemReview}
+        onOpenChange={(open) => {
+          if (!open) setEmployeeDetailItem(null);
+        }}
+      />
+
       <TaskDetailsModal
         open={taskDetailsOpen}
         task={currentSelectedTask}
@@ -1776,9 +2429,10 @@ export function TasksWorkspace() {
         }}
         onEdit={startEditTask}
         onDelete={deleteTask}
-        onStatusChange={updateTaskStatus}
+        onComment={openTaskComment}
         onSubmitReview={openTaskSubmitReview}
         onReview={openTaskReview}
+        onReject={openTaskReview}
       />
 
       <Dialog open={!!completionTarget} onOpenChange={(open) => !open && setCompletionTarget(null)}>
@@ -1877,10 +2531,61 @@ export function TasksWorkspace() {
                 Hủy
               </Button>
               <Button variant="secondary" onClick={() => reviewItem(false)}>
-                <RotateCcw className="mr-2 h-4 w-4" /> Yêu cầu làm lại
+                <RotateCcw className="mr-2 h-4 w-4" /> Không duyệt
               </Button>
               <Button onClick={() => reviewItem(true)}>
                 <ShieldCheck className="mr-2 h-4 w-4" /> Duyệt hoàn thành
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!commentTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCommentTarget(null);
+            setCommentFeedback("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Comment / Feedback</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-xl border bg-slate-50 p-3 text-sm">
+              <p className="font-semibold text-slate-950">
+                {commentTarget?.type === "task"
+                  ? commentTarget.task.title
+                  : commentTarget?.template.title}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {commentTarget?.type === "task"
+                  ? commentTarget.task.profiles?.full_name
+                  : commentTarget?.user?.full_name}
+              </p>
+            </div>
+            <Field label="Nội dung comment/feedback">
+              <Textarea
+                value={commentFeedback}
+                onChange={(event) => setCommentFeedback(event.target.value)}
+                placeholder="Nhập góp ý, yêu cầu chỉnh sửa hoặc ghi chú quản trị..."
+              />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCommentTarget(null);
+                  setCommentFeedback("");
+                }}
+              >
+                Hủy
+              </Button>
+              <Button onClick={saveComment}>
+                <MessageCircle className="mr-2 h-4 w-4" /> Lưu comment
               </Button>
             </div>
           </div>
@@ -1896,10 +2601,21 @@ export function TasksWorkspace() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
+      <Dialog
+        open={templateDialogOpen}
+        onOpenChange={(open) => {
+          setTemplateDialogOpen(open);
+          if (!open) {
+            setEditingTemplateId(null);
+            setTemplate((current) => ({ ...current, title: "", description: "" }));
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>Thêm checklist thường ngày</DialogTitle>
+            <DialogTitle>
+              {editingTemplateId ? "Sửa checklist thường ngày" : "Thêm checklist thường ngày"}
+            </DialogTitle>
           </DialogHeader>
           {templateForm}
         </DialogContent>
@@ -1964,6 +2680,17 @@ export function TasksWorkspace() {
                 </SelectContent>
               </Select>
             </Field>
+            <div className="md:col-span-2">
+              <Field label="Link công việc">
+                <Input
+                  value={editTaskForm.link_url}
+                  onChange={(event) =>
+                    setEditTaskForm({ ...editTaskForm, link_url: event.target.value })
+                  }
+                  placeholder="https://drive.google.com/..."
+                />
+              </Field>
+            </div>
             <div className="md:col-span-2">
               <Label>Mô tả</Label>
               <Textarea
@@ -2068,6 +2795,20 @@ export function TasksWorkspace() {
               />
             </div>
             <div className="md:col-span-2">
+              <Field label="Link nếu có">
+                <Input
+                  value={onboardingTemplate.link_url}
+                  onChange={(event) =>
+                    setOnboardingTemplate({
+                      ...onboardingTemplate,
+                      link_url: event.target.value,
+                    })
+                  }
+                  placeholder="https://drive.google.com/..."
+                />
+              </Field>
+            </div>
+            <div className="md:col-span-2">
               <Field label="Mô tả">
                 <Textarea
                   value={onboardingTemplate.description}
@@ -2094,31 +2835,65 @@ export function TasksWorkspace() {
 
       <WorkspacePageHeader
         className="md:sticky md:top-0 md:z-20"
-        title={isEmployee ? "Công việc của tôi" : "Checklist công việc"}
+        title={isEmployee ? "Checklist Công Việc" : "Checklist công việc"}
         subtitle={
           isEmployee
-            ? `${profile?.full_name ?? "Marketing"} · Cập nhật lúc ${new Intl.DateTimeFormat(
-                "vi-VN",
-                {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  day: "2-digit",
-                  month: "2-digit",
-                  year: "numeric",
-                },
-              ).format(new Date())}`
+            ? "Nhân sự - Quản lý nhiệm vụ cá nhân"
             : "Quản lý nhiệm vụ, checklist và luồng duyệt của đội ngũ"
+        }
+        contentClassName={usesKanbanBoard ? "lg:items-start" : undefined}
+        rightContent={
+          usesKanbanBoard ? (
+            <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
+              <EmployeeSummaryPill label="Tổng task" value={compactTotalCount} />
+              <EmployeeSummaryPill
+                label="Hoàn thành"
+                value={compactCompletedCount}
+                tone="success"
+              />
+              <EmployeeSummaryPill
+                label="Chưa duyệt"
+                value={compactInProgressCount}
+                tone="warning"
+              />
+              <EmployeeSummaryPill label="Quá hạn" value={compactOverdueCount} tone="danger" />
+              <EmployeeSummaryPill label="Tiến độ" value={`${Math.round(compactProgressValue)}%`} />
+            </div>
+          ) : null
         }
         actions={
           <>
-            <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
-            {isEmployee && (
-              <Badge className="rounded-full border-emerald-100 bg-white px-4 py-2 text-sm font-semibold text-emerald-600 shadow-sm">
-                <span className="mr-2 h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                {Math.round(progressValue)}% hoàn thành hôm nay
-              </Badge>
+            {usesKanbanBoard ? (
+              <div className="screenshot-hide flex flex-wrap items-center gap-2">
+                <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
+                <Button
+                  variant="outline"
+                  className="rounded-2xl bg-white"
+                  onClick={() => void captureChecklistBoard()}
+                  disabled={screenshotBusy}
+                >
+                  <Camera className="mr-2 h-4 w-4" />
+                  {screenshotBusy ? "Đang chụp..." : "Chụp màn hình"}
+                </Button>
+                {canAssign && (
+                  <>
+                    <Button
+                      variant="outline"
+                      className="rounded-2xl bg-white"
+                      onClick={() => setTemplateDialogOpen(true)}
+                    >
+                      <ClipboardList className="mr-2 h-4 w-4" /> Thêm checklist
+                    </Button>
+                    <Button className="rounded-2xl px-5" onClick={() => setTaskDialogOpen(true)}>
+                      <Plus className="mr-2 h-4 w-4" /> Thêm nhiệm vụ
+                    </Button>
+                  </>
+                )}
+              </div>
+            ) : (
+              <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
             )}
-            {canAssign && (
+            {canAssign && !usesKanbanBoard && (
               <>
                 <Button
                   variant="outline"
@@ -2135,7 +2910,7 @@ export function TasksWorkspace() {
           </>
         }
       >
-        {canAssign && (
+        {canAssign && !usesKanbanBoard && (
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <SummaryCard label="Tổng task" value={totalWorkCount} />
             <SummaryCard label="Đã hoàn thành" value={completedWorkCount} tone="success" />
@@ -2146,78 +2921,101 @@ export function TasksWorkspace() {
         )}
       </WorkspacePageHeader>
 
-      <div className="space-y-4 md:min-h-0 md:flex-1 md:overflow-y-auto md:overflow-x-hidden md:pt-4">
-        {canManageOnboardingTemplates && (
-          <section className="mt-5 rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-950">
-                  Checklist onboarding mặc định
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Clone tự động cho employee mới. Tối đa 4 template active.
-                </p>
-              </div>
-              <Button
-                size="sm"
-                className="rounded-xl"
-                onClick={() => openOnboardingTemplateDialog()}
+      {usesKanbanBoard ? (
+        <div className="space-y-3 md:flex md:min-h-0 md:flex-1 md:flex-col md:overflow-hidden md:pt-2">
+          {!isEmployee && canManageOnboardingTemplates && (
+            <section className="screenshot-hide shrink-0 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
+                onClick={() => setOnboardingTemplatesExpanded((current) => !current)}
+                aria-expanded={onboardingTemplatesExpanded}
               >
-                <Plus className="mr-2 h-4 w-4" /> Thêm template
-              </Button>
-            </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              {(data?.onboardingTemplates ?? []).map(renderOnboardingTemplateCard)}
-              {!data?.onboardingTemplates.length && (
-                <div className="rounded-2xl border border-dashed bg-white p-5 text-sm text-slate-500 md:col-span-2 xl:col-span-4">
-                  Chưa có checklist onboarding mặc định.
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate text-sm font-semibold text-slate-950">
+                      Checklist onboarding mặc định
+                    </p>
+                    <Badge className="rounded-full border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-50">
+                      {data?.onboardingTemplates.length ?? 0} template
+                    </Badge>
+                    <Badge className="rounded-full border-emerald-100 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
+                      {(data?.onboardingTemplates ?? []).filter((item) => item.is_active).length}{" "}
+                      active
+                    </Badge>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-slate-500">
+                    Clone tự động cho employee mới. Bấm mũi tên để mở rộng.
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2 self-start">
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border bg-white text-slate-600">
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 transition-transform",
+                        onboardingTemplatesExpanded && "rotate-180",
+                      )}
+                    />
+                  </span>
+                </div>
+              </button>
+              {onboardingTemplatesExpanded && (
+                <div className="border-t bg-slate-50/70 p-4">
+                  <div className="mb-4 flex justify-end">
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="rounded-xl"
+                      onClick={() => openOnboardingTemplateDialog()}
+                    >
+                      <Plus className="mr-2 h-4 w-4" /> Thêm template
+                    </Button>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    {(data?.onboardingTemplates ?? []).map(renderOnboardingTemplateCard)}
+                    {!data?.onboardingTemplates.length && (
+                      <div className="rounded-2xl border border-dashed bg-white p-5 text-sm text-slate-500 md:col-span-2 xl:col-span-4">
+                        Chưa có checklist onboarding mặc định.
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
-            </div>
-          </section>
-        )}
+            </section>
+          )}
 
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <div className="relative min-w-72 flex-1">
-            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input
-              value={taskSearch}
-              onChange={(event) => setTaskSearch(event.target.value)}
-              placeholder={isEmployee ? "Tìm công việc của tôi..." : "Tìm nhiệm vụ..."}
-              className="h-12 rounded-2xl border-slate-200 bg-white pl-11 text-base shadow-sm"
-            />
-          </div>
+          {!isEmployee && (
+            <div className="screenshot-hide flex shrink-0 flex-wrap items-center gap-3">
+              <div className="relative min-w-72 flex-1">
+                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  value={taskSearch}
+                  onChange={(event) => setTaskSearch(event.target.value)}
+                  placeholder="Tìm nhiệm vụ..."
+                  className="h-12 rounded-2xl border-slate-200 bg-white pl-11 text-base shadow-sm"
+                />
+              </div>
 
-          <StatusTabs
-            value={statusFilter}
-            onChange={handleStatusFilterChange}
-            counts={tabCounts}
-            unreadTabs={unreadTabs}
-          />
+              <Select
+                value={selectedTeamId}
+                onValueChange={(value) => {
+                  setSelectedTeamId(value);
+                  setSelectedUserId("all");
+                }}
+              >
+                <SelectTrigger className="h-12 w-full rounded-2xl bg-white shadow-sm sm:w-52">
+                  <SelectValue placeholder="Team" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tất cả team</SelectItem>
+                  {(data?.teams ?? []).map((team) => (
+                    <SelectItem key={team.id} value={team.id}>
+                      {team.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-          {canAssign && (
-            <>
-              {role !== "leader" && (
-                <Select
-                  value={selectedTeamId}
-                  onValueChange={(value) => {
-                    setSelectedTeamId(value);
-                    setSelectedUserId("all");
-                  }}
-                >
-                  <SelectTrigger className="h-12 w-full rounded-2xl bg-white shadow-sm sm:w-52">
-                    <SelectValue placeholder="Team" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tất cả team</SelectItem>
-                    {(data?.teams ?? []).map((team) => (
-                      <SelectItem key={team.id} value={team.id}>
-                        {team.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
               <Select value={selectedUserId} onValueChange={setSelectedUserId}>
                 <SelectTrigger className="h-12 w-full rounded-2xl bg-white shadow-sm sm:w-56">
                   <SelectValue placeholder="Người phụ trách" />
@@ -2234,6 +3032,7 @@ export function TasksWorkspace() {
                   ))}
                 </SelectContent>
               </Select>
+
               <Select
                 value={deadlineFilter}
                 onValueChange={(value) => setDeadlineFilter(value as DeadlineFilter)}
@@ -2249,28 +3048,181 @@ export function TasksWorkspace() {
                   <SelectItem value="none">Chưa có deadline</SelectItem>
                 </SelectContent>
               </Select>
-            </>
+            </div>
+          )}
+
+          {isLoading ? (
+            <div className="flex min-h-72 items-center justify-center rounded-3xl border bg-white">
+              <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
+            </div>
+          ) : (
+            <div className="grid min-w-0 gap-4 md:h-0 md:min-h-[420px] md:flex-1 md:grid-cols-2 md:overflow-hidden xl:grid-cols-4">
+              {employeeBoardColumns.map((column) => {
+                const columnItems = baseChecklistItems.filter(
+                  (item) => item.status === column.status,
+                );
+                return (
+                  <section
+                    key={column.status}
+                    className="flex min-h-[360px] min-w-0 flex-col rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm md:h-full md:min-h-0 md:overflow-hidden"
+                  >
+                    <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
+                      <h2 className="flex min-w-0 items-center gap-2 text-lg font-extrabold uppercase tracking-tight text-slate-950">
+                        <span>{column.icon}</span>
+                        <span className="truncate">{column.title}</span>
+                      </h2>
+                      <span
+                        className={cn(
+                          "inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full px-2 text-sm font-bold",
+                          column.countClass,
+                        )}
+                      >
+                        {columnItems.length}
+                      </span>
+                    </div>
+                    <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
+                      {columnItems.map((item) =>
+                        isEmployee ? renderEmployeeTaskCard(item) : renderManagerTaskCard(item),
+                      )}
+                      {!columnItems.length && (
+                        <div className="rounded-2xl border border-dashed bg-slate-50 p-5 text-center text-sm text-slate-500">
+                          Trống
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
           )}
         </div>
-
-        {isLoading ? (
-          <div className="flex min-h-72 items-center justify-center rounded-3xl border bg-white">
-            <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
-          </div>
-        ) : (
-          <div className="min-w-0">
-            <div className="grid gap-5 pb-2 md:grid-cols-2">
-              {filteredTemplates.map((item) => renderTemplateCard(item))}
-              {filteredTasks.map((item) => renderTaskCard(item))}
-            </div>
-            {filteredTasks.length + filteredTemplates.length === 0 && (
-              <div className="rounded-3xl border border-dashed bg-white p-10">
-                <Empty text={boardEmptyText} />
+      ) : (
+        <div className="space-y-4 md:min-h-0 md:flex-1 md:overflow-y-auto md:overflow-x-hidden md:pt-4">
+          {canManageOnboardingTemplates && (
+            <section className="mt-5 rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-950">
+                    Checklist onboarding mặc định
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Clone tự động cho employee mới. Tối đa 4 template active.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() => openOnboardingTemplateDialog()}
+                >
+                  <Plus className="mr-2 h-4 w-4" /> Thêm template
+                </Button>
               </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {(data?.onboardingTemplates ?? []).map(renderOnboardingTemplateCard)}
+                {!data?.onboardingTemplates.length && (
+                  <div className="rounded-2xl border border-dashed bg-white p-5 text-sm text-slate-500 md:col-span-2 xl:col-span-4">
+                    Chưa có checklist onboarding mặc định.
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <div className="relative min-w-72 flex-1">
+              <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                value={taskSearch}
+                onChange={(event) => setTaskSearch(event.target.value)}
+                placeholder={isEmployee ? "Tìm công việc của tôi..." : "Tìm nhiệm vụ..."}
+                className="h-12 rounded-2xl border-slate-200 bg-white pl-11 text-base shadow-sm"
+              />
+            </div>
+
+            <StatusTabs
+              value={statusFilter}
+              onChange={handleStatusFilterChange}
+              counts={tabCounts}
+              unreadTabs={unreadTabs}
+            />
+
+            {canAssign && (
+              <>
+                {role !== "leader" && (
+                  <Select
+                    value={selectedTeamId}
+                    onValueChange={(value) => {
+                      setSelectedTeamId(value);
+                      setSelectedUserId("all");
+                    }}
+                  >
+                    <SelectTrigger className="h-12 w-full rounded-2xl bg-white shadow-sm sm:w-52">
+                      <SelectValue placeholder="Team" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tất cả team</SelectItem>
+                      {(data?.teams ?? []).map((team) => (
+                        <SelectItem key={team.id} value={team.id}>
+                          {team.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                  <SelectTrigger className="h-12 w-full rounded-2xl bg-white shadow-sm sm:w-56">
+                    <SelectValue placeholder="Người phụ trách" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tất cả người phụ trách</SelectItem>
+                    {teamMembers.map((member) => (
+                      <SelectItem key={member.id} value={member.id}>
+                        <span className="flex items-center gap-2">
+                          <UserAvatar user={member} className="border" />
+                          <span>{member.full_name}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={deadlineFilter}
+                  onValueChange={(value) => setDeadlineFilter(value as DeadlineFilter)}
+                >
+                  <SelectTrigger className="h-12 w-full rounded-2xl bg-white shadow-sm sm:w-48">
+                    <SelectValue placeholder="Deadline" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tất cả deadline</SelectItem>
+                    <SelectItem value="today">Hôm nay</SelectItem>
+                    <SelectItem value="overdue">Quá hạn</SelectItem>
+                    <SelectItem value="future">Sắp tới</SelectItem>
+                    <SelectItem value="none">Chưa có deadline</SelectItem>
+                  </SelectContent>
+                </Select>
+              </>
             )}
           </div>
-        )}
-      </div>
+
+          {isLoading ? (
+            <div className="flex min-h-72 items-center justify-center rounded-3xl border bg-white">
+              <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
+            </div>
+          ) : (
+            <div className="min-w-0">
+              <div className="grid gap-5 pb-2 md:grid-cols-2">
+                {filteredTemplates.map((item) => renderTemplateCard(item))}
+                {filteredTasks.map((item) => renderTaskCard(item))}
+              </div>
+              {filteredTasks.length + filteredTemplates.length === 0 && (
+                <div className="rounded-3xl border border-dashed bg-white p-10">
+                  <Empty text={boardEmptyText} />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -2400,23 +3352,233 @@ function StatusTabs({
   );
 }
 
+function EmployeeTaskDetailDialog({
+  open,
+  item,
+  assignee,
+  completion,
+  canManage,
+  canReview,
+  completedUsers,
+  onEdit,
+  onDelete,
+  onComment,
+  onReview,
+  onReject,
+  onOpenChange,
+}: {
+  open: boolean;
+  item: UnifiedChecklistItem | null;
+  assignee: Pick<UserRow, "full_name" | "username"> | null;
+  completion: CompletionRow | null;
+  canManage: boolean;
+  canReview: boolean;
+  completedUsers: UserRow[];
+  onEdit: (item: UnifiedChecklistItem) => void;
+  onDelete: (item: UnifiedChecklistItem) => void;
+  onComment: (item: UnifiedChecklistItem) => void;
+  onReview: (item: UnifiedChecklistItem) => void;
+  onReject: (item: UnifiedChecklistItem) => void;
+  onOpenChange: (open: boolean) => void;
+}) {
+  if (!item) return null;
+
+  const title = getUnifiedItemTitle(item);
+  const description = getUnifiedItemDescription(item) || "Không có";
+  const status = item.status;
+  const taskAssignee = item.type === "task" ? item.task.profiles : assignee;
+  const createdAt = item.type === "task" ? item.task.created_at : item.template.created_at;
+  const deadline = item.type === "task" ? item.task.deadline : null;
+  const feedback = getUnifiedItemFeedback(item, () => completion) || "Không có";
+  const note =
+    item.type === "task"
+      ? item.task.completion_note || "Không có"
+      : completion?.completion_note || completion?.note || "Không có";
+  const link =
+    item.type === "task"
+      ? getTaskWorkLink(item.task)
+      : completion?.proof_url || extractFirstUrl(item.template.description);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[84vh] w-[calc(100vw-2rem)] max-w-3xl overflow-hidden rounded-3xl p-0">
+        <DialogHeader className="border-b bg-white px-6 py-5">
+          <DialogTitle className="pr-8 text-2xl font-extrabold leading-tight text-slate-950">
+            {title}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="min-h-0 overflow-y-auto px-6 py-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <DetailLine label="Người thực hiện" value={taskAssignee?.full_name ?? "Không có"} />
+            <DetailLine label="Ngày tạo" value={formatDateOnly(createdAt)} />
+            <DetailLine
+              label="Deadline"
+              value={item.type === "template" ? "Hằng ngày" : formatDateOnly(deadline)}
+              danger={item.deadlineState === "overdue"}
+            />
+            <DetailLine label="Trạng thái" value={employeeStatusLabel(status)} />
+          </div>
+
+          <section className="mt-5 space-y-2">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Mô tả / kế hoạch
+            </p>
+            <p className="whitespace-pre-wrap break-words text-base leading-7 text-slate-700">
+              {description}
+            </p>
+          </section>
+
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <DetailRichBlock label="Feedback gần nhất" value={feedback} />
+            <DetailRichBlock label="Ghi chú gửi duyệt" value={note} />
+          </div>
+
+          <section className="mt-5 rounded-2xl border bg-white p-4">
+            <p className="text-sm font-semibold text-slate-900">Người đã làm</p>
+            {completedUsers.length ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {completedUsers.map((user) => (
+                  <div
+                    key={user.id}
+                    title={user.full_name}
+                    className="flex items-center gap-2 rounded-full border bg-slate-50 py-1 pl-1 pr-3 text-xs font-semibold text-slate-700"
+                  >
+                    <UserAvatar user={user} className="h-8 w-8 border" />
+                    <span className="max-w-40 truncate">{user.full_name}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-slate-500">Chưa có nhân sự hoàn thành.</p>
+            )}
+          </section>
+
+          {link && (
+            <div className="mt-5">
+              <a
+                href={link}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex max-w-full items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-semibold text-primary transition hover:bg-primary/5"
+              >
+                <Link2 className="h-4 w-4 shrink-0" />
+                <span className="truncate">Mở link content / chứng từ</span>
+              </a>
+            </div>
+          )}
+        </div>
+        <div className="flex flex-wrap justify-end gap-2 border-t bg-white px-6 py-4">
+          {canReview && status === "pending_review" && (
+            <>
+              <Button variant="secondary" className="rounded-2xl" onClick={() => onReject(item)}>
+                <RotateCcw className="mr-2 h-4 w-4" /> Không duyệt
+              </Button>
+              <Button className="rounded-2xl" onClick={() => onReview(item)}>
+                <ShieldCheck className="mr-2 h-4 w-4" /> Duyệt
+              </Button>
+            </>
+          )}
+          {canManage && (
+            <>
+              <Button variant="outline" className="rounded-2xl" onClick={() => onComment(item)}>
+                <MessageCircle className="mr-2 h-4 w-4" /> Comment
+              </Button>
+              <Button variant="outline" className="rounded-2xl" onClick={() => onEdit(item)}>
+                <Pencil className="mr-2 h-4 w-4" /> Chỉnh sửa
+              </Button>
+              <Button variant="destructive" className="rounded-2xl" onClick={() => onDelete(item)}>
+                <Trash2 className="mr-2 h-4 w-4" /> Xóa
+              </Button>
+            </>
+          )}
+          <Button variant="outline" className="rounded-2xl" onClick={() => onOpenChange(false)}>
+            Đóng
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DetailLine({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
+  return (
+    <div className="min-w-0 rounded-2xl border bg-slate-50 px-4 py-3">
+      <p className="text-sm font-semibold text-slate-500">{label}</p>
+      <p
+        className={cn(
+          "mt-1 whitespace-normal break-words text-base font-bold text-slate-950",
+          danger && "text-red-600",
+        )}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function DetailRichBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-2xl border bg-white p-4">
+      <p className="text-sm font-semibold text-slate-500">{label}</p>
+      <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-slate-800">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function TemplateProgressLine({
+  users,
+  completions,
+}: {
+  users: UserRow[];
+  completions: CompletionRow[];
+}) {
+  const doneUsers = getCompletedTemplateUsers(users, completions);
+  const pendingUsers = getPendingTemplateUsers(users, completions);
+  return (
+    <div className="rounded-xl border bg-slate-50 px-3 py-2">
+      <div className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-600">
+        <span>Tiến độ checklist</span>
+        <span>
+          {doneUsers.length}/{users.length}
+        </span>
+      </div>
+      {pendingUsers.length > 0 && (
+        <div className="mt-2 flex items-center -space-x-2">
+          {pendingUsers.slice(0, 4).map((user) => (
+            <UserAvatar key={user.id} user={user} className="h-8 w-8 border" />
+          ))}
+          {pendingUsers.length > 4 && (
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-[11px] font-semibold text-slate-600">
+              +{pendingUsers.length - 4}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function columnDotClass(status: BoardStatus) {
   if (status === "todo") return "bg-orange-500";
-  if (status === "in_progress") return "bg-blue-500";
+  if (status === "rejected") return "bg-amber-500";
   if (status === "pending_review") return "bg-violet-500";
   return "bg-emerald-500";
 }
 
 function statusShortLabel(status: BoardStatus) {
   if (status === "todo") return "Cần làm";
-  if (status === "in_progress") return "Đã làm";
+  if (status === "rejected") return "Chưa duyệt";
   if (status === "pending_review") return "Đợi duyệt";
   return "Hoàn thành";
 }
 
 function statusPillClass(status: BoardStatus) {
   if (status === "todo") return "border-amber-100 bg-amber-50 text-amber-700 hover:bg-amber-50";
-  if (status === "in_progress") return "border-sky-100 bg-sky-50 text-sky-700 hover:bg-sky-50";
+  if (status === "rejected") {
+    return "border-amber-100 bg-amber-50 text-amber-700 hover:bg-amber-50";
+  }
   if (status === "pending_review") {
     return "border-violet-100 bg-violet-50 text-violet-700 hover:bg-violet-50";
   }
@@ -2548,6 +3710,25 @@ function getPendingTemplateUsers(users: UserRow[], completions: CompletionRow[])
   );
 }
 
+function getSubmittedTemplateUsers(users: UserRow[], completions: CompletionRow[]) {
+  return users.filter((user) =>
+    completions.some((row) => {
+      if (row.user_id !== user.id) return false;
+      const status = normalizeTaskStatus(row.status);
+      return Boolean(
+        status === "pending_review" ||
+        status === "rejected" ||
+        status === "done" ||
+        row.completed ||
+        row.submitted_at ||
+        row.completed_at ||
+        row.completion_note ||
+        row.proof_url,
+      );
+    }),
+  );
+}
+
 function getTemplateBoardStatus(
   item: TemplateRow,
   completions: CompletionRow[],
@@ -2568,7 +3749,7 @@ function getTemplateBoardStatus(
   ) {
     return "done";
   }
-  if (rows.some((row) => normalizeTaskStatus(row.status) === "in_progress")) return "in_progress";
+  if (rows.some((row) => normalizeTaskStatus(row.status) === "rejected")) return "rejected";
   return "todo";
 }
 
@@ -2702,4 +3883,81 @@ function SummaryCard({
       <p className="mt-1 text-2xl font-bold">{value}</p>
     </div>
   );
+}
+
+function EmployeeSummaryPill({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: number | string;
+  tone?: "default" | "success" | "warning" | "danger";
+}) {
+  const toneClass =
+    tone === "success"
+      ? "border-emerald-100 bg-emerald-50 text-emerald-700"
+      : tone === "warning"
+        ? "border-amber-100 bg-amber-50 text-amber-700"
+        : tone === "danger"
+          ? "border-red-100 bg-red-50 text-red-700"
+          : "border-slate-100 bg-white text-slate-950";
+  return (
+    <div
+      className={cn(
+        "flex h-11 min-w-0 items-center justify-between gap-2 rounded-2xl border px-3 shadow-sm sm:min-w-[112px]",
+        toneClass,
+      )}
+    >
+      <p className="truncate text-[11px] font-semibold leading-tight text-slate-500">{label}</p>
+      <p className="shrink-0 text-lg font-black leading-none">{value}</p>
+    </div>
+  );
+}
+
+function getUnifiedItemKey(item: UnifiedChecklistItem) {
+  return item.type === "task" ? `task:${item.task.id}` : `template:${item.template.id}`;
+}
+
+function getUnifiedItemTitle(item: UnifiedChecklistItem) {
+  return item.type === "task" ? item.task.title : item.template.title;
+}
+
+function getUnifiedItemDescription(item: UnifiedChecklistItem) {
+  return item.type === "task" ? item.task.description : item.template.description;
+}
+
+function getUnifiedItemFeedback(
+  item: UnifiedChecklistItem,
+  getTemplateCompletion: (templateId: string) => CompletionRow | null | undefined,
+) {
+  if (item.type === "task") return item.task.review_feedback;
+  return getTemplateCompletion(item.template.id)?.review_feedback ?? null;
+}
+
+function employeeStatusLabel(status: BoardStatus) {
+  if (status === "todo") return "Cần làm";
+  if (status === "rejected") return "Chưa duyệt";
+  if (status === "pending_review") return "Đợi duyệt";
+  return "Hoàn thành";
+}
+
+function extractFirstUrl(value: string | null | undefined) {
+  const match = value?.match(/https?:\/\/[^\s)]+/i);
+  return match?.[0] ?? null;
+}
+
+function getTaskWorkLink(task: Pick<TaskRow, "link_url" | "description">) {
+  return task.link_url?.trim() || extractFirstUrl(task.description);
+}
+
+function formatDateOnly(value: string | null) {
+  if (!value) return "Không có";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Không có";
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
 }

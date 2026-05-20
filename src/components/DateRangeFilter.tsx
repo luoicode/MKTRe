@@ -64,10 +64,10 @@ export function DateRangeFilter({
 
   return (
     <div className={className || "flex flex-wrap items-end gap-2"}>
-      <div className="min-w-36 space-y-1">
+      <div className="min-w-0 space-y-1">
         <Label className="text-xs">Thời gian</Label>
         <div className="flex items-center gap-2">
-          <div className="min-w-36 flex-1">
+          <div className="min-w-32 flex-1">
             <Select value={preset} onValueChange={(next) => changePreset(next as DatePreset)}>
               <SelectTrigger className="h-9">
                 <SelectValue />

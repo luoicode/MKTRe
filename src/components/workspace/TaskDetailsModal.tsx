@@ -3,7 +3,8 @@ import {
   CheckCircle2,
   Clock,
   FileText,
-  Play,
+  Link2,
+  MessageCircle,
   Send,
   ShieldCheck,
   Trash2,
@@ -12,7 +13,7 @@ import {
   Pencil,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import type { Enums, Tables } from "@/integrations/supabase/types";
+import type { Tables } from "@/integrations/supabase/types";
 import { isTaskOverdue } from "@/lib/taskDeadline";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -34,8 +35,7 @@ export type TaskDetailsTask = Tables<"tasks"> & {
   teams: TeamRow | null;
 };
 
-type TaskStatus = Enums<"task_status">;
-type BoardStatus = TaskStatus;
+type BoardStatus = "todo" | "rejected" | "pending_review" | "done";
 
 interface TaskDetailsModalProps {
   open: boolean;
@@ -46,9 +46,10 @@ interface TaskDetailsModalProps {
   onOpenChange: (open: boolean) => void;
   onEdit: (task: TaskDetailsTask) => void;
   onDelete: (taskId: string) => void;
-  onStatusChange: (taskId: string, status: TaskStatus) => void;
+  onComment: (task: TaskDetailsTask) => void;
   onSubmitReview: (task: TaskDetailsTask) => void;
   onReview: (task: TaskDetailsTask) => void;
+  onReject: (task: TaskDetailsTask) => void;
 }
 
 export function TaskDetailsModal({
@@ -60,15 +61,24 @@ export function TaskDetailsModal({
   onOpenChange,
   onEdit,
   onDelete,
-  onStatusChange,
+  onComment,
   onSubmitReview,
   onReview,
+  onReject,
 }: TaskDetailsModalProps) {
   if (!task) return null;
 
   const status = normalizeTaskStatus(task.status);
   const deadlineState = getDeadlineBadgeState(task.deadline, status);
   const isAssignee = task.assigned_to === currentProfileId;
+  const completedUsers =
+    task.profiles &&
+    (status === "pending_review" ||
+      status === "rejected" ||
+      status === "done" ||
+      Boolean(task.submitted_at || task.completed_at || task.completion_note || task.proof_url))
+      ? [task.profiles]
+      : [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -153,6 +163,26 @@ export function TaskDetailsModal({
             </section>
           )}
 
+          <section className="mt-5 w-full min-w-0 rounded-2xl border bg-white p-4">
+            <h3 className="text-sm font-semibold text-slate-900">Người đã làm</h3>
+            {completedUsers.length ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {completedUsers.map((user) => (
+                  <div
+                    key={user.id}
+                    title={user.full_name}
+                    className="flex items-center gap-2 rounded-full border bg-slate-50 py-1 pl-1 pr-3 text-xs font-semibold text-slate-700"
+                  >
+                    <UserAvatar user={user} />
+                    <span className="max-w-40 truncate">{user.full_name}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-slate-500">Chưa có nhân sự hoàn thành.</p>
+            )}
+          </section>
+
           {(task.completion_note || task.proof_url || task.review_feedback) && (
             <section className="mt-5 w-full min-w-0 space-y-3 rounded-2xl border bg-white p-4">
               <h3 className="text-sm font-semibold text-slate-900">Thông tin hoàn thành</h3>
@@ -187,17 +217,39 @@ export function TaskDetailsModal({
               )}
             </section>
           )}
+
+          {task.link_url && (
+            <section className="mt-5 w-full min-w-0 rounded-2xl border bg-white p-4">
+              <h3 className="text-sm font-semibold text-slate-900">Link công việc</h3>
+              <a
+                href={task.link_url}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 inline-flex max-w-full items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold text-primary transition hover:bg-primary/5"
+              >
+                <Link2 className="h-4 w-4 shrink-0" />
+                <span className="truncate">{task.link_url}</span>
+              </a>
+            </section>
+          )}
         </div>
 
         <DialogFooter className="flex-wrap gap-2 border-t bg-background px-5 py-4 sm:px-6">
-          {isAssignee && status === "todo" && (
-            <Button variant="outline" onClick={() => onStatusChange(task.id, "in_progress")}>
-              <Play className="mr-2 h-4 w-4" /> Đã làm
+          {task.link_url && (
+            <Button variant="outline" asChild>
+              <a href={task.link_url} target="_blank" rel="noreferrer">
+                <Link2 className="mr-2 h-4 w-4" /> Mở link
+              </a>
             </Button>
           )}
-          {isAssignee && status === "in_progress" && (
+          {isAssignee && status === "todo" && (
             <Button onClick={() => onSubmitReview(task)}>
               <Send className="mr-2 h-4 w-4" /> Gửi duyệt
+            </Button>
+          )}
+          {isAssignee && status === "rejected" && (
+            <Button onClick={() => onSubmitReview(task)}>
+              <Send className="mr-2 h-4 w-4" /> Gửi lại
             </Button>
           )}
           {isAssignee && status === "pending_review" && (
@@ -211,12 +263,20 @@ export function TaskDetailsModal({
             </Badge>
           )}
           {canReview && status === "pending_review" && (
-            <Button onClick={() => onReview(task)}>
-              <ShieldCheck className="mr-2 h-4 w-4" /> Duyệt
-            </Button>
+            <>
+              <Button variant="secondary" onClick={() => onReject(task)}>
+                <Trash2 className="mr-2 h-4 w-4" /> Không duyệt
+              </Button>
+              <Button onClick={() => onReview(task)}>
+                <ShieldCheck className="mr-2 h-4 w-4" /> Duyệt
+              </Button>
+            </>
           )}
           {canManage && (
             <>
+              <Button variant="outline" onClick={() => onComment(task)}>
+                <MessageCircle className="mr-2 h-4 w-4" /> Comment
+              </Button>
               <Button variant="outline" onClick={() => onEdit(task)}>
                 <Pencil className="mr-2 h-4 w-4" /> Sửa
               </Button>
@@ -285,13 +345,28 @@ function normalizeTaskStatus(value: string | null | undefined): BoardStatus {
     .replace(/\s+/g, "_")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
-  if (["in_progress", "doing", "da_lam", "dang_lam", "started"].includes(normalized)) {
-    return "in_progress";
+  if (["in_progress", "doing", "da_lam", "dang_lam", "started", "assigned"].includes(normalized)) {
+    return "todo";
   }
-  if (["pending_review", "review", "dang_duyet", "cho_duyet"].includes(normalized)) {
+  if (
+    [
+      "rejected",
+      "changes_requested",
+      "change_requested",
+      "tu_choi",
+      "khong_duyet",
+      "khong_dat",
+      "can_lam_lai",
+    ].includes(normalized)
+  ) {
+    return "rejected";
+  }
+  if (["pending_review", "review", "dang_duyet", "cho_duyet", "submitted"].includes(normalized)) {
     return "pending_review";
   }
-  if (["done", "completed", "complete", "hoan_thanh", "finished"].includes(normalized)) {
+  if (
+    ["done", "completed", "complete", "approved", "hoan_thanh", "finished"].includes(normalized)
+  ) {
     return "done";
   }
   return "todo";
@@ -299,14 +374,16 @@ function normalizeTaskStatus(value: string | null | undefined): BoardStatus {
 
 function statusLabel(status: BoardStatus) {
   if (status === "todo") return "Cần làm";
-  if (status === "in_progress") return "Đã làm";
-  if (status === "pending_review") return "Đang duyệt";
+  if (status === "rejected") return "Chưa duyệt";
+  if (status === "pending_review") return "Đợi duyệt";
   return "Hoàn thành";
 }
 
 function statusPillClass(status: BoardStatus) {
   if (status === "todo") return "border-amber-100 bg-amber-50 text-amber-700 hover:bg-amber-50";
-  if (status === "in_progress") return "border-sky-100 bg-sky-50 text-sky-700 hover:bg-sky-50";
+  if (status === "rejected") {
+    return "border-amber-100 bg-amber-50 text-amber-700 hover:bg-amber-50";
+  }
   if (status === "pending_review") {
     return "border-violet-100 bg-violet-50 text-violet-700 hover:bg-violet-50";
   }

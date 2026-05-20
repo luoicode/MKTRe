@@ -16,6 +16,9 @@ export type TelegramNotificationPayload = {
 
 const ADMIN_MANAGER_TELEGRAM_TYPES = new Set([
   "leave_request_created",
+  "onboarding_pending_review",
+  "onboarding_review",
+  "onboarding_review_pending",
   "task_pending_review",
   "checklist_pending_review",
 ]);
@@ -31,7 +34,13 @@ const PERSONAL_TELEGRAM_TYPES = new Set([
   "task_assigned",
 ]);
 
-const LEADER_REVIEW_TELEGRAM_TYPES = new Set(["task_pending_review", "checklist_pending_review"]);
+const LEADER_REVIEW_TELEGRAM_TYPES = new Set([
+  "onboarding_pending_review",
+  "onboarding_review",
+  "onboarding_review_pending",
+  "task_pending_review",
+  "checklist_pending_review",
+]);
 
 type TelegramRecipientRole = "admin" | "manager" | "leader" | "employee";
 

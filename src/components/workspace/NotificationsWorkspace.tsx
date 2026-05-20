@@ -15,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Json, TablesInsert } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
 import { getLeaderTeamIds, getManagerTeamIds } from "@/lib/dailyAggregates";
+import { isApprovalNotification } from "@/lib/approvalNotifications";
 import { notificationTypeBadgeClass, notificationTypeLabel } from "@/lib/notifications";
 import { insertNotificationsWithTelegram, sendGroupAnnouncement } from "@/lib/telegram";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,6 +39,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { ApprovalNotificationActions } from "@/components/ApprovalNotificationActions";
 import { PageContent, PageShell } from "@/components/layout/PageShell";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { toast } from "sonner";
@@ -488,6 +490,7 @@ export function NotificationsWorkspace({ mode = "auto" }: { mode?: "auto" | "his
                       notification={n}
                       onOpen={() => openNotification(n)}
                       onMarkRead={() => markOneRead(n.id)}
+                      onActionDone={invalidateNotifications}
                     />
                   ),
                 )}
@@ -624,10 +627,12 @@ function NotificationCard({
   notification,
   onOpen,
   onMarkRead,
+  onActionDone,
 }: {
   notification: NotificationRow;
   onOpen: () => void;
   onMarkRead: () => void;
+  onActionDone: () => void | Promise<void>;
 }) {
   const Icon = severityIcon(notification.severity);
   return (
@@ -659,6 +664,9 @@ function NotificationCard({
           {notificationTypeLabel(notification)}
         </Badge>
       </div>
+      {isApprovalNotification(notification) && (
+        <ApprovalNotificationActions notification={notification} onDone={onActionDone} />
+      )}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
         <span>
           {notification.scope ?? "personal"} ·{" "}
@@ -703,6 +711,8 @@ function notificationToPath(notification: NotificationRow, role: string | null) 
   if (notification.entity_type === "task" || notification.entity_type === "task_completion") {
     return `${base}/tasks`;
   }
+  if (notification.entity_type === "leave_request") return `${base}/attendance`;
+  if (notification.entity_type === "onboarding_answer") return `${base}/resources`;
   if (notification.entity_type === "kpi") return `${base}/kpi`;
   if (notification.entity_type === "report") {
     if (role === "employee") return "/employee/report";

@@ -372,12 +372,12 @@ function SalaryHeaderSummary({ estimate }: { estimate: SalaryEstimate | null }) 
   if (!estimate?.rule) return null;
 
   return (
-    <div className="w-full overflow-hidden rounded-2xl border border-white/40 bg-[linear-gradient(135deg,#0f766e,#2563eb_52%,#7c3aed)] px-4 py-3 text-white shadow-[0_0_28px_rgba(45,212,191,0.45)] transition duration-200 hover:scale-[1.02] hover:shadow-[0_0_36px_rgba(45,212,191,0.62)] md:min-w-[260px]">
+    <div className="w-full overflow-hidden rounded-2xl border border-white/40 bg-[linear-gradient(135deg,#0f766e,#2563eb_52%,#7c3aed)] px-3 py-2.5 text-white shadow-[0_0_28px_rgba(45,212,191,0.45)] transition duration-200 hover:scale-[1.02] hover:shadow-[0_0_36px_rgba(45,212,191,0.62)] sm:w-auto sm:min-w-[220px] md:min-w-[240px]">
       <div className="animate-pulse">
         <p className="text-xs font-semibold uppercase tracking-wide text-cyan-100/90">
           Lương tạm tính
         </p>
-        <p className="mt-1 text-2xl font-extrabold leading-tight tracking-tight text-white drop-shadow-sm">
+        <p className="mt-0.5 text-xl font-extrabold leading-tight tracking-tight text-white drop-shadow-sm md:text-2xl">
           {fmtVndDong(Math.round(estimate.totalEstimatedSalary))}
         </p>
       </div>

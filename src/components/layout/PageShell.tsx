@@ -5,7 +5,7 @@ export function PageShell({ className, ...props }: HTMLAttributes<HTMLDivElement
   return (
     <div
       className={cn(
-        "flex min-h-0 w-full min-w-0 flex-col gap-4 md:h-full md:overflow-hidden",
+        "flex min-h-0 w-full min-w-0 flex-col gap-3 md:h-full md:overflow-hidden lg:gap-4",
         className,
       )}
       {...props}
@@ -16,7 +16,7 @@ export function PageShell({ className, ...props }: HTMLAttributes<HTMLDivElement
 export function PageHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("shrink-0 rounded-3xl border bg-background/95 p-4 shadow-sm md:p-5", className)}
+      className={cn("shrink-0 rounded-2xl border bg-background/95 p-3 shadow-sm md:p-4", className)}
       {...props}
     />
   );

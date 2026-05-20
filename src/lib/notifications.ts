@@ -22,6 +22,7 @@ const notificationTypeLabelMap: Record<string, string> = {
   leave_rejected: "Nghỉ phép bị từ chối",
   leave_request: "Đơn xin nghỉ",
   onboarding_approved: "Onboarding đã được duyệt",
+  onboarding_pending_review: "Chờ duyệt onboarding",
   onboarding_rejected: "Yêu cầu làm lại onboarding",
   onboarding_review: "Chờ duyệt onboarding",
   onboarding_review_pending: "Chờ duyệt onboarding",

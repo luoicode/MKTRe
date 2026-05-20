@@ -167,7 +167,13 @@ export function calculateMonthlyWorkdays(
   const payableDates = new Set([...attendanceDates, ...leaveWeightByDate.keys()]);
   let attendedDays = 0;
   for (const date of payableDates) {
-    attendedDays += leaveWeightByDate.has(date) ? (leaveWeightByDate.get(date) ?? 0) : 1;
+    // Attendance is the source of truth for worked days. Approved leave only fills or adjusts
+    // dates without a present attendance record, so a checked-in day is not reduced to 0.
+    attendedDays += attendanceDates.has(date)
+      ? 1
+      : leaveWeightByDate.has(date)
+        ? (leaveWeightByDate.get(date) ?? 0)
+        : 1;
   }
 
   return {

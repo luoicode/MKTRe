@@ -28,6 +28,7 @@ const typeLabels: Record<string, string> = {
   leave_request_created: "Có đơn xin nghỉ mới",
   leave_request_rejected: "Đơn nghỉ không được duyệt",
   onboarding_approved: "Onboarding đã được duyệt",
+  onboarding_pending_review: "Chờ duyệt onboarding",
   onboarding_rejected: "Yêu cầu làm lại onboarding",
   onboarding_review: "Chờ duyệt onboarding",
   onboarding_review_pending: "Chờ duyệt onboarding",
@@ -44,6 +45,7 @@ const typeLabels: Record<string, string> = {
   task_due_soon: "Task sắp đến hạn",
   task_overdue: "Task quá hạn",
   task_pending_review: "Task chờ duyệt",
+  checklist_pending_review: "Checklist chờ duyệt",
   task_completion_pending_review: "Checklist chờ duyệt",
   task_rejected: "Task cần làm lại",
   task_review: "Chờ duyệt task",
@@ -77,6 +79,7 @@ type TeamMembershipRow = {
 type LeaveRequestRow = {
   start_date: string;
   end_date: string;
+  leave_type?: string | null;
   reason: string | null;
   user_id: string;
   created_at: string;
@@ -111,6 +114,19 @@ type DailyTaskTemplateRow = {
   team_id?: string | null;
 };
 
+type OnboardingAnswerRow = {
+  profile_id: string | null;
+  section_id: string | null;
+  submitted_at: string | null;
+  completed_at: string | null;
+  review_note: string | null;
+};
+
+type OnboardingSectionRow = {
+  title: string | null;
+  description: string | null;
+};
+
 type ReportSlotRow = {
   slot_name: string | null;
   slot_time: string | null;
@@ -138,6 +154,9 @@ type TelegramAccountRow = {
 const EMPTY_TEXT = "Không có";
 const ADMIN_MANAGER_TELEGRAM_TYPES = new Set([
   "leave_request_created",
+  "onboarding_pending_review",
+  "onboarding_review",
+  "onboarding_review_pending",
   "task_pending_review",
   "checklist_pending_review",
 ]);
@@ -153,7 +172,13 @@ const PERSONAL_TELEGRAM_TYPES = new Set([
   "task_assigned",
 ]);
 
-const LEADER_REVIEW_TELEGRAM_TYPES = new Set(["task_pending_review", "checklist_pending_review"]);
+const LEADER_REVIEW_TELEGRAM_TYPES = new Set([
+  "onboarding_pending_review",
+  "onboarding_review",
+  "onboarding_review_pending",
+  "task_pending_review",
+  "checklist_pending_review",
+]);
 
 function canonicalTelegramType(
   type: string | null | undefined,
@@ -239,6 +264,7 @@ function isReviewNotification(type: string | null | undefined) {
     "task_pending_review",
     "checklist_pending_review",
     "task_completion_pending_review",
+    "onboarding_pending_review",
     "onboarding_review",
     "onboarding_review_pending",
   ].includes(type ?? "");
@@ -336,6 +362,13 @@ function attendanceStatusLabel(status: string | null | undefined) {
   if (status === "absent") return "Vắng";
   if (status === "rejected_leave") return "Nghỉ phép không duyệt";
   return EMPTY_TEXT;
+}
+
+function leaveTypeLabel(value: string | null | undefined) {
+  if (value === "half_day") return "Nghỉ nửa ngày";
+  if (value === "early_leave") return "Về sớm";
+  if (value === "late_arrival") return "Đến muộn";
+  return "Nghỉ cả ngày";
 }
 
 async function getProfileName(
@@ -448,12 +481,13 @@ async function buildLeaveRequestMessageAndMarkup(
   let teamName = EMPTY_TEXT;
   let startDate = compactDateOnly(getMetadataString(payload.metadata, "start_date"));
   let endDate = compactDateOnly(getMetadataString(payload.metadata, "end_date"));
+  let leaveType = leaveTypeLabel(getMetadataString(payload.metadata, "leave_type"));
   let reason = EMPTY_TEXT;
   let sentAt = formatTime();
 
   const { data } = await service
     .from("leave_requests")
-    .select("start_date, end_date, reason, user_id, created_at")
+    .select("start_date, end_date, leave_type, reason, user_id, created_at")
     .eq("id", leaveRequestId)
     .maybeSingle();
 
@@ -461,6 +495,7 @@ async function buildLeaveRequestMessageAndMarkup(
   if (leaveRequest) {
     startDate = compactDateOnly(leaveRequest.start_date);
     endDate = compactDateOnly(leaveRequest.end_date);
+    leaveType = leaveTypeLabel(leaveRequest.leave_type);
     reason = valueOrEmpty(leaveRequest.reason);
     sentAt = compactDate(leaveRequest.created_at);
     requesterName = await getProfileName(service, leaveRequest.user_id);
@@ -472,6 +507,7 @@ async function buildLeaveRequestMessageAndMarkup(
     "",
     `👤 Nhân sự: ${requesterName}`,
     `👥 Team: ${teamName}`,
+    `🏷 Loại đơn: ${leaveType}`,
     `📅 Từ ngày: ${startDate}`,
     `📅 Đến ngày: ${endDate}`,
     `📝 Lý do: ${reason}`,
@@ -504,7 +540,12 @@ async function buildReviewMessageAndMarkup(
 
   const entityType = payload.entity_type;
   const entityId = payload.entity_id;
-  if (!entityType || !entityId || !["task", "task_completion"].includes(entityType)) return null;
+  if (
+    !entityType ||
+    !entityId ||
+    !["task", "task_completion", "onboarding_answer"].includes(entityType)
+  )
+    return null;
 
   let title = payload.message ?? payload.title;
   let assigneeName = EMPTY_TEXT;
@@ -516,7 +557,34 @@ async function buildReviewMessageAndMarkup(
   let note = EMPTY_TEXT;
   let proofUrl = "";
 
-  if (entityType === "task") {
+  if (entityType === "onboarding_answer") {
+    itemType = "Onboarding";
+    const { data } = await service
+      .from("onboarding_answers")
+      .select("profile_id, section_id, submitted_at, completed_at, review_note")
+      .eq("id", entityId)
+      .maybeSingle();
+    const answer = data as OnboardingAnswerRow | null;
+    if (answer) {
+      const { data: section } = answer.section_id
+        ? await service
+            .from("onboarding_sections")
+            .select("title, description")
+            .eq("id", answer.section_id)
+            .maybeSingle()
+        : { data: null };
+      const sectionRow = section as OnboardingSectionRow | null;
+      title = sectionRow?.title ?? getMetadataString(payload.metadata, "section_title") ?? title;
+      description = valueOrEmpty(
+        sectionRow?.description ?? getMetadataString(payload.metadata, "section_description"),
+      );
+      deadline = compactDate(answer.submitted_at ?? answer.completed_at);
+      note = valueOrEmpty(answer.review_note ?? getMetadataString(payload.metadata, "note"));
+      priority = EMPTY_TEXT;
+      assigneeName = await getProfileName(service, answer.profile_id);
+      teamName = await getTeamName(service, { profileId: answer.profile_id });
+    }
+  } else if (entityType === "task") {
     const { data } = await service
       .from("tasks")
       .select(
