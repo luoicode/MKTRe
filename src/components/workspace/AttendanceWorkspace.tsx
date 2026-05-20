@@ -182,7 +182,8 @@ function computeStreak(records: AttendanceRecord[], endDate = todayStr()) {
 }
 
 function getRecordDateKey(record: AttendanceRecord) {
-  return dateKeyVN(record.attendance_date || record.checked_in_at || record.created_at);
+  if (record.attendance_date) return record.attendance_date;
+  return dateKeyVN(record.checked_in_at || record.created_at);
 }
 
 function getTaskDateKey(task: TaskRow) {
@@ -202,24 +203,32 @@ function DayIndicators({
   current?: boolean;
   missing?: boolean;
 }) {
-  const dots = [
-    present ? "bg-emerald-500" : null,
-    deadline ? "bg-amber-400" : null,
-    leave ? "bg-rose-400" : null,
-    current ? "bg-violet-500" : null,
-    missing ? "bg-slate-300" : null,
-  ].filter(Boolean) as string[];
+  const indicators = [
+    present ? "attendance" : null,
+    deadline ? "deadline" : null,
+    leave ? "leave" : null,
+    current ? "today" : null,
+    missing ? "missing" : null,
+  ].filter(Boolean) as Array<"attendance" | "deadline" | "leave" | "today" | "missing">;
 
-  if (!dots.length) return null;
+  const dotClassByIndicator = {
+    attendance: "bg-emerald-500",
+    deadline: "bg-amber-400",
+    leave: "bg-rose-400",
+    today: "bg-violet-500",
+    missing: "bg-slate-300",
+  } satisfies Record<(typeof indicators)[number], string>;
+
+  if (!indicators.length) return null;
 
   return (
-    <span className="absolute bottom-1 left-1/2 flex -translate-x-1/2 gap-0.5">
-      {dots.map((className, index) => (
+    <span className="mt-1 flex h-1.5 justify-center gap-1">
+      {indicators.map((indicator) => (
         <span
-          key={`${className}-${index}`}
+          key={indicator}
           className={cn(
             "h-1.5 w-1.5 rounded-full shadow-[0_0_0_1px_rgba(255,255,255,0.9)]",
-            className,
+            dotClassByIndicator[indicator],
           )}
         />
       ))}
@@ -524,7 +533,13 @@ export function AttendanceWorkspace() {
     const map = new Map<string, AttendanceRecord>();
     (data?.attendance ?? [])
       .filter((record) => record.user_id === profile?.id)
-      .forEach((record) => map.set(getRecordDateKey(record), record));
+      .forEach((record) => {
+        const dateKey = getRecordDateKey(record);
+        const existing = map.get(dateKey);
+        if (!existing || record.status === "present") {
+          map.set(dateKey, record);
+        }
+      });
     return map;
   }, [data?.attendance, profile?.id]);
   const todayAttendance = recordsByDate.get(today);
@@ -1064,7 +1079,7 @@ function EmployeeAttendanceView({
                 <div
                   key={day.date}
                   className={cn(
-                    "relative flex aspect-square items-center justify-center rounded-2xl border text-sm font-semibold",
+                    "relative flex aspect-square flex-col items-center justify-center rounded-2xl border text-sm font-semibold",
                     record?.status === "present" &&
                       "border-emerald-200 bg-emerald-50 text-emerald-700",
                     (record?.status?.includes("leave") || leave) &&
@@ -1567,7 +1582,7 @@ function ManagementCalendarCard({
                 type="button"
                 onClick={() => onSelectDate(day.date)}
                 className={cn(
-                  "relative flex h-11 items-center justify-center rounded-2xl text-sm font-semibold transition hover:bg-slate-100",
+                  "relative flex h-11 flex-col items-center justify-center rounded-2xl text-sm font-semibold transition hover:bg-slate-100",
                   hasPresent && "bg-emerald-100 text-emerald-700",
                   hasLeave && "bg-rose-50 text-rose-700",
                   hasDeadline && !hasPresent && "bg-amber-100 text-amber-800",
@@ -1580,7 +1595,7 @@ function ManagementCalendarCard({
                   present={hasPresent}
                   deadline={hasDeadline}
                   leave={hasLeave}
-                  current={isToday || isSelected}
+                  current={isToday && !isSelected}
                 />
               </button>
             );
