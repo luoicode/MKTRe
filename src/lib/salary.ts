@@ -1,4 +1,5 @@
 import type { Tables } from "@/integrations/supabase/types";
+import { dateKeyVN } from "@/lib/reports";
 
 export type SalaryRole = "employee" | "leader" | "manager";
 
@@ -8,11 +9,15 @@ export type SalaryRule = Pick<
 >;
 
 export type SalaryAttendanceRecord = {
-  attendance_date: string;
+  user_id?: string | null;
+  attendance_date?: string | null;
+  checked_in_at?: string | null;
+  created_at?: string | null;
   status: string | null;
 };
 
 export type SalaryLeaveRequest = {
+  user_id?: string | null;
   start_date: string;
   end_date: string;
   status: string | null;
@@ -22,6 +27,7 @@ export type SalaryLeaveRequest = {
 export type SalaryEstimate = {
   rule: SalaryRule | null;
   attendedDays: number;
+  workdayDates: string[];
   expectedWorkdays: number;
   baseSalaryProrated: number;
   milestoneBonus: number;
@@ -31,38 +37,56 @@ export type SalaryEstimate = {
   kpiAchieved: boolean;
 };
 
-function toLocalDate(date: string) {
-  return new Date(`${date}T00:00:00`);
+function parseDateParts(date: string) {
+  const [year, month, day] = dateKeyVN(date).split("-").map(Number);
+  return { year, month, day };
 }
 
-function toDateString(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+function weekday(date: string) {
+  const { year, month, day } = parseDateParts(date);
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
 }
 
 function addDays(date: string, days: number) {
-  const next = toLocalDate(date);
-  next.setDate(next.getDate() + days);
-  return toDateString(next);
+  const { year, month, day } = parseDateParts(date);
+  const next = new Date(Date.UTC(year, month - 1, day + days));
+  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    next.getUTCDate(),
+  ).padStart(2, "0")}`;
+}
+
+export function monthEnd(month: string) {
+  const [year, monthIndex] = month.split("-").map(Number);
+  const days = new Date(Date.UTC(year, monthIndex, 0)).getUTCDate();
+  return `${month}-${String(days).padStart(2, "0")}`;
+}
+
+function inDateRange(date: string, from: string, to: string) {
+  return date >= from && date <= to;
+}
+
+export function normalizeAttendanceDate(record: SalaryAttendanceRecord) {
+  const source = record.attendance_date
+    ? record.attendance_date
+    : record.checked_in_at || record.created_at;
+  return source ? dateKeyVN(source) : null;
 }
 
 export function todayLocalDateString() {
-  return toDateString(new Date());
+  return dateKeyVN(new Date());
 }
 
 export function countWorkdays(from: string, to: string) {
-  const start = toLocalDate(from);
-  const end = toLocalDate(to);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) return 0;
+  const start = dateKeyVN(from);
+  const end = dateKeyVN(to);
+  if (start > end) return 0;
 
   let count = 0;
-  const cursor = new Date(start);
+  let cursor = start;
   while (cursor <= end) {
-    const day = cursor.getDay();
+    const day = weekday(cursor);
     if (day !== 0 && day !== 6) count += 1;
-    cursor.setDate(cursor.getDate() + 1);
+    cursor = addDays(cursor, 1);
   }
   return count;
 }
@@ -74,6 +98,56 @@ export function getExpectedWorkdaysForRange(
 ) {
   const effectiveTo = from <= today && today <= to ? today : to;
   return countWorkdays(from, effectiveTo);
+}
+
+export function calculateMonthlyWorkdays(
+  profileId: string,
+  month: string,
+  attendanceRecords: SalaryAttendanceRecord[],
+  approvedLeaveRequests: SalaryLeaveRequest[],
+  today = todayLocalDateString(),
+) {
+  const from = `${month}-01`;
+  const to = monthEnd(month);
+  const effectiveTo = from <= today && today <= to ? today : to;
+  const matchesProfile = (userId: string | null | undefined) =>
+    profileId ? userId === profileId : true;
+
+  const attendanceDates = new Set<string>();
+  for (const record of attendanceRecords) {
+    if (!matchesProfile(record.user_id) || record.status !== "present") continue;
+    const date = normalizeAttendanceDate(record);
+    if (date && inDateRange(date, from, effectiveTo)) attendanceDates.add(date);
+  }
+
+  const leaveWeightByDate = new Map<string, number>();
+  for (const request of approvedLeaveRequests) {
+    if (!matchesProfile(request.user_id) || request.status !== "approved") continue;
+    let cursor = dateKeyVN(request.start_date);
+    const leaveEnd = dateKeyVN(request.end_date);
+    while (cursor <= leaveEnd) {
+      if (inDateRange(cursor, from, effectiveTo)) {
+        const weight =
+          request.leave_type === "full_day" ? 0 : request.leave_type === "half_day" ? 0.5 : 1;
+        leaveWeightByDate.set(cursor, Math.min(leaveWeightByDate.get(cursor) ?? 1, weight));
+      }
+      cursor = addDays(cursor, 1);
+    }
+  }
+
+  const payableDates = new Set([...attendanceDates, ...leaveWeightByDate.keys()]);
+  let attendedDays = 0;
+  for (const date of payableDates) {
+    attendedDays += leaveWeightByDate.has(date) ? (leaveWeightByDate.get(date) ?? 0) : 1;
+  }
+
+  return {
+    attendedDays,
+    attendanceDays: attendanceDates.size,
+    hasCheckedInToday: attendanceDates.has(today),
+    attendanceDates,
+    workdayDates: Array.from(payableDates).sort(),
+  };
 }
 
 export function findSalaryRule(rules: SalaryRule[], role: SalaryRole, revenue: number) {
@@ -97,6 +171,7 @@ export function calculateSalaryEstimate({
   from,
   to,
   today = todayLocalDateString(),
+  profileId = "",
 }: {
   rules: SalaryRule[];
   role: SalaryRole;
@@ -107,44 +182,29 @@ export function calculateSalaryEstimate({
   from: string;
   to: string;
   today?: string;
+  profileId?: string;
 }): SalaryEstimate {
-  const expectedWorkdays = getExpectedWorkdaysForRange(from, to, today);
-  const presentDates = new Set(
-    attendanceRecords
-      .filter((record) => record.status === "present")
-      .map((record) => record.attendance_date),
+  const month = from.slice(0, 7);
+  const salaryMonthFrom = `${month}-01`;
+  const salaryMonthTo = monthEnd(month);
+  const expectedWorkdays = getExpectedWorkdaysForRange(salaryMonthFrom, salaryMonthTo, today);
+  const workdays = calculateMonthlyWorkdays(
+    profileId,
+    month,
+    attendanceRecords,
+    leaveRequests,
+    today,
   );
-  const approvedLeaves = leaveRequests.filter((request) => request.status === "approved");
-  const leaveWeightByDate = new Map<string, number>();
-  for (const request of approvedLeaves) {
-    let cursor = request.start_date;
-    while (cursor <= request.end_date) {
-      const weight =
-        request.leave_type === "full_day" ? 0 : request.leave_type === "half_day" ? 0.5 : 1;
-      leaveWeightByDate.set(cursor, Math.min(leaveWeightByDate.get(cursor) ?? 1, weight));
-      cursor = addDays(cursor, 1);
-    }
-  }
-  let attendedDays = 0;
-  let cursor = from;
-  const effectiveTo = from <= today && today <= to ? today : to;
-  while (cursor <= effectiveTo) {
-    if (leaveWeightByDate.has(cursor)) {
-      attendedDays += leaveWeightByDate.get(cursor) ?? 0;
-    } else if (presentDates.has(cursor)) {
-      attendedDays += 1;
-    }
-    cursor = addDays(cursor, 1);
-  }
-  const hasCheckedInToday = attendanceRecords.some(
-    (record) => record.attendance_date === today && record.status === "present",
-  );
+  const attendedDays = workdays.attendedDays;
+  const hasCheckedInToday = workdays.hasCheckedInToday;
+  const workdayDates = workdays.workdayDates;
   const rule = findSalaryRule(rules, role, revenue);
 
   if (!rule || expectedWorkdays <= 0) {
     return {
       rule,
       attendedDays,
+      workdayDates,
       expectedWorkdays,
       baseSalaryProrated: 0,
       milestoneBonus: 0,
@@ -164,6 +224,7 @@ export function calculateSalaryEstimate({
   return {
     rule,
     attendedDays,
+    workdayDates,
     expectedWorkdays,
     baseSalaryProrated,
     milestoneBonus,

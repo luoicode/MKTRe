@@ -108,7 +108,7 @@ export async function getLatestDailyReportPerEmployee(params: {
   const { teamIds, date } = params;
   if (!teamIds.length) return { rows: [], slots: [] };
 
-  const [{ data: slots }, { data: memberships }, { data: reports }] = await Promise.all([
+  const [{ data: slots }, { data: memberships }] = await Promise.all([
     supabase
       .from("report_slots")
       .select("id, slot_name, sort_order")
@@ -119,16 +119,24 @@ export async function getLatestDailyReportPerEmployee(params: {
       .select("user_id, team_id")
       .in("team_id", teamIds)
       .eq("is_active", true),
-    supabase.from("slot_reports").select("*").in("team_id", teamIds).eq("report_date", date),
   ]);
 
   const slotMeta = (slots ?? []) as SlotMeta[];
   const slotById = new Map(slotMeta.map((s) => [s.id, s]));
   const slot21 = slotMeta.find((s) => /21/.test(s.slot_name)) ?? slotMeta[slotMeta.length - 1];
-  const reconciledReportIds = await getReconciledReportIds((reports ?? []).map((r) => r.id));
-
   const userIds = Array.from(new Set((memberships ?? []).map((m) => m.user_id)));
   const teamByUser = new Map((memberships ?? []).map((m) => [m.user_id, m.team_id]));
+
+  const reportFilters = [`team_id.in.(${teamIds.join(",")})`];
+  if (userIds.length) reportFilters.push(`user_id.in.(${userIds.join(",")})`);
+  const { data: reports, error: reportsError } = await supabase
+    .from("slot_reports")
+    .select("*")
+    .eq("report_date", date)
+    .or(reportFilters.join(","));
+  if (reportsError) throw reportsError;
+
+  const reconciledReportIds = await getReconciledReportIds((reports ?? []).map((r) => r.id));
 
   const { data: profiles } = userIds.length
     ? await supabase.from("profiles").select("id, full_name, username").in("id", userIds)
@@ -314,7 +322,8 @@ export async function getLeaderTeamIds(leaderProfileId: string): Promise<string[
       .from("team_memberships")
       .select("team_id")
       .eq("user_id", leaderProfileId)
-      .eq("is_active", true),
+      .eq("is_active", true)
+      .eq("role_in_team", "leader"),
     supabase.from("teams").select("id").eq("leader_id", leaderProfileId),
   ]);
   return Array.from(

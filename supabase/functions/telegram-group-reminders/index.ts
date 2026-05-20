@@ -58,6 +58,7 @@ type ProfileRow = {
 type TeamMembershipRow = {
   user_id: string;
   team_id: string | null;
+  role_in_team: string | null;
 };
 
 type ReportSlotRow = {
@@ -364,19 +365,29 @@ async function logTelegram(
 }
 
 async function getOperationalUsers(ctx: DebugContext, service: ReturnType<typeof createClient>) {
-  const [{ data: roles, error: rolesError }, { data: profiles, error: profilesError }] =
-    await runStep(ctx, "query profiles", async () =>
-      Promise.all([
-        service.from("user_roles").select("user_id, role"),
-        service.from("profiles").select("id, full_name, username, status").eq("status", "active"),
-      ]),
-    );
+  const [
+    { data: roles, error: rolesError },
+    { data: profiles, error: profilesError },
+    { data: memberships, error: membershipsError },
+  ] = await runStep(ctx, "query profiles", async () =>
+    Promise.all([
+      service.from("user_roles").select("user_id, role"),
+      service.from("profiles").select("id, full_name, username, status").eq("status", "active"),
+      service
+        .from("team_memberships")
+        .select("user_id, team_id, role_in_team")
+        .eq("is_active", true)
+        .eq("role_in_team", "employee"),
+    ]),
+  );
   if (rolesError) throw rolesError;
   if (profilesError) throw profilesError;
+  if (membershipsError) throw membershipsError;
 
   const roleMap = new Map<string, Set<string>>();
   const roleRows = (roles ?? []) as UserRoleRow[];
   const profileRows = (profiles ?? []) as ProfileRow[];
+  const membershipRows = (memberships ?? []) as TeamMembershipRow[];
 
   for (const row of roleRows) {
     const set = roleMap.get(row.user_id) ?? new Set<string>();
@@ -384,34 +395,34 @@ async function getOperationalUsers(ctx: DebugContext, service: ReturnType<typeof
     roleMap.set(row.user_id, set);
   }
 
-  const operationalIds = new Set<string>();
+  const employeeMembershipIds = new Set(membershipRows.map((membership) => membership.user_id));
+  const employeeIds = new Set<string>();
   for (const [userId, set] of roleMap.entries()) {
-    const hasOperationalRole = set.has("employee") || set.has("leader");
+    const hasEmployeeRole = set.has("employee");
     const hasExcludedRole = set.has("admin") || set.has("manager");
-    if (hasOperationalRole && !hasExcludedRole) operationalIds.add(userId);
+    const hasNonEmployeeOperationalRole = set.has("leader");
+    if (
+      hasEmployeeRole &&
+      employeeMembershipIds.has(userId) &&
+      !hasExcludedRole &&
+      !hasNonEmployeeOperationalRole
+    ) {
+      employeeIds.add(userId);
+    }
   }
 
-  const { data: memberships, error: membershipsError } = operationalIds.size
-    ? await runStep(ctx, "query team memberships", async () =>
-        service
-          .from("team_memberships")
-          .select("user_id, team_id")
-          .in("user_id", Array.from(operationalIds))
-          .eq("is_active", true),
-      )
-    : { data: [], error: null };
-  if (membershipsError) throw membershipsError;
-
   const teamMap = new Map<string, string[]>();
-  const membershipRows = (memberships ?? []) as TeamMembershipRow[];
   for (const membership of membershipRows) {
+    if (!employeeIds.has(membership.user_id)) continue;
     const list = teamMap.get(membership.user_id) ?? [];
     if (membership.team_id) list.push(membership.team_id);
     teamMap.set(membership.user_id, list);
   }
 
+  console.log("[group-reminder] employeeScopeUsers:", employeeIds.size);
+
   return profileRows
-    .filter((profile: ProfileRow) => operationalIds.has(profile.id))
+    .filter((profile: ProfileRow) => employeeIds.has(profile.id))
     .map((profile: ProfileRow) => ({
       id: profile.id,
       full_name: profile.full_name,

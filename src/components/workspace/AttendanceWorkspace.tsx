@@ -1,10 +1,9 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarCheck,
   CheckCircle2,
   Clock,
-  Flame,
   Loader2,
   ShieldCheck,
   UserCheck,
@@ -14,7 +13,8 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
 import { useAuth, type AppRole } from "@/lib/auth";
 import { getLeaderTeamIds } from "@/lib/dailyAggregates";
-import { formatDateVN, todayStr } from "@/lib/reports";
+import { dateKeyVN, formatDateVN, todayStr } from "@/lib/reports";
+import { calculateMonthlyWorkdays } from "@/lib/salary";
 import { sendTelegramForNotification } from "@/lib/telegram";
 import { cn } from "@/lib/utils";
 import { PageShell, ScrollArea } from "@/components/layout/PageShell";
@@ -106,27 +106,30 @@ function leaveTypeLabel(type: string | null | undefined) {
 }
 
 function addDays(date: string, days: number) {
-  const next = new Date(`${date}T00:00:00`);
-  next.setDate(next.getDate() + days);
-  return toDateKey(next);
+  const [year, month, day] = date.split("-").map(Number);
+  const next = new Date(Date.UTC(year, month - 1, day + days));
+  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    next.getUTCDate(),
+  ).padStart(2, "0")}`;
 }
 
 function toDateKey(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
-    date.getDate(),
-  ).padStart(2, "0")}`;
+  return dateKeyVN(date);
 }
 
 function monthBounds(month: string) {
   const [year, monthIndex] = month.split("-").map(Number);
-  const start = new Date(year, monthIndex - 1, 1);
-  const end = new Date(year, monthIndex, 0);
-  return { from: toDateKey(start), to: toDateKey(end), year, monthIndex };
+  const days = new Date(Date.UTC(year, monthIndex, 0)).getUTCDate();
+  return {
+    from: `${month}-01`,
+    to: `${month}-${String(days).padStart(2, "0")}`,
+    year,
+    monthIndex,
+  };
 }
 
 function currentMonth() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return todayStr().slice(0, 7);
 }
 
 function formatMonthLabel(month: string) {
@@ -157,16 +160,17 @@ function enumerateDates(from: string, to: string) {
 
 function daysInMonth(month: string) {
   const { year, monthIndex } = monthBounds(month);
-  const days = new Date(year, monthIndex, 0).getDate();
+  const days = new Date(Date.UTC(year, monthIndex, 0)).getUTCDate();
   return Array.from({ length: days }, (_, index) => {
-    const date = new Date(year, monthIndex - 1, index + 1);
-    return { date: toDateKey(date), day: index + 1 };
+    return { date: `${month}-${String(index + 1).padStart(2, "0")}`, day: index + 1 };
   });
 }
 
 function computeStreak(records: AttendanceRecord[], endDate = todayStr()) {
   const presentDates = new Set(
-    records.filter((record) => record.status === "present").map((record) => record.attendance_date),
+    records
+      .filter((record) => record.status === "present")
+      .map((record) => getRecordDateKey(record)),
   );
   let cursor = endDate;
   let count = 0;
@@ -175,6 +179,52 @@ function computeStreak(records: AttendanceRecord[], endDate = todayStr()) {
     cursor = addDays(cursor, -1);
   }
   return count;
+}
+
+function getRecordDateKey(record: AttendanceRecord) {
+  return dateKeyVN(record.attendance_date || record.checked_in_at || record.created_at);
+}
+
+function getTaskDateKey(task: TaskRow) {
+  return task.deadline ? dateKeyVN(task.deadline) : null;
+}
+
+function DayIndicators({
+  present,
+  deadline,
+  leave,
+  current,
+  missing,
+}: {
+  present?: boolean;
+  deadline?: boolean;
+  leave?: boolean;
+  current?: boolean;
+  missing?: boolean;
+}) {
+  const dots = [
+    present ? "bg-emerald-500" : null,
+    deadline ? "bg-amber-400" : null,
+    leave ? "bg-rose-400" : null,
+    current ? "bg-violet-500" : null,
+    missing ? "bg-slate-300" : null,
+  ].filter(Boolean) as string[];
+
+  if (!dots.length) return null;
+
+  return (
+    <span className="absolute bottom-1 left-1/2 flex -translate-x-1/2 gap-0.5">
+      {dots.map((className, index) => (
+        <span
+          key={`${className}-${index}`}
+          className={cn(
+            "h-1.5 w-1.5 rounded-full shadow-[0_0_0_1px_rgba(255,255,255,0.9)]",
+            className,
+          )}
+        />
+      ))}
+    </span>
+  );
 }
 
 function isDoneStatus(status: string | null) {
@@ -295,6 +345,7 @@ async function getLeaveRequestNotifications(
 
 export function AttendanceWorkspace() {
   const { profile, role } = useAuth();
+  const qc = useQueryClient();
   const today = todayStr();
   const [month, setMonth] = useState(currentMonth());
   const [selectedDate, setSelectedDate] = useState(today);
@@ -458,12 +509,22 @@ export function AttendanceWorkspace() {
   });
 
   const activeTemplates = useMemo(() => data?.templates ?? [], [data?.templates]);
+  const employeeTodayChecklist =
+    isEmployeeView && profile
+      ? countChecklistForUserDate({
+          userId: profile.id,
+          date: today,
+          templates: activeTemplates,
+          memberships: data?.memberships ?? [],
+          completions: data?.completions ?? [],
+        })
+      : null;
 
   const recordsByDate = useMemo(() => {
     const map = new Map<string, AttendanceRecord>();
     (data?.attendance ?? [])
       .filter((record) => record.user_id === profile?.id)
-      .forEach((record) => map.set(record.attendance_date, record));
+      .forEach((record) => map.set(getRecordDateKey(record), record));
     return map;
   }, [data?.attendance, profile?.id]);
   const todayAttendance = recordsByDate.get(today);
@@ -480,7 +541,7 @@ export function AttendanceWorkspace() {
       if (selectedTeamUserIds && !selectedTeamUserIds.has(user.id)) return false;
       if (userFilter !== "all" && user.id !== userFilter) return false;
       const record = (data?.attendance ?? []).find(
-        (item) => item.user_id === user.id && item.attendance_date === selectedDate,
+        (item) => item.user_id === user.id && getRecordDateKey(item) === selectedDate,
       );
       const leave = (data?.leaveRequests ?? []).find(
         (item) =>
@@ -506,7 +567,7 @@ export function AttendanceWorkspace() {
     const total = scopeProfiles.length;
     const checked = scopeProfiles.filter((user) =>
       (data?.attendance ?? []).some(
-        (record) => record.user_id === user.id && record.attendance_date === selectedDate,
+        (record) => record.user_id === user.id && getRecordDateKey(record) === selectedDate,
       ),
     ).length;
     const pendingLeaves = (data?.leaveRequests ?? []).filter(
@@ -592,6 +653,8 @@ export function AttendanceWorkspace() {
     }
     toast.success("Đã điểm danh hôm nay");
     await refetch();
+    qc.invalidateQueries({ queryKey: ["analytics-dashboard"] });
+    await qc.refetchQueries({ queryKey: ["analytics-dashboard"], type: "active" });
   };
 
   const submitLeaveRequest = async () => {
@@ -709,15 +772,23 @@ export function AttendanceWorkspace() {
         }
         badge={
           isEmployeeView ? (
-            <Badge className="gap-1 rounded-full bg-orange-50 text-orange-700 hover:bg-orange-50">
-              {employeeStreak >= 3 ? <Flame className="h-3.5 w-3.5" /> : null}
-              {employeeStreak >= 3 ? `${employeeStreak} ngày liên tiếp` : `${employeeStreak} ngày`}
+            <Badge
+              className={cn(
+                "gap-1 rounded-full bg-orange-50 text-orange-700 hover:bg-orange-50",
+                employeeStreak >= 3 && "animate-pulse",
+              )}
+            >
+              {employeeStreak >= 3 ? <span aria-hidden="true">🔥</span> : null}
+              {employeeStreak} ngày
             </Badge>
           ) : null
         }
         actions={
           <>
             <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
+            {isEmployeeView && employeeTodayChecklist ? (
+              <ChecklistProgressPill checklist={employeeTodayChecklist} />
+            ) : null}
             {canSelfCheckIn ? (
               <Button variant="outline" onClick={() => setLeaveOpen(true)}>
                 Xin nghỉ phép
@@ -924,9 +995,14 @@ function EmployeeAttendanceView({
   dayTasks: TaskRow[];
 }) {
   const monthDays = daysInMonth(month);
-  const presentCount = monthDays.filter(
-    (day) => recordsByDate.get(day.date)?.status === "present",
-  ).length;
+  const workdaySummary = calculateMonthlyWorkdays(
+    profileId,
+    month,
+    Array.from(recordsByDate.values()),
+    leaveRequests.filter((request) => request.status === "approved"),
+    today,
+  );
+  const presentCount = workdaySummary.attendanceDays;
   const approvedLeaveDays = useMemo(() => {
     const weights = new Map<string, number>();
     for (const leave of leaveRequests.filter((request) => request.status === "approved")) {
@@ -940,25 +1016,18 @@ function EmployeeAttendanceView({
       .filter(([date]) => date.startsWith(month))
       .reduce((sum, [, weight]) => sum + weight, 0);
   }, [leaveRequests, month]);
-  const streak = computeStreak(Array.from(recordsByDate.values()));
   const historyDays = monthDays
     .filter((day) => day.date <= today)
     .slice()
     .reverse()
-    .slice(0, 10);
-  const todayChecklist = countChecklistForUserDate({
-    userId: profileId,
-    date: today,
-    templates,
-    memberships,
-    completions,
-  });
+    .slice(0, 5);
   const taskDeadlineDates = useMemo(
     () =>
       new Set(
         dayTasks
           .filter((task) => task.deadline)
-          .map((task) => toDateKey(new Date(task.deadline as string))),
+          .map((task) => getTaskDateKey(task))
+          .filter(Boolean) as string[],
       ),
     [dayTasks],
   );
@@ -966,37 +1035,66 @@ function EmployeeAttendanceView({
   return (
     <ScrollArea className="space-y-4 md:pr-2">
       <Card className="rounded-3xl">
-        <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
-          <div className="flex items-center gap-3">
-            {streak >= 3 ? (
-              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-50 text-orange-600">
-                <Flame className="h-5 w-5" />
-              </span>
-            ) : null}
-            <div>
-              <p className="text-xs text-muted-foreground">Điểm danh liên tiếp</p>
-              <p className="text-xl font-bold">
-                {streak >= 3 ? `${streak} ngày liên tiếp` : `${streak} ngày`}
-              </p>
-            </div>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <div>
+            <CardTitle>Tháng {formatMonthLabel(month)}</CardTitle>
+            <p className="text-sm text-muted-foreground">Lịch điểm danh cá nhân.</p>
           </div>
-          <div className="min-w-[220px] flex-1 md:max-w-sm">
-            <div className="mb-2 flex items-center justify-between text-xs font-semibold text-emerald-700">
-              <span>Checklist hôm nay</span>
-              <span>
-                {todayChecklist.done}/{todayChecklist.total}
-              </span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-              <div
-                className="h-full rounded-full bg-emerald-500 transition-all"
-                style={{
-                  width: todayChecklist.total
-                    ? `${Math.min(100, (todayChecklist.done / todayChecklist.total) * 100)}%`
-                    : "0%",
-                }}
-              />
-            </div>
+          <Input
+            className="w-40"
+            type="month"
+            value={month}
+            onChange={(event) => setMonth(event.target.value)}
+          />
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-7 gap-2">
+            {monthDays.map((day) => {
+              const record = recordsByDate.get(day.date);
+              const isToday = day.date === today;
+              const leave = leaveRequests.find(
+                (request) =>
+                  request.status === "approved" &&
+                  request.start_date <= day.date &&
+                  request.end_date >= day.date,
+              );
+              const hasDeadline = taskDeadlineDates.has(day.date);
+              const isMissing = !record && !leave && day.date < today;
+              return (
+                <div
+                  key={day.date}
+                  className={cn(
+                    "relative flex aspect-square items-center justify-center rounded-2xl border text-sm font-semibold",
+                    record?.status === "present" &&
+                      "border-emerald-200 bg-emerald-50 text-emerald-700",
+                    (record?.status?.includes("leave") || leave) &&
+                      "border-violet-200 bg-violet-50 text-violet-700",
+                    record?.status === "absent" && "border-rose-200 bg-rose-50 text-rose-700",
+                    isToday && "ring-2 ring-violet-400",
+                  )}
+                  title={record ? attendanceLabels[record.status] : "Chưa điểm danh"}
+                >
+                  {day.day}
+                  <DayIndicators
+                    present={record?.status === "present"}
+                    deadline={hasDeadline}
+                    leave={!!leave || !!record?.status?.includes("leave")}
+                    current={isToday}
+                    missing={isMissing}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-3 text-xs text-muted-foreground">
+            <LegendDot className="bg-emerald-500" label="Đã điểm danh" />
+            <LegendDot className="bg-amber-400" label="Có deadline" />
+            <LegendDot className="bg-rose-400" label="Nghỉ phép" />
+            <LegendDot className="bg-violet-500" label="Hôm nay" />
+            <LegendDot className="bg-slate-300" label="Chưa điểm danh" />
+          </div>
+          <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-sm font-medium text-slate-700">
+            ✅ Điểm danh đầy đủ: {presentCount}/{monthDays.length} ngày
           </div>
         </CardContent>
       </Card>
@@ -1011,148 +1109,75 @@ function EmployeeAttendanceView({
         />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(280px,0.85fr)_minmax(0,1.45fr)]">
-        <Card className="rounded-3xl">
-          <CardHeader className="flex flex-row items-center justify-between gap-3">
-            <div>
-              <CardTitle>Tháng {formatMonthLabel(month)}</CardTitle>
-              <p className="text-sm text-muted-foreground">Lịch điểm danh cá nhân.</p>
-            </div>
-            <Input
-              className="w-40"
-              type="month"
-              value={month}
-              onChange={(event) => setMonth(event.target.value)}
-            />
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-7 gap-2">
-              {monthDays.map((day) => {
+      <Card className="rounded-3xl">
+        <CardHeader>
+          <CardTitle>Lịch sử điểm danh & checklist</CardTitle>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Ngày</TableHead>
+                <TableHead>Điểm danh</TableHead>
+                <TableHead>Checklist</TableHead>
+                <TableHead>Đơn nghỉ</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {historyDays.map((day) => {
                 const record = recordsByDate.get(day.date);
-                const isToday = day.date === today;
+                const checklist = countChecklistForUserDate({
+                  userId: profileId,
+                  date: day.date,
+                  templates,
+                  memberships,
+                  completions,
+                });
                 const leave = leaveRequests.find(
-                  (request) =>
-                    request.status === "approved" &&
-                    request.start_date <= day.date &&
-                    request.end_date >= day.date,
+                  (request) => request.start_date <= day.date && request.end_date >= day.date,
                 );
-                const hasDeadline = taskDeadlineDates.has(day.date);
                 return (
-                  <div
-                    key={day.date}
-                    className={cn(
-                      "relative flex aspect-square items-center justify-center rounded-2xl border text-sm font-semibold",
-                      record?.status === "present" &&
-                        "border-emerald-200 bg-emerald-50 text-emerald-700",
-                      (record?.status?.includes("leave") || leave) &&
-                        "border-violet-200 bg-violet-50 text-violet-700",
-                      record?.status === "absent" && "border-rose-200 bg-rose-50 text-rose-700",
-                      isToday && "ring-2 ring-violet-400",
-                    )}
-                    title={record ? attendanceLabels[record.status] : "Chưa điểm danh"}
-                  >
-                    {day.day}
-                    <span className="absolute bottom-1 left-1/2 flex -translate-x-1/2 gap-0.5">
-                      {record?.status === "present" ? (
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                      ) : null}
-                      {hasDeadline ? (
-                        <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                      ) : null}
-                      {leave ? <span className="h-1.5 w-1.5 rounded-full bg-violet-500" /> : null}
-                      {!record && !leave && day.date < today ? (
-                        <span className="h-1.5 w-1.5 rounded-full bg-rose-300" />
-                      ) : null}
-                    </span>
-                  </div>
+                  <TableRow key={day.date}>
+                    <TableCell className="font-medium">{formatDateVN(day.date)}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={statusBadgeClass(record?.status ?? null)}>
+                        {record ? attendanceLabels[record.status] : "Chưa điểm danh"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {checklist.done}/{checklist.total}
+                    </TableCell>
+                    <TableCell>
+                      {leave ? (
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap gap-1.5">
+                            <Badge variant="outline" className={statusBadgeClass(leave.status)}>
+                              {leaveLabels[leave.status]}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="border-slate-200 bg-slate-50 text-slate-600"
+                            >
+                              {leaveTypeLabel(leave.leave_type)}
+                            </Badge>
+                          </div>
+                          {leave.review_note ? (
+                            <p className="max-w-xs text-xs text-muted-foreground">
+                              {leave.review_note}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                  </TableRow>
                 );
               })}
-            </div>
-            <div className="mt-4 flex flex-wrap gap-3 text-xs text-muted-foreground">
-              <LegendDot className="bg-emerald-500" label="Đã điểm danh" />
-              <LegendDot className="bg-amber-400" label="Có deadline" />
-              <LegendDot className="bg-violet-500" label="Nghỉ phép" />
-              <LegendDot className="bg-rose-300" label="Chưa điểm danh" />
-            </div>
-            <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-sm font-medium text-slate-700">
-              ✅ Điểm danh đầy đủ: {presentCount}/{monthDays.length} ngày
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-3xl">
-          <CardHeader>
-            <CardTitle>Lịch sử điểm danh & checklist</CardTitle>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Ngày</TableHead>
-                  <TableHead>Điểm danh</TableHead>
-                  <TableHead>Checklist</TableHead>
-                  <TableHead>Đơn nghỉ</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {historyDays.map((day) => {
-                  const record = recordsByDate.get(day.date);
-                  const checklist = countChecklistForUserDate({
-                    userId: profileId,
-                    date: day.date,
-                    templates,
-                    memberships,
-                    completions,
-                  });
-                  const leave = leaveRequests.find(
-                    (request) => request.start_date <= day.date && request.end_date >= day.date,
-                  );
-                  return (
-                    <TableRow key={day.date}>
-                      <TableCell className="font-medium">{formatDateVN(day.date)}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={statusBadgeClass(record?.status ?? null)}
-                        >
-                          {record ? attendanceLabels[record.status] : "Chưa điểm danh"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {checklist.done}/{checklist.total}
-                      </TableCell>
-                      <TableCell>
-                        {leave ? (
-                          <div className="space-y-1">
-                            <div className="flex flex-wrap gap-1.5">
-                              <Badge variant="outline" className={statusBadgeClass(leave.status)}>
-                                {leaveLabels[leave.status]}
-                              </Badge>
-                              <Badge
-                                variant="outline"
-                                className="border-slate-200 bg-slate-50 text-slate-600"
-                              >
-                                {leaveTypeLabel(leave.leave_type)}
-                              </Badge>
-                            </div>
-                            {leave.review_note ? (
-                              <p className="max-w-xs text-xs text-muted-foreground">
-                                {leave.review_note}
-                              </p>
-                            ) : null}
-                          </div>
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </div>
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </ScrollArea>
   );
 }
@@ -1332,7 +1357,7 @@ function ManagementAttendanceView({
             <TableBody>
               {filteredProfiles.map((user) => {
                 const record = records.find(
-                  (item) => item.user_id === user.id && item.attendance_date === selectedDate,
+                  (item) => item.user_id === user.id && getRecordDateKey(item) === selectedDate,
                 );
                 const checklist = countChecklistForUserDate({
                   userId: user.id,
@@ -1342,8 +1367,7 @@ function ManagementAttendanceView({
                   completions,
                 });
                 const userTasks = dayTasks.filter(
-                  (task) =>
-                    task.assigned_to === user.id && task.deadline?.slice(0, 10) === selectedDate,
+                  (task) => task.assigned_to === user.id && getTaskDateKey(task) === selectedDate,
                 );
                 const doneTasks = userTasks.filter((task) => isDoneStatus(task.status)).length;
                 const leave = leaveRequests.find(
@@ -1516,7 +1540,7 @@ function ManagementCalendarCard({
             const dayRecords = calendarProfileId
               ? records.filter(
                   (record) =>
-                    record.attendance_date === day.date && record.user_id === calendarProfileId,
+                    getRecordDateKey(record) === day.date && record.user_id === calendarProfileId,
                 )
               : [];
             const hasPresent = dayRecords.some((record) => record.status === "present");
@@ -1532,8 +1556,7 @@ function ManagementCalendarCard({
             const hasDeadline = calendarProfileId
               ? dayTasks.some(
                   (task) =>
-                    task.assigned_to === calendarProfileId &&
-                    task.deadline?.slice(0, 10) === day.date,
+                    task.assigned_to === calendarProfileId && getTaskDateKey(task) === day.date,
                 )
               : false;
             const isSelected = day.date === selectedDate;
@@ -1544,7 +1567,7 @@ function ManagementCalendarCard({
                 type="button"
                 onClick={() => onSelectDate(day.date)}
                 className={cn(
-                  "flex h-11 items-center justify-center rounded-2xl text-sm font-semibold transition hover:bg-slate-100",
+                  "relative flex h-11 items-center justify-center rounded-2xl text-sm font-semibold transition hover:bg-slate-100",
                   hasPresent && "bg-emerald-100 text-emerald-700",
                   hasLeave && "bg-rose-50 text-rose-700",
                   hasDeadline && !hasPresent && "bg-amber-100 text-amber-800",
@@ -1552,20 +1575,18 @@ function ManagementCalendarCard({
                   isSelected && "bg-violet-600 text-white shadow-sm hover:bg-violet-600",
                 )}
               >
-                <span>
-                  {day.day}
-                  {isSelected ? (
-                    <span className="mt-0.5 block text-[10px] font-medium">
-                      {isToday ? "Hôm nay" : "Đang chọn"}
-                    </span>
-                  ) : null}
-                </span>
+                <span>{day.day}</span>
+                <DayIndicators
+                  present={hasPresent}
+                  deadline={hasDeadline}
+                  leave={hasLeave}
+                  current={isToday || isSelected}
+                />
               </button>
             );
           })}
         </div>
         <div className="mt-5 flex flex-wrap gap-4 text-xs text-muted-foreground">
-          <LegendDot className="bg-violet-600" label="Ngày chọn" />
           <LegendDot className="bg-emerald-200" label="Đã điểm danh" />
           <LegendDot className="bg-amber-200" label="Có deadline" />
           <LegendDot className="bg-rose-100" label="Nghỉ phép" />
@@ -1589,6 +1610,41 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div className="space-y-1.5">
       <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
       {children}
+    </div>
+  );
+}
+
+function ChecklistProgressPill({ checklist }: { checklist: { done: number; total: number } }) {
+  const percent = checklist.total ? Math.min(100, (checklist.done / checklist.total) * 100) : 0;
+  const completed = checklist.total > 0 && checklist.done >= checklist.total;
+
+  return (
+    <div
+      className={cn(
+        "min-w-[220px] rounded-2xl border bg-white px-3 py-2 shadow-sm",
+        completed && "border-emerald-200 bg-emerald-50",
+      )}
+    >
+      <div
+        className={cn(
+          "mb-1.5 flex items-center justify-between text-xs font-semibold",
+          completed ? "text-emerald-700" : "text-slate-600",
+        )}
+      >
+        <span>Checklist hôm nay</span>
+        <span>
+          {checklist.done}/{checklist.total}
+        </span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+        <div
+          className={cn(
+            "h-full rounded-full transition-all",
+            completed ? "bg-emerald-500" : "bg-primary",
+          )}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
     </div>
   );
 }

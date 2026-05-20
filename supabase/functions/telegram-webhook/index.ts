@@ -423,24 +423,39 @@ Deno.serve(async (req: Request) => {
 
     const messageText = update.message?.text;
     const chatId = update.message?.chat?.id?.toString();
+    const chatType = update.message?.chat?.type ?? null;
     const telegramUserId = update.message?.from?.id?.toString() ?? null;
     const telegramUsername = update.message?.from?.username ?? null;
-    const code = parseStartCode(messageText);
+    const isPrivateChat = chatType === "private";
+    const isStartCommand = /^\/start(?:@\w+)?(?:\s|_|$)/i.test(messageText?.trim() ?? "");
+    const code = isPrivateChat && isStartCommand ? parseStartCode(messageText) : null;
 
     console.log("[telegram-webhook] update received", {
       hasMessage: Boolean(update.message),
       hasText: Boolean(messageText),
       hasChatId: Boolean(chatId),
+      chatType,
       code: maskCode(code),
     });
 
-    if (!chatId || !code) {
-      if (chatId) {
-        await sendTelegramMessage(
-          chatId,
-          "Mã liên kết không hợp lệ. Vui lòng mở MKTRe và tạo mã liên kết Telegram mới.",
-        );
-      }
+    if (!isPrivateChat) {
+      console.log("[telegram-webhook] ignored non-private message", {
+        chatId,
+        chatType,
+        text: messageText,
+      });
+      return Response.json({ ok: true, ignored: true }, { headers: corsHeaders });
+    }
+
+    if (!chatId || !isStartCommand) {
+      return Response.json({ ok: true, ignored: true }, { headers: corsHeaders });
+    }
+
+    if (!code) {
+      await sendTelegramMessage(
+        chatId,
+        "Mã liên kết không hợp lệ. Vui lòng mở MKTRe và tạo mã liên kết Telegram mới.",
+      );
       return Response.json({ ok: true }, { headers: corsHeaders });
     }
 

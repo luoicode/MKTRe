@@ -1,6 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
+export const VN_TIME_ZONE = "Asia/Ho_Chi_Minh";
+
+export function dateKeyVN(input: Date | string = new Date()) {
+  if (typeof input === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input)) return input;
+  const date = typeof input === "string" ? new Date(input) : input;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: VN_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
 export interface ReportSlot {
   id: string;
   slot_name: string;
@@ -25,11 +40,7 @@ export function useSlots() {
 }
 
 export function todayStr() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${dd}`;
+  return dateKeyVN(new Date());
 }
 
 const vnd = new Intl.NumberFormat("vi-VN");
@@ -57,6 +68,10 @@ export const fmtInt = (v: number | null | undefined) =>
   v == null ? "—" : vnd.format(Math.round(Number(v)));
 
 export function formatDateVN(d: string | Date) {
+  if (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    const [yy, mm, dd] = d.split("-");
+    return `${dd}/${mm}/${yy}`;
+  }
   const dt = typeof d === "string" ? new Date(d + (d.length === 10 ? "T00:00:00" : "")) : d;
   const dd = String(dt.getDate()).padStart(2, "0");
   const mm = String(dt.getMonth() + 1).padStart(2, "0");

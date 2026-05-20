@@ -77,12 +77,11 @@ interface ReportEntrySlot extends ReportSlot {
 const SUBMITTED_REPORT_EDIT_WINDOW_MS = 60 * 60_000;
 
 function addDays(date: string, days: number) {
-  const d = new Date(`${date}T00:00:00`);
-  d.setDate(d.getDate() + days);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${dd}`;
+  const [year, month, day] = date.split("-").map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day + days));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    d.getUTCDate(),
+  ).padStart(2, "0")}`;
 }
 
 function slotMinutes(slot: ReportSlot) {
@@ -394,7 +393,9 @@ export function EmployeeReport() {
         .limit(1)
         .maybeSingle();
       if (membershipError) throw membershipError;
-      if (!membership?.team_id) return { teamName: null as string | null };
+      if (!membership?.team_id) {
+        return { teamId: null as string | null, teamName: null as string | null };
+      }
 
       const { data: team, error: teamError } = await supabase
         .from("teams")
@@ -402,7 +403,7 @@ export function EmployeeReport() {
         .eq("id", membership.team_id)
         .maybeSingle();
       if (teamError) throw teamError;
-      return { teamName: team?.name ?? null };
+      return { teamId: membership.team_id, teamName: team?.name ?? null };
     },
   });
   const reportBySlotDate = useMemo(
@@ -509,6 +510,8 @@ export function EmployeeReport() {
     toast.success("Đã điểm danh hôm nay");
     await refetchAttendanceGate();
     qc.invalidateQueries({ queryKey: ["attendance"] });
+    qc.invalidateQueries({ queryKey: ["analytics-dashboard"] });
+    await qc.refetchQueries({ queryKey: ["analytics-dashboard"], type: "active" });
   };
 
   const openLeaveRequest = () => {
@@ -642,6 +645,7 @@ export function EmployeeReport() {
                     entrySlot={s}
                     now={now}
                     groupLabel={s.groupLabel}
+                    teamId={exportContext?.teamId ?? null}
                     teamName={exportContext?.teamName ?? null}
                     onSaved={() => qc.invalidateQueries({ queryKey: ["my-reports"] })}
                     onSubmitted={handleSubmitted}
@@ -666,13 +670,13 @@ export function EmployeeReport() {
                   <Clock3 className="h-5 w-5" />
                 )}
               </div>
-              <CardTitle>Bạn cần điểm danh trước</CardTitle>
+              <CardTitle>Bạn cần điểm danh trước khi nhập báo cáo.</CardTitle>
               <CardDescription>Vui lòng điểm danh hôm nay để mở khóa nhập báo cáo.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-2 sm:flex-row">
               <Button className="flex-1" onClick={handleCheckInNow} disabled={checkingIn}>
                 {checkingIn ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Điểm danh ngay
+                Điểm danh
               </Button>
               <Button variant="outline" className="flex-1" onClick={openLeaveRequest}>
                 Xin nghỉ phép
@@ -726,6 +730,7 @@ function SlotForm({
   entrySlot,
   now,
   groupLabel,
+  teamId,
   teamName,
   onSaved,
   onSubmitted,
@@ -738,6 +743,7 @@ function SlotForm({
   entrySlot: ReportEntrySlot;
   now: Date;
   groupLabel: string;
+  teamId?: string | null;
   teamName?: string | null;
   onSaved: () => void;
   onSubmitted: (d: SubmittedReportData) => void;
@@ -858,6 +864,7 @@ function SlotForm({
     const submittedAt = status === "submitted" ? new Date().toISOString() : null;
     const payload = {
       user_id: profileId,
+      team_id: teamId ?? null,
       report_date: date,
       slot_id: slotId,
       ads_cost: nums.ads,

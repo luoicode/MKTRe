@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bar,
@@ -35,6 +35,8 @@ import { RefreshButton } from "@/components/RefreshButton";
 import { toast } from "sonner";
 import {
   calculateSalaryEstimate,
+  monthEnd,
+  normalizeAttendanceDate,
   type SalaryAttendanceRecord,
   type SalaryEstimate,
   type SalaryLeaveRequest,
@@ -50,6 +52,9 @@ export function AnalyticsDashboard({
   const { profile } = useAuth();
   const [range, setRange] = useState<DateRangeValue>(() => initialDateRange("month"));
   const { from, to } = normalizeDateRange(range);
+  const salaryMonth = from.slice(0, 7);
+  const salaryFrom = `${salaryMonth}-01`;
+  const salaryTo = monthEnd(salaryMonth);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["analytics-dashboard", scope, profile?.id, from, to],
@@ -107,17 +112,18 @@ export function AnalyticsDashboard({
             .eq("is_active", true),
           supabase
             .from("attendance_records")
-            .select("attendance_date, status")
+            .select("user_id, attendance_date, checked_in_at, created_at, status")
             .eq("user_id", salaryUserId)
-            .gte("attendance_date", from)
-            .lte("attendance_date", to),
+            .eq("status", "present")
+            .gte("attendance_date", salaryFrom)
+            .lte("attendance_date", salaryTo),
           supabase
             .from("leave_requests")
-            .select("start_date, end_date, status, leave_type")
+            .select("user_id, start_date, end_date, status, leave_type")
             .eq("user_id", salaryUserId)
             .eq("status", "approved")
-            .lte("start_date", to)
-            .gte("end_date", from),
+            .lte("start_date", salaryTo)
+            .gte("end_date", salaryFrom),
         ]);
         if (rulesResult.error) throw rulesResult.error;
         if (attendanceResult.error) throw attendanceResult.error;
@@ -173,10 +179,39 @@ export function AnalyticsDashboard({
         kpiTarget: scope === "leader" ? leaderPersonalKpiRevenueTarget : kpiRevenueTarget,
         attendanceRecords: data?.salaryAttendance ?? [],
         leaveRequests: data?.salaryLeaveRequests ?? [],
-        from,
-        to,
+        from: salaryFrom,
+        to: salaryTo,
+        profileId: profile?.id ?? "",
       })
     : null;
+  useEffect(() => {
+    if (!import.meta.env.DEV || !salaryRole) return;
+    const attendanceRows = data?.salaryAttendance ?? [];
+    const attendanceDatesFetched = attendanceRows
+      .map((record) => normalizeAttendanceDate(record))
+      .filter(Boolean);
+    console.debug("[MKTRe salary workdays]", {
+      profileId: profile?.id,
+      salaryMonth,
+      salaryFrom,
+      salaryTo,
+      rawAttendanceDates: attendanceRows.map((record) => record.attendance_date),
+      attendanceDatesFetched,
+      finalWorkdayDates: salaryEstimate?.workdayDates ?? [],
+      attendedDays: salaryEstimate?.attendedDays ?? 0,
+      expectedWorkdays: salaryEstimate?.expectedWorkdays ?? 0,
+    });
+  }, [
+    data?.salaryAttendance,
+    profile?.id,
+    salaryEstimate?.attendedDays,
+    salaryEstimate?.expectedWorkdays,
+    salaryEstimate?.workdayDates,
+    salaryFrom,
+    salaryMonth,
+    salaryTo,
+    salaryRole,
+  ]);
   const refreshData = async () => {
     await refetch();
     toast.success("Đã làm mới dữ liệu");

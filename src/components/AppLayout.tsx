@@ -81,7 +81,7 @@ const NAV: NavItem[] = [
 
   // Leader
   { to: "/leader/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["leader"] },
-  { to: "/leader/report-slots", label: "Nhập báo cáo cá nhân", icon: FileText, roles: ["leader"] },
+  { to: "/leader/report-slots", label: "Nhập báo cáo", icon: FileText, roles: ["leader"] },
   { to: "/leader/daily-report", label: "Báo cáo", icon: FileText, roles: ["leader"] },
   { to: "/leader/kpi", label: "KPI", icon: Target, roles: ["leader"] },
   { to: "/leader/tasks", label: "Công việc", icon: CheckSquare, roles: ["leader"] },

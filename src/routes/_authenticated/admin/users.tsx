@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -115,6 +115,24 @@ function normalizePhone(value: string) {
   return value.trim() || null;
 }
 
+async function invalidateUserScopeQueries(qc: QueryClient) {
+  await Promise.all([
+    qc.invalidateQueries({ queryKey: ["admin-users"] }),
+    qc.invalidateQueries({ queryKey: ["teams-full"] }),
+    qc.invalidateQueries({ queryKey: ["all-profiles-with-role"] }),
+    qc.invalidateQueries({ queryKey: ["analytics-dashboard"] }),
+    qc.invalidateQueries({ queryKey: ["leader-daily"] }),
+    qc.invalidateQueries({ queryKey: ["admin-team-summary-report"] }),
+    qc.invalidateQueries({ queryKey: ["manager-reports-range"] }),
+    qc.invalidateQueries({ queryKey: ["manager-today"] }),
+    qc.invalidateQueries({ queryKey: ["global-ranking"] }),
+    qc.invalidateQueries({ queryKey: ["attendance-workspace"] }),
+    qc.invalidateQueries({ queryKey: ["kpi-workspace"] }),
+    qc.invalidateQueries({ queryKey: ["tasks-workspace"] }),
+    qc.invalidateQueries({ queryKey: ["assets-workspace"] }),
+  ]);
+}
+
 function AdminUsers() {
   const qc = useQueryClient();
   const { profile } = useAuth();
@@ -209,7 +227,7 @@ function AdminUsers() {
                 adminProfileId={profile?.id ?? null}
                 onClose={() => {
                   setCreateOpen(false);
-                  qc.invalidateQueries({ queryKey: ["admin-users"] });
+                  void invalidateUserScopeQueries(qc);
                 }}
               />
             </Dialog>
@@ -296,7 +314,7 @@ function AdminUsers() {
             adminProfileId={profile?.id ?? null}
             onClose={() => {
               setEditing(null);
-              qc.invalidateQueries({ queryKey: ["admin-users"] });
+              void invalidateUserScopeQueries(qc);
             }}
           />
         )}
@@ -509,6 +527,7 @@ function EditUserDialog({
   adminProfileId: string | null;
   onClose: () => void;
 }) {
+  const qc = useQueryClient();
   const [form, setForm] = useState({
     full_name: user.full_name,
     username: user.username,
@@ -584,6 +603,7 @@ function EditUserDialog({
       }
 
       const nextTeamId = canAssignTeam ? form.team_id : "";
+      const nextRoleInTeam = form.role === "leader" ? "leader" : "employee";
       if ((user.activeTeamId ?? "") !== nextTeamId) {
         const { error: deactivateError } = await supabase
           .from("team_memberships")
@@ -596,10 +616,18 @@ function EditUserDialog({
           const { error: membershipError } = await supabase.from("team_memberships").insert({
             user_id: user.id,
             team_id: nextTeamId,
-            role_in_team: form.role === "leader" ? "leader" : "employee",
+            role_in_team: nextRoleInTeam,
           });
           if (membershipError) throw membershipError;
         }
+      } else if (nextTeamId && canAssignTeam && form.role !== user.role) {
+        const { error: membershipRoleError } = await supabase
+          .from("team_memberships")
+          .update({ role_in_team: nextRoleInTeam })
+          .eq("user_id", user.id)
+          .eq("team_id", nextTeamId)
+          .eq("is_active", true);
+        if (membershipRoleError) throw membershipRoleError;
       }
 
       const { error: clearLeaderError } = await supabase
@@ -619,6 +647,7 @@ function EditUserDialog({
       await saveFixedAssets(user.id, form.fixedAssets, adminProfileId);
 
       toast.success("Cập nhật thành công");
+      await invalidateUserScopeQueries(qc);
       onClose();
     } catch (e) {
       toast.error((e as Error).message);
