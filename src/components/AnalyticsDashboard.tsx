@@ -35,8 +35,8 @@ import { RefreshButton } from "@/components/RefreshButton";
 import { toast } from "sonner";
 import {
   calculateSalaryEstimate,
+  getAttendanceDateKeys,
   monthEnd,
-  normalizeAttendanceDate,
   type SalaryAttendanceRecord,
   type SalaryEstimate,
   type SalaryLeaveRequest,
@@ -187,22 +187,35 @@ export function AnalyticsDashboard({
   useEffect(() => {
     if (!import.meta.env.DEV || !salaryRole) return;
     const attendanceRows = data?.salaryAttendance ?? [];
-    const attendanceDatesFetched = attendanceRows
-      .map((record) => normalizeAttendanceDate(record))
-      .filter(Boolean);
-    console.debug("[MKTRe salary workdays]", {
+    const attendanceDatesFetched = getAttendanceDateKeys(attendanceRows, {
+      profileId: profile?.id,
+      from: salaryFrom,
+      to: salaryTo,
+    });
+    console.debug("[salary-debug] attendance dates", {
       profileId: profile?.id,
       salaryMonth,
       salaryFrom,
       salaryTo,
-      rawAttendanceDates: attendanceRows.map((record) => record.attendance_date),
+      rows: attendanceRows.map((record) => ({
+        user_id: record.user_id,
+        attendance_date: record.attendance_date,
+        checked_in_at: record.checked_in_at,
+        created_at: record.created_at,
+        status: record.status,
+      })),
       attendanceDatesFetched,
+    });
+    console.debug("[salary-debug] final workdays", {
+      profileId: profile?.id,
+      approvedLeaves: data?.salaryLeaveRequests ?? [],
       finalWorkdayDates: salaryEstimate?.workdayDates ?? [],
       attendedDays: salaryEstimate?.attendedDays ?? 0,
       expectedWorkdays: salaryEstimate?.expectedWorkdays ?? 0,
     });
   }, [
     data?.salaryAttendance,
+    data?.salaryLeaveRequests,
     profile?.id,
     salaryEstimate?.attendedDays,
     salaryEstimate?.expectedWorkdays,

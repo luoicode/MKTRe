@@ -556,7 +556,7 @@ export function EmployeeReport() {
             }}
             className="md:flex md:min-h-0 md:flex-1 md:flex-col"
           >
-            <div className="grid shrink-0 gap-2 md:grid-cols-[1fr_200px]">
+            <div className="grid shrink-0 gap-2 md:grid-cols-[1fr_180px] xl:grid-cols-[1fr_200px]">
               <Card>
                 <CardHeader className="px-3 py-2">
                   <CardTitle className="text-base">Hôm nay</CardTitle>
@@ -633,7 +633,7 @@ export function EmployeeReport() {
               <TabsContent
                 key={s.id}
                 value={s.id}
-                className="mt-3 md:min-h-0 md:flex-1 md:overflow-hidden data-[state=active]:md:block data-[state=inactive]:md:hidden"
+                className="mt-2 md:min-h-0 md:flex-1 md:overflow-hidden data-[state=active]:md:block data-[state=inactive]:md:hidden"
               >
                 {profile && activeSlot === s.id && (
                   <SlotForm
@@ -925,9 +925,12 @@ function SlotForm({
   const VND_FIELDS = new Set<keyof FormState>(["ads_cost", "daily_data_revenue", "total_revenue"]);
   const numField = (k: keyof Omit<FormState, "note">, label: string) => (
     <div className="space-y-1">
-      <Label htmlFor={k}>{label}</Label>
+      <Label className="text-xs" htmlFor={k}>
+        {label}
+      </Label>
       {VND_FIELDS.has(k) ? (
         <VndInput
+          className="h-8 text-sm"
           id={k}
           value={form[k]}
           onChange={(v) => setForm((f) => ({ ...f, [k]: v }))}
@@ -947,10 +950,10 @@ function SlotForm({
   const recoveredNeg = computed.recovered < 0;
 
   return (
-    <div className="grid gap-3 md:h-full md:min-h-0 lg:grid-cols-2">
-      <Card className="md:flex md:min-h-0 md:flex-col">
+    <div className="grid gap-3 md:h-full md:min-h-0 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
+      <Card className="md:flex md:min-h-0 md:flex-col md:overflow-hidden">
         <CardHeader className="px-3 py-2">
-          <CardTitle className="flex items-center justify-between">
+          <CardTitle className="flex items-center justify-between gap-2 text-base">
             <span>Khung {slotName}</span>
             <span className="flex flex-wrap justify-end gap-1.5">
               <Badge variant={isReconciliation ? "secondary" : "outline"}>
@@ -970,7 +973,7 @@ function SlotForm({
             )}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2 px-3 pb-3 md:min-h-0 md:flex-1">
+        <CardContent className="flex flex-col gap-2 px-3 pb-0 md:min-h-0 md:flex-1 md:overflow-y-auto">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {numField("ads_cost", "Chi Phí Ads")}
             {numField("mess_count", "MESS")}
@@ -981,9 +984,11 @@ function SlotForm({
             {numField("total_revenue", "Tổng Doanh Số")}
           </div>
           <div>
-            <Label htmlFor="note">Ghi chú</Label>
+            <Label className="text-xs" htmlFor="note">
+              Ghi chú
+            </Label>
             <Textarea
-              className="min-h-12 text-sm"
+              className="min-h-10 py-1.5 text-sm"
               id="note"
               value={form.note}
               onChange={(e) => setForm({ ...form, note: e.target.value })}
@@ -1015,7 +1020,7 @@ function SlotForm({
           )}
 
           {editable && (
-            <div className="flex flex-wrap justify-end gap-2 rounded-lg border bg-card/95 p-2 shadow-sm backdrop-blur">
+            <div className="sticky bottom-0 z-10 -mx-3 mt-auto flex flex-wrap justify-end gap-2 border-t bg-background/95 px-3 py-2 shadow-[0_-8px_18px_rgba(15,23,42,0.06)] backdrop-blur">
               <Button
                 size="icon"
                 variant="outline"
@@ -1038,13 +1043,15 @@ function SlotForm({
         </CardContent>
       </Card>
 
-      <Card className="md:flex md:min-h-0 md:flex-col">
+      <Card className="md:flex md:min-h-0 md:flex-col md:overflow-hidden">
         <CardHeader className="px-3 py-2">
           <CardTitle className="text-base">Chỉ số tự tính</CardTitle>
-          <CardDescription>Cập nhật real-time theo số liệu nhập</CardDescription>
+          <CardDescription className="text-xs">
+            Cập nhật real-time theo số liệu nhập
+          </CardDescription>
         </CardHeader>
-        <CardContent className="px-3 pb-3 md:min-h-0 md:flex-1">
-          <dl className="grid grid-cols-2 gap-2 text-sm">
+        <CardContent className="px-3 pb-3 md:min-h-0 md:flex-1 md:overflow-y-auto">
+          <dl className="grid grid-cols-2 gap-1.5 text-sm">
             <Metric label="Chi phí ADS/MESS" value={formatVnd(computed.cp_mess)} />
             <Metric label="Chi phí ADS/Data" value={formatVnd(computed.cp_data)} />
             <Metric label="Tỉ lệ chốt DATA trong ngày" value={formatPercent(computed.conv_rate)} />
@@ -1090,7 +1097,7 @@ function reportReadonlyMessage(
 
 function Metric({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
   return (
-    <div className="rounded-lg border bg-card p-2.5">
+    <div className="rounded-lg border bg-card p-2">
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className={`mt-0.5 text-sm font-semibold ${danger ? "text-red-600" : ""}`}>{value}</dd>
     </div>

@@ -14,7 +14,7 @@ import type { Tables } from "@/integrations/supabase/types";
 import { useAuth, type AppRole } from "@/lib/auth";
 import { getLeaderTeamIds } from "@/lib/dailyAggregates";
 import { dateKeyVN, formatDateVN, todayStr } from "@/lib/reports";
-import { calculateMonthlyWorkdays } from "@/lib/salary";
+import { calculateMonthlyWorkdays, getAttendanceDateKey } from "@/lib/salary";
 import { sendTelegramForNotification } from "@/lib/telegram";
 import { cn } from "@/lib/utils";
 import { PageShell, ScrollArea } from "@/components/layout/PageShell";
@@ -182,8 +182,7 @@ function computeStreak(records: AttendanceRecord[], endDate = todayStr()) {
 }
 
 function getRecordDateKey(record: AttendanceRecord) {
-  if (record.attendance_date) return record.attendance_date;
-  return dateKeyVN(record.checked_in_at || record.created_at);
+  return getAttendanceDateKey(record) ?? "";
 }
 
 function getTaskDateKey(task: TaskRow) {
@@ -1049,150 +1048,161 @@ function EmployeeAttendanceView({
 
   return (
     <ScrollArea className="space-y-4 md:pr-2">
-      <Card className="rounded-3xl">
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <div>
-            <CardTitle>Tháng {formatMonthLabel(month)}</CardTitle>
-            <p className="text-sm text-muted-foreground">Lịch điểm danh cá nhân.</p>
-          </div>
-          <Input
-            className="w-40"
-            type="month"
-            value={month}
-            onChange={(event) => setMonth(event.target.value)}
-          />
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-7 gap-2">
-            {monthDays.map((day) => {
-              const record = recordsByDate.get(day.date);
-              const isToday = day.date === today;
-              const leave = leaveRequests.find(
-                (request) =>
-                  request.status === "approved" &&
-                  request.start_date <= day.date &&
-                  request.end_date >= day.date,
-              );
-              const hasDeadline = taskDeadlineDates.has(day.date);
-              const isMissing = !record && !leave && day.date < today;
-              return (
-                <div
-                  key={day.date}
-                  className={cn(
-                    "relative flex aspect-square flex-col items-center justify-center rounded-2xl border text-sm font-semibold",
-                    record?.status === "present" &&
-                      "border-emerald-200 bg-emerald-50 text-emerald-700",
-                    (record?.status?.includes("leave") || leave) &&
-                      "border-violet-200 bg-violet-50 text-violet-700",
-                    record?.status === "absent" && "border-rose-200 bg-rose-50 text-rose-700",
-                    isToday && "ring-2 ring-violet-400",
-                  )}
-                  title={record ? attendanceLabels[record.status] : "Chưa điểm danh"}
-                >
-                  {day.day}
-                  <DayIndicators
-                    present={record?.status === "present"}
-                    deadline={hasDeadline}
-                    leave={!!leave || !!record?.status?.includes("leave")}
-                    current={isToday}
-                    missing={isMissing}
-                  />
-                </div>
-              );
-            })}
-          </div>
-          <div className="mt-4 flex flex-wrap gap-3 text-xs text-muted-foreground">
-            <LegendDot className="bg-emerald-500" label="Đã điểm danh" />
-            <LegendDot className="bg-amber-400" label="Có deadline" />
-            <LegendDot className="bg-rose-400" label="Nghỉ phép" />
-            <LegendDot className="bg-violet-500" label="Hôm nay" />
-            <LegendDot className="bg-slate-300" label="Chưa điểm danh" />
-          </div>
-          <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-sm font-medium text-slate-700">
-            ✅ Điểm danh đầy đủ: {presentCount}/{monthDays.length} ngày
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-3 md:grid-cols-2">
-        <StatCard icon={UserCheck} label="Số ngày đã điểm danh trong tháng" value={presentCount} />
-        <StatCard
-          icon={ShieldCheck}
-          label="Số ngày nghỉ phép trong tháng"
-          value={approvedLeaveDays}
-          tone="amber"
-        />
-      </div>
-
-      <Card className="rounded-3xl">
-        <CardHeader>
-          <CardTitle>Lịch sử điểm danh & checklist</CardTitle>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Ngày</TableHead>
-                <TableHead>Điểm danh</TableHead>
-                <TableHead>Checklist</TableHead>
-                <TableHead>Đơn nghỉ</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {historyDays.map((day) => {
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.95fr)]">
+        <Card className="rounded-3xl">
+          <CardHeader className="flex flex-row items-center justify-between gap-3">
+            <div>
+              <CardTitle>Tháng {formatMonthLabel(month)}</CardTitle>
+              <p className="text-sm text-muted-foreground">Lịch điểm danh cá nhân.</p>
+            </div>
+            <Input
+              className="w-40"
+              type="month"
+              value={month}
+              onChange={(event) => setMonth(event.target.value)}
+            />
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-7 gap-2">
+              {monthDays.map((day) => {
                 const record = recordsByDate.get(day.date);
-                const checklist = countChecklistForUserDate({
-                  userId: profileId,
-                  date: day.date,
-                  templates,
-                  memberships,
-                  completions,
-                });
+                const isToday = day.date === today;
                 const leave = leaveRequests.find(
-                  (request) => request.start_date <= day.date && request.end_date >= day.date,
+                  (request) =>
+                    request.status === "approved" &&
+                    request.start_date <= day.date &&
+                    request.end_date >= day.date,
                 );
+                const hasDeadline = taskDeadlineDates.has(day.date);
+                const isMissing = !record && !leave && day.date < today;
                 return (
-                  <TableRow key={day.date}>
-                    <TableCell className="font-medium">{formatDateVN(day.date)}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={statusBadgeClass(record?.status ?? null)}>
-                        {record ? attendanceLabels[record.status] : "Chưa điểm danh"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {checklist.done}/{checklist.total}
-                    </TableCell>
-                    <TableCell>
-                      {leave ? (
-                        <div className="space-y-1">
-                          <div className="flex flex-wrap gap-1.5">
-                            <Badge variant="outline" className={statusBadgeClass(leave.status)}>
-                              {leaveLabels[leave.status]}
-                            </Badge>
-                            <Badge
-                              variant="outline"
-                              className="border-slate-200 bg-slate-50 text-slate-600"
-                            >
-                              {leaveTypeLabel(leave.leave_type)}
-                            </Badge>
-                          </div>
-                          {leave.review_note ? (
-                            <p className="max-w-xs text-xs text-muted-foreground">
-                              {leave.review_note}
-                            </p>
-                          ) : null}
-                        </div>
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                  </TableRow>
+                  <div
+                    key={day.date}
+                    className={cn(
+                      "relative flex h-14 flex-col items-center justify-center rounded-2xl border text-sm font-semibold sm:h-16 lg:h-20 2xl:h-24",
+                      record?.status === "present" &&
+                        "border-emerald-200 bg-emerald-50 text-emerald-700",
+                      (record?.status?.includes("leave") || leave) &&
+                        "border-violet-200 bg-violet-50 text-violet-700",
+                      record?.status === "absent" && "border-rose-200 bg-rose-50 text-rose-700",
+                      isToday && "ring-2 ring-violet-400",
+                    )}
+                    title={record ? attendanceLabels[record.status] : "Chưa điểm danh"}
+                  >
+                    {day.day}
+                    <DayIndicators
+                      present={record?.status === "present"}
+                      deadline={hasDeadline}
+                      leave={!!leave || !!record?.status?.includes("leave")}
+                      current={isToday}
+                      missing={isMissing}
+                    />
+                  </div>
                 );
               })}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-3 text-xs text-muted-foreground">
+              <LegendDot className="bg-emerald-500" label="Đã điểm danh" />
+              <LegendDot className="bg-amber-400" label="Có deadline" />
+              <LegendDot className="bg-rose-400" label="Nghỉ phép" />
+              <LegendDot className="bg-violet-500" label="Hôm nay" />
+              <LegendDot className="bg-slate-300" label="Chưa điểm danh" />
+            </div>
+            <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-sm font-medium text-slate-700">
+              ✅ Điểm danh đầy đủ: {presentCount}/{monthDays.length} ngày
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+            <StatCard
+              icon={UserCheck}
+              label="Số ngày đã điểm danh trong tháng"
+              value={presentCount}
+            />
+            <StatCard
+              icon={ShieldCheck}
+              label="Số ngày nghỉ phép trong tháng"
+              value={approvedLeaveDays}
+              tone="amber"
+            />
+          </div>
+
+          <Card className="rounded-3xl">
+            <CardHeader>
+              <CardTitle>Lịch sử điểm danh & checklist</CardTitle>
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Ngày</TableHead>
+                    <TableHead>Điểm danh</TableHead>
+                    <TableHead>Checklist</TableHead>
+                    <TableHead>Đơn nghỉ</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {historyDays.map((day) => {
+                    const record = recordsByDate.get(day.date);
+                    const checklist = countChecklistForUserDate({
+                      userId: profileId,
+                      date: day.date,
+                      templates,
+                      memberships,
+                      completions,
+                    });
+                    const leave = leaveRequests.find(
+                      (request) => request.start_date <= day.date && request.end_date >= day.date,
+                    );
+                    return (
+                      <TableRow key={day.date}>
+                        <TableCell className="font-medium">{formatDateVN(day.date)}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={statusBadgeClass(record?.status ?? null)}
+                          >
+                            {record ? attendanceLabels[record.status] : "Chưa điểm danh"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {checklist.done}/{checklist.total}
+                        </TableCell>
+                        <TableCell>
+                          {leave ? (
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap gap-1.5">
+                                <Badge variant="outline" className={statusBadgeClass(leave.status)}>
+                                  {leaveLabels[leave.status]}
+                                </Badge>
+                                <Badge
+                                  variant="outline"
+                                  className="border-slate-200 bg-slate-50 text-slate-600"
+                                >
+                                  {leaveTypeLabel(leave.leave_type)}
+                                </Badge>
+                              </div>
+                              {leave.review_note ? (
+                                <p className="max-w-xs text-xs text-muted-foreground">
+                                  {leave.review_note}
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </ScrollArea>
   );
 }

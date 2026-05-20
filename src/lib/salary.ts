@@ -65,11 +65,39 @@ function inDateRange(date: string, from: string, to: string) {
   return date >= from && date <= to;
 }
 
-export function normalizeAttendanceDate(record: SalaryAttendanceRecord) {
-  const source = record.attendance_date
-    ? record.attendance_date
-    : record.checked_in_at || record.created_at;
+export function getAttendanceDateKey(record: SalaryAttendanceRecord) {
+  if (record.attendance_date) return record.attendance_date;
+  const source = record.checked_in_at || record.created_at;
   return source ? dateKeyVN(source) : null;
+}
+
+export const normalizeAttendanceDate = getAttendanceDateKey;
+
+export function getAttendanceDateKeys(
+  records: SalaryAttendanceRecord[],
+  {
+    profileId,
+    from,
+    to,
+    status = "present",
+  }: {
+    profileId?: string;
+    from?: string;
+    to?: string;
+    status?: string;
+  } = {},
+) {
+  const dateKeys = new Set<string>();
+  for (const record of records) {
+    if (profileId && record.user_id !== profileId) continue;
+    if (status && record.status !== status) continue;
+    const dateKey = getAttendanceDateKey(record);
+    if (!dateKey) continue;
+    if (from && dateKey < from) continue;
+    if (to && dateKey > to) continue;
+    dateKeys.add(dateKey);
+  }
+  return Array.from(dateKeys).sort();
 }
 
 export function todayLocalDateString() {
@@ -112,13 +140,14 @@ export function calculateMonthlyWorkdays(
   const effectiveTo = from <= today && today <= to ? today : to;
   const matchesProfile = (userId: string | null | undefined) =>
     profileId ? userId === profileId : true;
-
-  const attendanceDates = new Set<string>();
-  for (const record of attendanceRecords) {
-    if (!matchesProfile(record.user_id) || record.status !== "present") continue;
-    const date = normalizeAttendanceDate(record);
-    if (date && inDateRange(date, from, effectiveTo)) attendanceDates.add(date);
-  }
+  const attendanceDates = new Set(
+    getAttendanceDateKeys(attendanceRecords, {
+      profileId,
+      from,
+      to: effectiveTo,
+      status: "present",
+    }),
+  );
 
   const leaveWeightByDate = new Map<string, number>();
   for (const request of approvedLeaveRequests) {

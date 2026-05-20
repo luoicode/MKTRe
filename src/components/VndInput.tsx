@@ -14,12 +14,14 @@ export function VndInput({
   onChange,
   disabled,
   placeholder = "0",
+  className,
 }: {
   id?: string;
   value: string; // digit-only
   onChange: (digits: string) => void;
   disabled?: boolean;
   placeholder?: string;
+  className?: string;
 }) {
   const display = value ? vnd.format(parseVndInput(value)) : "";
   return (
@@ -31,6 +33,7 @@ export function VndInput({
       placeholder={placeholder}
       value={display}
       disabled={disabled}
+      className={className}
       onFocus={(e) => e.currentTarget.select()}
       onChange={(e) => {
         const digits = e.target.value.replace(/[^\d]/g, "");
