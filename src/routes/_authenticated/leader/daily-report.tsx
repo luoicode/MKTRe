@@ -24,7 +24,6 @@ import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib
 import { RefreshButton } from "@/components/RefreshButton";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { toast } from "sonner";
-import { fetchFacebookManagerSpend, formatFacebookManagerSpend } from "@/lib/facebookAdSpend";
 
 export const Route = createFileRoute("/_authenticated/leader/daily-report")({
   component: LeaderDailyReport,
@@ -67,21 +66,12 @@ function LeaderDailyReport() {
       return { teamIds, teams: teams ?? [], rows: agg.rows };
     },
   });
-  const {
-    data: facebookSpend,
-    isFetching: isFacebookSpendFetching,
-    refetch: refetchFacebookSpend,
-  } = useQuery({
-    queryKey: ["facebook-manager-spend", normalizedRange.from, normalizedRange.to],
-    queryFn: () => fetchFacebookManagerSpend(normalizedRange.from, normalizedRange.to),
-  });
-
   const totals = useMemo(() => (data ? sumTotals(data.rows) : null), [data]);
   const totalsMetrics = useMemo(() => (totals ? calculateReportMetrics(totals) : null), [totals]);
   const teamName = data?.teams.map((t) => t.name).join(", ") || "—";
   const missing = (data?.rows ?? []).filter((r) => !r.countedInTotal);
   const refreshData = async () => {
-    await Promise.all([refetch(), refetchFacebookSpend()]);
+    await refetch();
     toast.success("Đã làm mới dữ liệu");
   };
 
@@ -97,10 +87,7 @@ function LeaderDailyReport() {
               <DateRangeFilter value={range} onChange={setRange} />
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <RefreshButton
-                isRefreshing={isFetching || isFacebookSpendFetching}
-                onRefresh={refreshData}
-              />
+              <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
               <ReportActions
                 targetRef={ref}
                 filename={teamReportExportFilename(now, normalizedRange.to, teamName)}
@@ -161,11 +148,6 @@ function LeaderDailyReport() {
 
           <div className="grid shrink-0 grid-cols-3 gap-1.5 md:grid-cols-6">
             <Stat label="Tổng Chi Phí Ads" value={fmtVndDong(totals.ads_cost)} />
-            <Stat
-              label="Chi phí trên trình quản lí"
-              value={formatFacebookManagerSpend(facebookSpend, fmtVndDong)}
-              variant="managerSpend"
-            />
             <Stat label="Tổng MESS" value={fmtInt(totals.mess_count)} />
             <Stat label="Chi Phí ADS/MESS" value={fmtVndDong(totalsMetrics.cp_mess)} />
             <Stat label="Tổng Data" value={fmtInt(totals.data_count)} />
