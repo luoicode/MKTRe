@@ -15,7 +15,7 @@ import { useAuth, type AppRole } from "@/lib/auth";
 import { getLeaderTeamIds } from "@/lib/dailyAggregates";
 import { dateKeyVN, formatDateVN, todayStr } from "@/lib/reports";
 import { calculateMonthlyWorkdays, getAttendanceDateKey } from "@/lib/salary";
-import { sendTelegramForNotification } from "@/lib/telegram";
+import { dispatchTelegramNotificationsForEntity } from "@/lib/telegram";
 import { cn } from "@/lib/utils";
 import { PageShell, ScrollArea } from "@/components/layout/PageShell";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
@@ -306,49 +306,22 @@ function statusBadgeClass(status: string | null) {
 }
 
 async function notifyLeaveRequestTelegram({ leaveRequestId }: { leaveRequestId: string }) {
-  const notifications = await getLeaveRequestNotifications(leaveRequestId, "leave_request_created");
-  await Promise.allSettled(
-    notifications.map((notification) => {
-      const recipientProfileId = notification.target_profile_id ?? notification.user_id;
-      console.debug("[leave_request_created][telegram]", notification.id, recipientProfileId);
-      return sendTelegramForNotification(notification);
-    }),
-  );
+  await dispatchTelegramNotificationsForEntity({
+    entity_type: "leave_request",
+    entity_id: leaveRequestId,
+    types: ["leave_request_created"],
+  });
 }
 
 async function notifyLeaveReviewTelegram(
   leaveRequestId: string,
   type: "leave_request_approved" | "leave_request_rejected",
 ) {
-  const notifications = await getLeaveRequestNotifications(leaveRequestId, type);
-  await Promise.allSettled(
-    notifications.map((notification) => sendTelegramForNotification(notification)),
-  );
-}
-
-async function getLeaveRequestNotifications(
-  leaveRequestId: string,
-  type: "leave_request_created" | "leave_request_approved" | "leave_request_rejected",
-) {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const { data, error } = await supabase
-      .from("notifications")
-      .select(
-        "id, target_profile_id, user_id, entity_type, entity_id, title, message, body, type, kind, metadata",
-      )
-      .eq("entity_type", "leave_request")
-      .eq("entity_id", leaveRequestId)
-      .eq("type", type);
-
-    if (error) {
-      console.debug("[leave_request][telegram] notification lookup failed", error.message);
-      return [];
-    }
-    if (data?.length) return data;
-    await new Promise((resolve) => window.setTimeout(resolve, 250));
-  }
-  console.debug("[leave_request][telegram] no notification rows found", { leaveRequestId, type });
-  return [];
+  await dispatchTelegramNotificationsForEntity({
+    entity_type: "leave_request",
+    entity_id: leaveRequestId,
+    types: [type],
+  });
 }
 
 export function AttendanceWorkspace() {

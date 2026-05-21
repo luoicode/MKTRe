@@ -10,7 +10,7 @@ type FacebookSpendRow = {
   spend: number | string | null;
 };
 
-const EXCLUDED_CAMPAIGN_PATTERN = "phủ";
+const MKTRE_FACEBOOK_AD_ACCOUNT_ID = "act_2407288503067302";
 
 export async function fetchFacebookManagerSpend(
   from: string,
@@ -19,9 +19,11 @@ export async function fetchFacebookManagerSpend(
   const { data, error } = await supabase
     .from("facebook_ad_spend_campaign_daily")
     .select("campaign_name, spend")
+    .eq("ad_account_id", MKTRE_FACEBOOK_AD_ACCOUNT_ID)
     .gte("spend_date", from)
     .lte("spend_date", to)
-    .not("campaign_name", "ilike", `%${EXCLUDED_CAMPAIGN_PATTERN}%`);
+    .not("campaign_name", "ilike", "%phủ%")
+    .not("campaign_name", "ilike", "%phu%");
 
   if (error) {
     console.warn("[facebook-spend] unable to load campaign spend", {
@@ -33,15 +35,23 @@ export async function fetchFacebookManagerSpend(
   }
 
   const rows = (data ?? []) as FacebookSpendRow[];
-  const includedRows = rows.filter(
-    (row) => !row.campaign_name.toLowerCase().includes(EXCLUDED_CAMPAIGN_PATTERN),
-  );
+  const includedRows = rows.filter((row) => !isCoverageCampaign(row.campaign_name));
   const amount = includedRows.reduce((total, row) => total + Number(row.spend ?? 0), 0);
 
   return {
     amount,
     hasData: includedRows.length > 0,
   };
+}
+
+function isCoverageCampaign(campaignName: string) {
+  const normalized = campaignName
+    .trim()
+    .toLocaleLowerCase("vi-VN")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d");
+  return normalized.includes("phu");
 }
 
 export function formatFacebookManagerSpend(

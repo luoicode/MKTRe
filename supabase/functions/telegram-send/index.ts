@@ -145,6 +145,7 @@ type NotificationLookupRow = {
   entity_id: string | null;
   type: string | null;
   kind: string | null;
+  metadata: Record<string, unknown> | null;
 };
 
 type TelegramAccountRow = {
@@ -252,10 +253,34 @@ async function sendTelegramMessage(
     }),
   });
 
+  const responseBody = await response.text();
+  console.log("[telegram-send][telegram_api_response]", {
+    chatId,
+    status: response.status,
+    ok: response.ok,
+    body: responseBody.slice(0, 500),
+  });
+
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Telegram API ${response.status}: ${body}`);
+    throw new Error(`Telegram API ${response.status}: ${responseBody}`);
   }
+}
+
+function getMetadataProfileIds(metadata: Record<string, unknown> | null | undefined) {
+  if (!metadata) return [];
+  const keys = [
+    "requester_id",
+    "submitter_id",
+    "assignee_id",
+    "assigned_to",
+    "assigned_user_id",
+    "employee_id",
+    "profile_id",
+    "user_id",
+  ];
+  return keys
+    .map((key) => metadata[key])
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
 }
 
 function isReviewNotification(type: string | null | undefined) {
@@ -927,6 +952,7 @@ Deno.serve(async (req: Request) => {
         .limit(1);
       const previousLogRows = (previousLog ?? []) as IdRow[];
       if (previousLogRows.length) {
+        await log("skipped", "Duplicate sent notification");
         return Response.json(
           { ok: true, status: "skipped", reason: "duplicate" },
           { headers: corsHeaders },
@@ -936,18 +962,20 @@ Deno.serve(async (req: Request) => {
       const { data: notification } = await service
         .from("notifications")
         .select(
-          "target_profile_id, user_id, actor_profile_id, created_by, entity_type, entity_id, type, kind",
+          "target_profile_id, user_id, actor_profile_id, created_by, entity_type, entity_id, type, kind, metadata",
         )
         .eq("id", payload.notification_id)
         .maybeSingle();
       const notificationRow = notification as NotificationLookupRow | null;
       payload.entity_type ??= notificationRow?.entity_type ?? null;
       payload.entity_id ??= notificationRow?.entity_id ?? null;
+      payload.metadata ??= notificationRow?.metadata ?? null;
       payload.type = canonicalTelegramType(
         payload.type ?? notificationRow?.type ?? notificationRow?.kind,
         payload.entity_type,
       );
       const targetId = notificationRow?.target_profile_id ?? notificationRow?.user_id;
+      const metadataProfileIds = getMetadataProfileIds(notificationRow?.metadata);
       const canSend =
         targetId === payload.recipient_profile_id &&
         [
@@ -955,8 +983,23 @@ Deno.serve(async (req: Request) => {
           notificationRow?.created_by,
           notificationRow?.target_profile_id,
           notificationRow?.user_id,
+          ...metadataProfileIds,
         ].includes(callerProfile.id);
       if (!canSend) {
+        await log(
+          "failed",
+          `Forbidden dispatch by ${callerProfile.id} for notification ${payload.notification_id}`,
+        );
+        console.warn("[telegram-send][forbidden]", {
+          notificationId: payload.notification_id,
+          callerProfileId: callerProfile.id,
+          recipientProfileId: payload.recipient_profile_id,
+          targetId,
+          type: payload.type,
+          entityType: payload.entity_type,
+          entityId: payload.entity_id,
+          metadataProfileIds,
+        });
         return Response.json({ error: "Forbidden" }, { status: 403, headers: corsHeaders });
       }
     } else if (payload.recipient_profile_id !== callerProfile.id) {
@@ -973,11 +1016,22 @@ Deno.serve(async (req: Request) => {
         payload.metadata?.requester_id === callerProfile.id;
       const canSendDirect = canSendByRole || canSendOwnLeaveRequest;
       if (!canSendDirect) {
+        await log(
+          "failed",
+          `Forbidden direct dispatch by ${callerProfile.id} for ${payload.type ?? "unknown"}`,
+        );
         return Response.json({ error: "Forbidden" }, { status: 403, headers: corsHeaders });
       }
     }
 
     payload.type = canonicalTelegramType(payload.type, payload.entity_type);
+    console.log("[telegram-send][dispatch]", {
+      notificationId: payload.notification_id ?? null,
+      recipientProfileId: payload.recipient_profile_id,
+      type: payload.type,
+      entityType: payload.entity_type ?? null,
+      entityId: payload.entity_id ?? null,
+    });
     const recipientRole = await getRecipientRole(service, payload.recipient_profile_id);
     if (!shouldSendTelegramNotification(recipientRole, payload.type, payload.metadata)) {
       await log("skipped", `Telegram disabled for ${recipientRole}:${payload.type ?? "unknown"}`);
@@ -996,6 +1050,7 @@ Deno.serve(async (req: Request) => {
         .limit(1);
       const previousDedupeRows = (previousDedupe ?? []) as IdRow[];
       if (previousDedupeRows.length) {
+        await log("skipped", "Duplicate dedupe key");
         return Response.json(
           { ok: true, status: "skipped", reason: "duplicate" },
           { headers: corsHeaders },

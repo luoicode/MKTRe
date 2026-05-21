@@ -31,8 +31,8 @@ import { getLeaderTeamIds } from "@/lib/dailyAggregates";
 import { formatYmd } from "@/lib/dateRange";
 import { getTaskDeadlineState, type TaskDeadlineState } from "@/lib/taskDeadline";
 import {
+  dispatchTelegramNotificationsForEntity,
   insertNotificationsWithTelegram,
-  sendTelegramForNotification,
   sendTelegramNotification,
 } from "@/lib/telegram";
 import { cn } from "@/lib/utils";
@@ -970,39 +970,11 @@ export function TasksWorkspace() {
     entityType: "task" | "task_completion",
     entityId: string,
   ) => {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const { data: notifications, error } = await supabase
-        .from("notifications")
-        .select(
-          "id, target_profile_id, user_id, entity_type, entity_id, title, message, body, type, kind, metadata",
-        )
-        .eq("entity_type", entityType)
-        .eq("entity_id", entityId)
-        .in("type", ["task_review", "task_pending_review", "checklist_pending_review"]);
-
-      if (error) {
-        if (import.meta.env.DEV) {
-          console.debug("[task_pending_review][telegram] lookup failed", error.message);
-        }
-        return;
-      }
-
-      if (notifications?.length) {
-        await Promise.allSettled(
-          notifications.map((notification) => sendTelegramForNotification(notification)),
-        );
-        return;
-      }
-
-      await new Promise((resolve) => window.setTimeout(resolve, 250));
-    }
-
-    if (import.meta.env.DEV) {
-      console.debug("[task_pending_review][telegram] no notification rows found", {
-        entityType,
-        entityId,
-      });
-    }
+    await dispatchTelegramNotificationsForEntity({
+      entity_type: entityType,
+      entity_id: entityId,
+      types: ["task_review", "task_pending_review", "checklist_pending_review"],
+    });
   };
 
   const submitForReview = async () => {
@@ -1544,6 +1516,11 @@ export function TasksWorkspace() {
         toast.error(error.message);
         return;
       }
+      await dispatchTelegramNotificationsForEntity({
+        entity_type: "task",
+        entity_id: reviewTarget.task.id,
+        types: [approved ? "task_approved" : "task_rejected"],
+      });
       await markTasksSeen([{ ...reviewTarget.task, status: nextStatus }]);
     } else {
       const { error } = await supabase
@@ -1561,6 +1538,11 @@ export function TasksWorkspace() {
         toast.error(error.message);
         return;
       }
+      await dispatchTelegramNotificationsForEntity({
+        entity_type: "task_completion",
+        entity_id: reviewTarget.completion.id,
+        types: [approved ? "task_approved" : "task_rejected"],
+      });
     }
     toast.success(approved ? "Đã duyệt hoàn thành" : "Đã yêu cầu làm lại");
     setReviewTarget(null);

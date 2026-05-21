@@ -89,16 +89,39 @@ async function getRecipientRole(profileId: string): Promise<TelegramRecipientRol
 
 export async function sendTelegramNotification(payload: TelegramNotificationPayload) {
   try {
-    const { error } = await supabase.functions.invoke("telegram-send", {
+    console.debug("[MKTRe telegram] dispatch", {
+      notificationId: payload.notification_id ?? null,
+      recipientProfileId: payload.recipient_profile_id,
+      type: payload.type ?? null,
+      entityType: payload.entity_type ?? null,
+      entityId: payload.entity_id ?? null,
+    });
+    const { data, error } = await supabase.functions.invoke("telegram-send", {
       body: payload,
     });
     if (error) {
-      console.debug("[MKTRe telegram]", error.message);
+      console.debug("[MKTRe telegram] invoke failed", {
+        notificationId: payload.notification_id ?? null,
+        recipientProfileId: payload.recipient_profile_id,
+        type: payload.type ?? null,
+        message: error.message,
+      });
       return false;
     }
+    console.debug("[MKTRe telegram] invoke result", {
+      notificationId: payload.notification_id ?? null,
+      recipientProfileId: payload.recipient_profile_id,
+      type: payload.type ?? null,
+      data,
+    });
     return true;
   } catch (error) {
-    console.debug("[MKTRe telegram]", error);
+    console.debug("[MKTRe telegram] invoke exception", {
+      notificationId: payload.notification_id ?? null,
+      recipientProfileId: payload.recipient_profile_id,
+      type: payload.type ?? null,
+      error,
+    });
     return false;
   }
 }
@@ -186,6 +209,35 @@ export async function sendTelegramForNotification(notification: {
     metadata,
     dedupe_key: typeof metadata?.dedupe_key === "string" ? metadata.dedupe_key : null,
   });
+}
+
+export async function dispatchTelegramNotificationsForEntity(payload: {
+  notification_id?: string | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  types?: string[] | null;
+}) {
+  try {
+    console.debug("[MKTRe telegram dispatch] lookup", payload);
+    const { data, error } = await supabase.functions.invoke("telegram-dispatch-notifications", {
+      body: payload,
+    });
+    if (error) {
+      console.debug("[MKTRe telegram dispatch] failed", {
+        payload,
+        message: error.message,
+      });
+      return false;
+    }
+    console.debug("[MKTRe telegram dispatch] result", data);
+    return true;
+  } catch (error) {
+    console.debug("[MKTRe telegram dispatch] exception", {
+      payload,
+      error,
+    });
+    return false;
+  }
 }
 
 export async function insertNotificationsWithTelegram(

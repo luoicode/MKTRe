@@ -8,13 +8,14 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
+const MKTRE_FACEBOOK_AD_ACCOUNT_ID = "2407288503067302";
+
 type SyncRequest = {
   start_date?: string;
   end_date?: string;
   date?: string;
   since?: string;
   until?: string;
-  ad_account_ids?: string[];
 };
 
 type MetaInsightRow = {
@@ -39,6 +40,7 @@ type MetaInsightsResponse = {
 
 type SpendUpsertRow = {
   ad_account_id: string;
+  campaign_id: string;
   campaign_name: string;
   spend: number;
   spend_date: string;
@@ -65,7 +67,6 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const accessToken = Deno.env.get("FACEBOOK_MARKETING_ACCESS_TOKEN");
-    const configuredAccountIds = readAccountIds(Deno.env.get("FACEBOOK_AD_ACCOUNT_IDS"));
 
     if (!supabaseUrl || !serviceRoleKey) {
       throw new Error("Missing Supabase service environment variables");
@@ -81,13 +82,8 @@ Deno.serve(async (req: Request) => {
     const dateRange = resolveDateRange(url.searchParams, body, today);
     const startDate = dateRange.since;
     const endDate = dateRange.until;
-    const adAccountIds = normalizeAccountIds(
-      body.ad_account_ids?.length ? body.ad_account_ids : configuredAccountIds,
-    );
+    const adAccountIds = [MKTRE_FACEBOOK_AD_ACCOUNT_ID];
 
-    if (!adAccountIds.length) {
-      throw new Error("Missing FACEBOOK_AD_ACCOUNT_IDS secret or ad_account_ids payload");
-    }
     if (startDate > endDate) {
       throw new Error(`Invalid date range: since ${startDate} is after until ${endDate}`);
     }
@@ -95,9 +91,15 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(supabaseUrl, serviceRoleKey);
     const syncedAt = new Date().toISOString();
     let upserted = 0;
+    let totalRawRows = 0;
+    let totalDedupedRows = 0;
+    let totalDuplicateRows = 0;
+    let totalExcludedCoverageRows = 0;
+    let totalSpendBeforeExclude = 0;
+    let totalSpendAfterExclude = 0;
 
     for (const adAccountId of adAccountIds) {
-      const rows = await fetchCampaignInsights({
+      const { rows, pagesFetched } = await fetchCampaignInsights({
         adAccountId,
         accessToken,
         startDate,
@@ -107,22 +109,40 @@ Deno.serve(async (req: Request) => {
           step = nextStep;
         },
       });
-      const syncableRows = excludeCoverageCampaigns(rows);
-      const excludedCount = rows.length - syncableRows.length;
+      const totalSpendBefore = sumSpend(rows);
+      const { includedRows: syncableRows, excludedRows } = splitCoverageCampaigns(rows);
+      const totalSpendAfter = sumSpend(syncableRows);
       const { rows: dedupedRows, duplicateCount } = dedupeSpendRows(syncableRows, syncedAt);
-      console.log("[facebook-ad-spend-sync][dedupe]", {
+      const topCampaigns = topCampaignSpend(dedupedRows, 20);
+
+      totalRawRows += rows.length;
+      totalDedupedRows += dedupedRows.length;
+      totalDuplicateRows += duplicateCount;
+      totalExcludedCoverageRows += excludedRows.length;
+      totalSpendBeforeExclude += totalSpendBefore;
+      totalSpendAfterExclude += totalSpendAfter;
+
+      console.log("[facebook-ad-spend-sync][debug]", {
         adAccountId,
+        dateRange: { since: startDate, until: endDate },
+        pagesFetched,
         rawRowsCount: rows.length,
-        excludedCoverageCount: excludedCount,
+        excludedCoverageCount: excludedRows.length,
         dedupedRowsCount: dedupedRows.length,
         duplicateCount,
+        totalRawSpend: roundMoney(totalSpendBefore),
+        excludedSpend: roundMoney(sumSpend(excludedRows)),
+        finalSpend: roundMoney(totalSpendAfter),
+        excludedCampaigns: summarizeCampaignSpend(excludedRows),
+        excludedCampaignNames: Array.from(new Set(excludedRows.map((row) => row.campaign_name))),
+        topCampaignSpendAfterExclude: topCampaigns,
       });
       if (!dedupedRows.length) continue;
 
       step = "upsert_spend_rows";
       const { error } = await supabase
         .from("facebook_ad_spend_campaign_daily")
-        .upsert(dedupedRows, { onConflict: "ad_account_id,campaign_name,spend_date" });
+        .upsert(dedupedRows, { onConflict: "ad_account_id,campaign_id,spend_date" });
       if (error) {
         console.error("[facebook-ad-spend-sync][supabase_upsert_failed]", {
           table: "facebook_ad_spend_campaign_daily",
@@ -135,7 +155,18 @@ Deno.serve(async (req: Request) => {
       upserted += dedupedRows.length;
     }
 
-    return json({ ok: true, upserted, start_date: startDate, end_date: endDate });
+    return json({
+      ok: true,
+      upserted,
+      start_date: startDate,
+      end_date: endDate,
+      rawRowsCount: totalRawRows,
+      excludedCoverageCount: totalExcludedCoverageRows,
+      dedupedRowsCount: totalDedupedRows,
+      duplicateCount: totalDuplicateRows,
+      totalSpendBeforeExclude: roundMoney(totalSpendBeforeExclude),
+      totalSpendAfterExclude: roundMoney(totalSpendAfterExclude),
+    });
   } catch (error) {
     const name = error instanceof Error ? error.name : "UnknownError";
     const message = error instanceof Error ? error.message : String(error);
@@ -164,11 +195,12 @@ async function fetchCampaignInsights({
   endDate: string;
   syncedAt: string;
   onStep: (step: SyncStep) => void;
-}): Promise<SpendUpsertRow[]> {
+}): Promise<{ rows: SpendUpsertRow[]; pagesFetched: number }> {
   const accountPath = adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`;
   const params = new URLSearchParams({
     level: "campaign",
     fields: "spend,campaign_id,campaign_name,date_start,date_stop",
+    limit: "500",
     time_increment: "1",
     time_range: JSON.stringify({ since: startDate, until: endDate }),
     access_token: accessToken,
@@ -176,11 +208,13 @@ async function fetchCampaignInsights({
   let url: string | undefined =
     `https://graph.facebook.com/v20.0/${accountPath}/insights?${params}`;
   const rows: SpendUpsertRow[] = [];
+  let pagesFetched = 0;
 
   while (url) {
     onStep("call_meta_api");
     const response = await fetch(url);
     const responseBody = await response.text();
+    pagesFetched += 1;
 
     onStep("parse_meta_response");
     let payload: MetaInsightsResponse;
@@ -205,9 +239,11 @@ async function fetchCampaignInsights({
     for (const item of payload.data ?? []) {
       if (!item.date_start) continue;
       const fallbackCampaignName = item.campaign_id ? `campaign_${item.campaign_id}` : "Không tên";
+      const campaignName = item.campaign_name ?? fallbackCampaignName;
       rows.push({
         ad_account_id: accountPath,
-        campaign_name: item.campaign_name ?? fallbackCampaignName,
+        campaign_id: item.campaign_id ?? campaignName,
+        campaign_name: campaignName,
         spend: Number(item.spend ?? 0),
         spend_date: item.date_start,
         raw: item,
@@ -218,7 +254,7 @@ async function fetchCampaignInsights({
     url = payload.paging?.next;
   }
 
-  return rows;
+  return { rows, pagesFetched };
 }
 
 function dedupeSpendRows(rows: SpendUpsertRow[], syncedAt: string) {
@@ -226,7 +262,8 @@ function dedupeSpendRows(rows: SpendUpsertRow[], syncedAt: string) {
   let duplicateCount = 0;
 
   for (const row of rows) {
-    const key = `${row.ad_account_id}::${row.campaign_name}::${row.spend_date}`;
+    const campaignKey = row.campaign_id || row.campaign_name;
+    const key = `${row.ad_account_id}::${campaignKey}::${row.spend_date}`;
     const existing = rowByKey.get(key);
     if (!existing) {
       rowByKey.set(key, { ...row, synced_at: syncedAt });
@@ -251,7 +288,76 @@ function dedupeSpendRows(rows: SpendUpsertRow[], syncedAt: string) {
 }
 
 function excludeCoverageCampaigns(rows: SpendUpsertRow[]) {
-  return rows.filter((row) => !row.campaign_name.toLowerCase().includes("phủ"));
+  return splitCoverageCampaigns(rows).includedRows;
+}
+
+function splitCoverageCampaigns(rows: SpendUpsertRow[]) {
+  const includedRows: SpendUpsertRow[] = [];
+  const excludedRows: SpendUpsertRow[] = [];
+
+  for (const row of rows) {
+    if (isCoverageCampaign(row.campaign_name)) {
+      excludedRows.push(row);
+    } else {
+      includedRows.push(row);
+    }
+  }
+
+  return { includedRows, excludedRows };
+}
+
+function isCoverageCampaign(campaignName: string) {
+  const normalized = normalizeCampaignName(campaignName);
+  return normalized.includes("phu");
+}
+
+function normalizeCampaignName(campaignName: string) {
+  return campaignName
+    .trim()
+    .toLocaleLowerCase("vi-VN")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d");
+}
+
+function sumSpend(rows: SpendUpsertRow[]) {
+  return rows.reduce((total, row) => total + Number(row.spend || 0), 0);
+}
+
+function summarizeCampaignSpend(rows: SpendUpsertRow[]) {
+  return topCampaignSpend(rows, 50);
+}
+
+function topCampaignSpend(rows: SpendUpsertRow[], limit: number) {
+  const totals = new Map<
+    string,
+    { campaign_id: string; campaign_name: string; spend: number; rows: number }
+  >();
+
+  for (const row of rows) {
+    const key = row.campaign_id || row.campaign_name;
+    const current = totals.get(key) ?? {
+      campaign_id: row.campaign_id,
+      campaign_name: row.campaign_name,
+      spend: 0,
+      rows: 0,
+    };
+    current.spend += Number(row.spend || 0);
+    current.rows += 1;
+    totals.set(key, current);
+  }
+
+  return Array.from(totals.values())
+    .sort((a, b) => b.spend - a.spend)
+    .slice(0, limit)
+    .map((row) => ({
+      ...row,
+      spend: roundMoney(row.spend),
+    }));
+}
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
 }
 
 function getRawItems(raw: SpendUpsertRow["raw"]): MetaInsightRow[] {
@@ -293,18 +399,6 @@ async function readJson(req: Request): Promise<SyncRequest> {
   } catch {
     return {};
   }
-}
-
-function normalizeAccountIds(accountIds: string[]) {
-  return accountIds.map((id) => id.trim()).filter(Boolean);
-}
-
-function readAccountIds(value: string | undefined) {
-  if (!value) return [];
-  return value
-    .split(",")
-    .map((id) => id.trim())
-    .filter(Boolean);
 }
 
 function formatYmd(date: Date) {
