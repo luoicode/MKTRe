@@ -84,6 +84,13 @@ type ReviewTarget =
 type UnifiedChecklistItem =
   | { type: "task"; task: TaskRow; status: BoardStatus; deadlineState: DeadlineState }
   | { type: "template"; template: TemplateRow; status: BoardStatus; deadlineState: DeadlineState };
+type CompletionDetail = {
+  completion: CompletionRow;
+  submitter: UserRow | null;
+  reviewer: UserRow | null;
+  canReview: boolean;
+  canComment: boolean;
+};
 type TemplateUserScopeOptions = {
   currentUserId: string | undefined;
   isEmployee: boolean;
@@ -385,6 +392,19 @@ export function TasksWorkspace() {
         .from("task_completions")
         .select("*")
         .eq("completion_date", date);
+      const completionProfileIds = Array.from(
+        new Set(
+          (completions ?? [])
+            .flatMap((row) => [row.user_id, row.reviewed_by])
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+      const { data: completionProfiles } = completionProfileIds.length
+        ? await supabase
+            .from("profiles")
+            .select("id, full_name, username, avatar_url")
+            .in("id", completionProfileIds)
+        : { data: [] };
 
       if (import.meta.env.DEV) {
         console.info("[TasksWorkspace] task load debug", {
@@ -420,6 +440,7 @@ export function TasksWorkspace() {
         ),
         onboardingTemplates: (onboardingTemplates ?? []) as OnboardingTemplateRow[],
         completions: (completions ?? []) as CompletionRow[],
+        completionProfiles: (completionProfiles ?? []) as UserRow[],
       };
     },
   });
@@ -1297,6 +1318,37 @@ export function TasksWorkspace() {
     setEmployeeDetailItem(item);
   };
 
+  const profileById = useMemo(() => {
+    return new Map(
+      [...(data?.users ?? []), ...(data?.completionProfiles ?? [])].map((user) => [user.id, user]),
+    );
+  }, [data?.completionProfiles, data?.users]);
+
+  const getTemplateDetailCompletions = (item: UnifiedChecklistItem | null): CompletionDetail[] => {
+    if (!item || item.type !== "template") return [];
+    const templateUsers = getTemplateScopedUsers(
+      item.template,
+      data?.users ?? [],
+      data?.memberships ?? [],
+      { currentUserId: profile?.id, isEmployee, selectedTeamId, selectedUserId },
+    );
+    const templateUserIds = new Set(templateUsers.map((user) => user.id));
+    return (data?.completions ?? [])
+      .filter(
+        (row) =>
+          row.template_id === item.template.id &&
+          templateUserIds.has(row.user_id) &&
+          hasSubmittedTemplateCompletion(row),
+      )
+      .map((completion) => ({
+        completion,
+        submitter: profileById.get(completion.user_id) ?? null,
+        reviewer: completion.reviewed_by ? (profileById.get(completion.reviewed_by) ?? null) : null,
+        canReview: canReviewTemplateCompletion(item.template, completion),
+        canComment: canAssign && canReviewTemplateCompletion(item.template, completion),
+      }));
+  };
+
   const getFirstReviewableTemplateCompletion = (item: TemplateRow) => {
     const templateUsers = getTemplateScopedUsers(item, data?.users ?? [], data?.memberships ?? [], {
       currentUserId: profile?.id,
@@ -1328,6 +1380,19 @@ export function TasksWorkspace() {
     }
     const user = data?.users.find((entry) => entry.id === completion.user_id) ?? null;
     setReviewTarget({ type: "template", template: item.template, completion, user });
+  };
+
+  const openTemplateCompletionReview = (
+    template: TemplateRow,
+    completion: CompletionRow,
+    user: UserRow | null,
+  ) => {
+    if (!canReviewTemplateCompletion(template, completion)) {
+      toast.error("Bạn không có quyền duyệt mục này");
+      return;
+    }
+    setEmployeeDetailItem(null);
+    setReviewTarget({ type: "template", template, completion, user });
   };
 
   const submitEmployeeItem = (item: UnifiedChecklistItem) => {
@@ -1400,6 +1465,20 @@ export function TasksWorkspace() {
     const user = data?.users.find((entry) => entry.id === completion.user_id) ?? null;
     setCommentFeedback(completion.review_feedback ?? "");
     setCommentTarget({ type: "template", template: item.template, completion, user });
+  };
+
+  const openTemplateCompletionComment = (
+    template: TemplateRow,
+    completion: CompletionRow,
+    user: UserRow | null,
+  ) => {
+    if (!canAssign || !canReviewTemplateCompletion(template, completion)) {
+      toast.error("Bạn không có quyền comment mục này");
+      return;
+    }
+    setEmployeeDetailItem(null);
+    setCommentFeedback(completion.review_feedback ?? "");
+    setCommentTarget({ type: "template", template, completion, user });
   };
 
   const saveComment = async () => {
@@ -2382,6 +2461,7 @@ export function TasksWorkspace() {
             ? (getTemplateCompletion(employeeDetailItem.template.id) ?? null)
             : null
         }
+        completionDetails={getTemplateDetailCompletions(employeeDetailItem)}
         canManage={canAssign && !isEmployee}
         canReview={
           employeeDetailItem?.type === "template"
@@ -2412,6 +2492,15 @@ export function TasksWorkspace() {
         onComment={openUnifiedItemComment}
         onReview={openUnifiedItemReview}
         onReject={openUnifiedItemReview}
+        onReviewCompletion={(template, completion, user) =>
+          openTemplateCompletionReview(template, completion, user)
+        }
+        onRejectCompletion={(template, completion, user) =>
+          openTemplateCompletionReview(template, completion, user)
+        }
+        onCommentCompletion={(template, completion, user) =>
+          openTemplateCompletionComment(template, completion, user)
+        }
         onOpenChange={(open) => {
           if (!open) setEmployeeDetailItem(null);
         }}
@@ -3357,6 +3446,7 @@ function EmployeeTaskDetailDialog({
   item,
   assignee,
   completion,
+  completionDetails,
   canManage,
   canReview,
   completedUsers,
@@ -3365,12 +3455,16 @@ function EmployeeTaskDetailDialog({
   onComment,
   onReview,
   onReject,
+  onReviewCompletion,
+  onRejectCompletion,
+  onCommentCompletion,
   onOpenChange,
 }: {
   open: boolean;
   item: UnifiedChecklistItem | null;
   assignee: Pick<UserRow, "full_name" | "username"> | null;
   completion: CompletionRow | null;
+  completionDetails: CompletionDetail[];
   canManage: boolean;
   canReview: boolean;
   completedUsers: UserRow[];
@@ -3379,6 +3473,21 @@ function EmployeeTaskDetailDialog({
   onComment: (item: UnifiedChecklistItem) => void;
   onReview: (item: UnifiedChecklistItem) => void;
   onReject: (item: UnifiedChecklistItem) => void;
+  onReviewCompletion: (
+    template: TemplateRow,
+    completion: CompletionRow,
+    user: UserRow | null,
+  ) => void;
+  onRejectCompletion: (
+    template: TemplateRow,
+    completion: CompletionRow,
+    user: UserRow | null,
+  ) => void;
+  onCommentCompletion: (
+    template: TemplateRow,
+    completion: CompletionRow,
+    user: UserRow | null,
+  ) => void;
   onOpenChange: (open: boolean) => void;
 }) {
   if (!item) return null;
@@ -3416,7 +3525,10 @@ function EmployeeTaskDetailDialog({
               value={item.type === "template" ? "Hằng ngày" : formatDateOnly(deadline)}
               danger={item.deadlineState === "overdue"}
             />
-            <DetailLine label="Trạng thái" value={employeeStatusLabel(status)} />
+            <DetailLine
+              label="Trạng thái"
+              value={item.type === "template" ? "Theo từng lượt gửi" : employeeStatusLabel(status)}
+            />
           </div>
 
           <section className="mt-5 space-y-2">
@@ -3428,30 +3540,59 @@ function EmployeeTaskDetailDialog({
             </p>
           </section>
 
-          <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            <DetailRichBlock label="Feedback gần nhất" value={feedback} />
-            <DetailRichBlock label="Ghi chú gửi duyệt" value={note} />
-          </div>
+          {item.type === "task" && (
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <DetailRichBlock label="Feedback gần nhất" value={feedback} />
+              <DetailRichBlock label="Ghi chú gửi duyệt" value={note} />
+            </div>
+          )}
 
-          <section className="mt-5 rounded-2xl border bg-white p-4">
-            <p className="text-sm font-semibold text-slate-900">Người đã làm</p>
-            {completedUsers.length ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {completedUsers.map((user) => (
-                  <div
-                    key={user.id}
-                    title={user.full_name}
-                    className="flex items-center gap-2 rounded-full border bg-slate-50 py-1 pl-1 pr-3 text-xs font-semibold text-slate-700"
-                  >
-                    <UserAvatar user={user} className="h-8 w-8 border" />
-                    <span className="max-w-40 truncate">{user.full_name}</span>
-                  </div>
-                ))}
+          {item.type === "task" ? (
+            <section className="mt-5 rounded-2xl border bg-white p-4">
+              <p className="text-sm font-semibold text-slate-900">Người đã làm</p>
+              {completedUsers.length ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {completedUsers.map((user) => (
+                    <div
+                      key={user.id}
+                      title={user.full_name}
+                      className="flex items-center gap-2 rounded-full border bg-slate-50 py-1 pl-1 pr-3 text-xs font-semibold text-slate-700"
+                    >
+                      <UserAvatar user={user} className="h-8 w-8 border" />
+                      <span className="max-w-40 truncate">{user.full_name}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-slate-500">Chưa có nhân sự hoàn thành.</p>
+              )}
+            </section>
+          ) : (
+            <section className="mt-5 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-slate-900">Lượt gửi duyệt</p>
+                <Badge variant="outline" className="rounded-full">
+                  {completionDetails.length} lượt gửi
+                </Badge>
               </div>
-            ) : (
-              <p className="mt-2 text-sm text-slate-500">Chưa có nhân sự hoàn thành.</p>
-            )}
-          </section>
+              {completionDetails.length ? (
+                completionDetails.map((detail) => (
+                  <CompletionReviewCard
+                    key={detail.completion.id}
+                    detail={detail}
+                    template={item.template}
+                    onReview={onReviewCompletion}
+                    onReject={onRejectCompletion}
+                    onComment={onCommentCompletion}
+                  />
+                ))
+              ) : (
+                <div className="rounded-2xl border border-dashed bg-slate-50 p-4 text-sm text-slate-500">
+                  Chưa có nhân sự gửi duyệt.
+                </div>
+              )}
+            </section>
+          )}
 
           {link && (
             <div className="mt-5">
@@ -3468,7 +3609,7 @@ function EmployeeTaskDetailDialog({
           )}
         </div>
         <div className="flex flex-wrap justify-end gap-2 border-t bg-white px-6 py-4">
-          {canReview && status === "pending_review" && (
+          {item.type === "task" && canReview && status === "pending_review" && (
             <>
               <Button variant="secondary" className="rounded-2xl" onClick={() => onReject(item)}>
                 <RotateCcw className="mr-2 h-4 w-4" /> Không duyệt
@@ -3478,7 +3619,7 @@ function EmployeeTaskDetailDialog({
               </Button>
             </>
           )}
-          {canManage && (
+          {item.type === "task" && canManage && (
             <>
               <Button variant="outline" className="rounded-2xl" onClick={() => onComment(item)}>
                 <MessageCircle className="mr-2 h-4 w-4" /> Comment
@@ -3497,6 +3638,100 @@ function EmployeeTaskDetailDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function CompletionReviewCard({
+  detail,
+  template,
+  onReview,
+  onReject,
+  onComment,
+}: {
+  detail: CompletionDetail;
+  template: TemplateRow;
+  onReview: (template: TemplateRow, completion: CompletionRow, user: UserRow | null) => void;
+  onReject: (template: TemplateRow, completion: CompletionRow, user: UserRow | null) => void;
+  onComment: (template: TemplateRow, completion: CompletionRow, user: UserRow | null) => void;
+}) {
+  const { completion, submitter, reviewer, canReview, canComment } = detail;
+  const status = normalizeTaskStatus(completion.status);
+  const proofUrl = completion.proof_url?.trim();
+  const submitNote = completion.completion_note || completion.note || "Không có";
+  const feedback = completion.review_feedback || "Không có";
+  const showReviewActions = canReview && status === "pending_review";
+  const showCommentAction = canComment && (status === "pending_review" || status === "rejected");
+
+  return (
+    <article className="rounded-2xl border bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <UserAvatar user={submitter} className="h-10 w-10 border" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold text-slate-950">
+              {submitter?.full_name ?? "Không rõ nhân sự"}
+            </p>
+            <p className="text-xs text-slate-500">
+              Gửi lúc: {formatDateTime(completion.submitted_at || completion.completed_at)}
+            </p>
+          </div>
+        </div>
+        <Badge className={cn("rounded-full border", statusPillClass(status))}>
+          {completionStatusLabel(status)}
+        </Badge>
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <DetailRichBlock label="Ghi chú gửi duyệt" value={submitNote} />
+        <DetailRichBlock label="Feedback / Comment" value={feedback} />
+      </div>
+
+      <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+        <DetailLine label="Người duyệt" value={reviewer?.full_name ?? "Chưa có"} />
+        <DetailLine label="Thời gian duyệt" value={formatDateTime(completion.reviewed_at)} />
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {proofUrl && (
+          <Button variant="outline" className="rounded-2xl" asChild>
+            <a href={proofUrl} target="_blank" rel="noreferrer">
+              <Link2 className="mr-2 h-4 w-4" /> Mở link
+            </a>
+          </Button>
+        )}
+        {showReviewActions && (
+          <>
+            <Button
+              variant="secondary"
+              className="rounded-2xl"
+              onClick={() => onReject(template, completion, submitter)}
+            >
+              <RotateCcw className="mr-2 h-4 w-4" /> Không duyệt
+            </Button>
+            <Button
+              className="rounded-2xl"
+              onClick={() => onReview(template, completion, submitter)}
+            >
+              <ShieldCheck className="mr-2 h-4 w-4" /> Duyệt
+            </Button>
+          </>
+        )}
+        {showCommentAction && (
+          <Button
+            variant="outline"
+            className="rounded-2xl"
+            onClick={() => onComment(template, completion, submitter)}
+          >
+            <MessageCircle className="mr-2 h-4 w-4" /> Comment
+          </Button>
+        )}
+        {(status === "done" || status === "rejected") && (
+          <Button variant="outline" className="rounded-2xl" onClick={() => toast.info(feedback)}>
+            <MessageCircle className="mr-2 h-4 w-4" /> Xem feedback
+          </Button>
+        )}
+      </div>
+    </article>
   );
 }
 
@@ -3698,6 +3933,21 @@ function isTemplateCompletionDone(row: CompletionRow | undefined) {
   return Boolean(row && (row.completed || normalizeTaskStatus(row.status) === "done"));
 }
 
+function hasSubmittedTemplateCompletion(row: CompletionRow | undefined) {
+  if (!row) return false;
+  const status = normalizeTaskStatus(row.status);
+  return Boolean(
+    status === "pending_review" ||
+    status === "rejected" ||
+    status === "done" ||
+    row.completed ||
+    row.submitted_at ||
+    row.completed_at ||
+    row.completion_note ||
+    row.proof_url,
+  );
+}
+
 function getCompletedTemplateUsers(users: UserRow[], completions: CompletionRow[]) {
   return users.filter((user) =>
     completions.some((row) => row.user_id === user.id && isTemplateCompletionDone(row)),
@@ -3712,20 +3962,7 @@ function getPendingTemplateUsers(users: UserRow[], completions: CompletionRow[])
 
 function getSubmittedTemplateUsers(users: UserRow[], completions: CompletionRow[]) {
   return users.filter((user) =>
-    completions.some((row) => {
-      if (row.user_id !== user.id) return false;
-      const status = normalizeTaskStatus(row.status);
-      return Boolean(
-        status === "pending_review" ||
-        status === "rejected" ||
-        status === "done" ||
-        row.completed ||
-        row.submitted_at ||
-        row.completed_at ||
-        row.completion_note ||
-        row.proof_url,
-      );
-    }),
+    completions.some((row) => row.user_id === user.id && hasSubmittedTemplateCompletion(row)),
   );
 }
 
@@ -3942,6 +4179,13 @@ function employeeStatusLabel(status: BoardStatus) {
   return "Hoàn thành";
 }
 
+function completionStatusLabel(status: BoardStatus) {
+  if (status === "pending_review") return "Chờ duyệt";
+  if (status === "rejected") return "Không duyệt";
+  if (status === "done") return "Đã duyệt";
+  return "Cần làm";
+}
+
 function extractFirstUrl(value: string | null | undefined) {
   const match = value?.match(/https?:\/\/[^\s)]+/i);
   return match?.[0] ?? null;
@@ -3959,5 +4203,18 @@ function formatDateOnly(value: string | null) {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
+  }).format(date);
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return "Không có";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Không có";
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   }).format(date);
 }

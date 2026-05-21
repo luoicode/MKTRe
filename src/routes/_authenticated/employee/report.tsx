@@ -130,8 +130,10 @@ function shouldAutoAdvance(
   slots: ReportEntrySlot[],
   nextId: string | undefined,
   now: Date,
+  canBypassSlotLock = false,
 ) {
   if (!active || !nextId || active.id === nextId) return false;
+  if (canBypassSlotLock) return false;
   if (isLocked(active, now)) return true;
   const next = slots.find((slot) => slot.id === nextId);
   return !!next && isOpen(next, now) && !isOpen(active, now);
@@ -181,7 +183,9 @@ function canEditReport(
   slot: ReportEntrySlot,
   now: Date,
   existing?: { status: string | null; submitted_at?: string | null } | null,
+  canBypassSlotLock = false,
 ) {
+  if (canBypassSlotLock) return true;
   if (!isOpen(slot, now)) return false;
   if (!existing) return true;
   const status = String(existing.status ?? "");
@@ -199,11 +203,21 @@ function slotVisual(
   slot: ReportEntrySlot,
   now: Date,
   report: { status: string | null } | undefined,
+  canBypassSlotLock = false,
 ) {
   if (report && ["submitted", "approved"].includes(String(report.status))) {
     return {
       label: "Đã gửi",
       icon: CheckCircle2,
+      className:
+        "border-emerald-200 bg-emerald-50 text-emerald-700 data-[state=active]:bg-emerald-600 data-[state=active]:text-white",
+      badge: "bg-emerald-100 text-emerald-700",
+    };
+  }
+  if (canBypassSlotLock) {
+    return {
+      label: "Đang mở",
+      icon: Clock3,
       className:
         "border-emerald-200 bg-emerald-50 text-emerald-700 data-[state=active]:bg-emerald-600 data-[state=active]:text-white",
       badge: "bg-emerald-100 text-emerald-700",
@@ -332,6 +346,7 @@ export function EmployeeReport() {
   const todaySlots = entrySlots.filter((s) => s.group === "today");
   const previousDaySlots = entrySlots.filter((s) => s.group === "previous_day");
   const activeEntry = entrySlots.find((s) => s.id === activeSlot);
+  const canBypassSlotLock = role === "leader";
   const { data: slotReports } = useQuery({
     queryKey: ["my-slot-statuses", profile?.id, date],
     enabled: !!profile,
@@ -427,11 +442,11 @@ export function EmployeeReport() {
     }
     if (submitted) return;
     const next = getAutoSlot(entrySlots, now);
-    if (shouldAutoAdvance(activeEntry, entrySlots, next, now)) {
+    if (shouldAutoAdvance(activeEntry, entrySlots, next, now, canBypassSlotLock)) {
       setActiveSlot(next);
       setSubmitted(null);
     }
-  }, [entrySlots, activeSlot, activeEntry, now, submitted]);
+  }, [entrySlots, activeSlot, activeEntry, now, submitted, canBypassSlotLock]);
 
   useEffect(() => {
     if (!profile || (role !== "employee" && role !== "leader") || !slotReports) return;
@@ -569,6 +584,7 @@ export function EmployeeReport() {
                         s,
                         now,
                         reportBySlotDate.get(`${s.reportDate}:${s.id}`),
+                        canBypassSlotLock,
                       );
                       const Icon = visual.icon;
                       return (
@@ -607,6 +623,7 @@ export function EmployeeReport() {
                         s,
                         now,
                         reportBySlotDate.get(`${s.reportDate}:${s.id}`),
+                        canBypassSlotLock,
                       );
                       const Icon = visual.icon;
                       return (
@@ -646,6 +663,7 @@ export function EmployeeReport() {
                     date={s.reportDate}
                     entrySlot={s}
                     now={now}
+                    canBypassSlotLock={canBypassSlotLock}
                     groupLabel={s.groupLabel}
                     teamId={exportContext?.teamId ?? null}
                     teamName={exportContext?.teamName ?? null}
@@ -731,6 +749,7 @@ function SlotForm({
   date,
   entrySlot,
   now,
+  canBypassSlotLock,
   groupLabel,
   teamId,
   teamName,
@@ -744,6 +763,7 @@ function SlotForm({
   date: string;
   entrySlot: ReportEntrySlot;
   now: Date;
+  canBypassSlotLock: boolean;
   groupLabel: string;
   teamId?: string | null;
   teamName?: string | null;
@@ -852,7 +872,7 @@ function SlotForm({
     return w;
   }, [nums]);
 
-  const editable = canEditReport(entrySlot, now, existing);
+  const editable = canEditReport(entrySlot, now, existing, canBypassSlotLock);
   const timingState = slotTimingState(entrySlot, now);
   const isReconciliation = isReconciliationSlot(slotName);
   const wasReconciled = isReconciliation || !!hasReconciliationAudit;
