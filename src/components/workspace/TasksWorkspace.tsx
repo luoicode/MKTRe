@@ -3510,13 +3510,13 @@ function EmployeeTaskDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[84vh] w-[calc(100vw-2rem)] max-w-3xl overflow-hidden rounded-3xl p-0">
-        <DialogHeader className="border-b bg-white px-6 py-5">
+      <DialogContent className="flex max-h-[95dvh] w-[calc(100vw-2rem)] max-w-3xl flex-col overflow-hidden rounded-3xl p-0 sm:max-h-[90vh]">
+        <DialogHeader className="shrink-0 border-b bg-white px-6 py-5">
           <DialogTitle className="pr-8 text-2xl font-extrabold leading-tight text-slate-950">
             {title}
           </DialogTitle>
         </DialogHeader>
-        <div className="min-h-0 overflow-y-auto px-6 py-5">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5 pb-6">
           <div className="grid gap-4 sm:grid-cols-2">
             <DetailLine label="Người thực hiện" value={taskAssignee?.full_name ?? "Không có"} />
             <DetailLine label="Ngày tạo" value={formatDateOnly(createdAt)} />
@@ -3608,33 +3608,39 @@ function EmployeeTaskDetailDialog({
             </div>
           )}
         </div>
-        <div className="flex flex-wrap justify-end gap-2 border-t bg-white px-6 py-4">
-          {item.type === "task" && canReview && status === "pending_review" && (
-            <>
-              <Button variant="secondary" className="rounded-2xl" onClick={() => onReject(item)}>
-                <RotateCcw className="mr-2 h-4 w-4" /> Không duyệt
-              </Button>
-              <Button className="rounded-2xl" onClick={() => onReview(item)}>
-                <ShieldCheck className="mr-2 h-4 w-4" /> Duyệt
-              </Button>
-            </>
-          )}
-          {item.type === "task" && canManage && (
-            <>
-              <Button variant="outline" className="rounded-2xl" onClick={() => onComment(item)}>
-                <MessageCircle className="mr-2 h-4 w-4" /> Comment
-              </Button>
-              <Button variant="outline" className="rounded-2xl" onClick={() => onEdit(item)}>
-                <Pencil className="mr-2 h-4 w-4" /> Chỉnh sửa
-              </Button>
-              <Button variant="destructive" className="rounded-2xl" onClick={() => onDelete(item)}>
-                <Trash2 className="mr-2 h-4 w-4" /> Xóa
-              </Button>
-            </>
-          )}
-          <Button variant="outline" className="rounded-2xl" onClick={() => onOpenChange(false)}>
-            Đóng
-          </Button>
+        <div className="shrink-0 border-t bg-white px-6 py-4">
+          <div className="flex flex-wrap justify-end gap-2">
+            {item.type === "task" && canReview && status === "pending_review" && (
+              <>
+                <Button variant="secondary" className="rounded-2xl" onClick={() => onReject(item)}>
+                  <RotateCcw className="mr-2 h-4 w-4" /> Không duyệt
+                </Button>
+                <Button className="rounded-2xl" onClick={() => onReview(item)}>
+                  <ShieldCheck className="mr-2 h-4 w-4" /> Duyệt
+                </Button>
+              </>
+            )}
+            {item.type === "task" && canManage && (
+              <>
+                <Button variant="outline" className="rounded-2xl" onClick={() => onComment(item)}>
+                  <MessageCircle className="mr-2 h-4 w-4" /> Comment
+                </Button>
+                <Button variant="outline" className="rounded-2xl" onClick={() => onEdit(item)}>
+                  <Pencil className="mr-2 h-4 w-4" /> Chỉnh sửa
+                </Button>
+                <Button
+                  variant="destructive"
+                  className="rounded-2xl"
+                  onClick={() => onDelete(item)}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" /> Xóa
+                </Button>
+              </>
+            )}
+            <Button variant="outline" className="rounded-2xl" onClick={() => onOpenChange(false)}>
+              Đóng
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
