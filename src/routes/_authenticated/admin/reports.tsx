@@ -30,7 +30,11 @@ import { Label } from "@/components/ui/label";
 import { RefreshButton } from "@/components/RefreshButton";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { toast } from "sonner";
-import { fetchFacebookManagerSpend, formatFacebookManagerSpend } from "@/lib/facebookAdSpend";
+import {
+  fetchFacebookManagerSpend,
+  formatFacebookManagerSpend,
+  syncFacebookManagerSpend,
+} from "@/lib/facebookAdSpend";
 
 export const Route = createFileRoute("/_authenticated/admin/reports")({ component: AdminReports });
 
@@ -44,6 +48,7 @@ function AdminReports() {
   const [teamId, setTeamId] = useState("all");
   const [screenshot, setScreenshot] = useState(false);
   const [now, setNow] = useState(new Date().toISOString());
+  const [isSyncingFacebookSpend, setIsSyncingFacebookSpend] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const normalizedRange = normalizeDateRange(range);
   const dateLabel =
@@ -118,8 +123,18 @@ function AdminReports() {
         ? "BÁO CÁO TỔNG TEAM TRONG NGÀY"
         : "BÁO CÁO TỔNG TEAM THEO KHOẢNG NGÀY";
   const refreshData = async () => {
-    await Promise.all([refetch(), refetchFacebookSpend()]);
-    toast.success("Đã làm mới dữ liệu");
+    setIsSyncingFacebookSpend(true);
+    try {
+      await syncFacebookManagerSpend(normalizedRange.from, normalizedRange.to);
+      await Promise.all([refetch(), refetchFacebookSpend()]);
+      toast.success("Đã làm mới dữ liệu");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Không thể đồng bộ Facebook Ads";
+      toast.error(message);
+      await Promise.allSettled([refetch(), refetchFacebookSpend()]);
+    } finally {
+      setIsSyncingFacebookSpend(false);
+    }
   };
 
   return (
@@ -151,7 +166,7 @@ function AdminReports() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <RefreshButton
-                isRefreshing={isFetching || isFacebookSpendFetching}
+                isRefreshing={isFetching || isFacebookSpendFetching || isSyncingFacebookSpend}
                 onRefresh={refreshData}
               />
               <ReportActions
@@ -216,7 +231,11 @@ function AdminReports() {
             <Stat label="Tổng Chi Phí Ads" value={fmtVndDong(totals.ads_cost)} />
             <Stat
               label="Chi phí trên trình quản lí"
-              value={formatFacebookManagerSpend(facebookSpend, fmtVndDong)}
+              value={
+                isSyncingFacebookSpend
+                  ? "Đang đồng bộ..."
+                  : formatFacebookManagerSpend(facebookSpend, fmtVndDong)
+              }
               variant="managerSpend"
             />
             <Stat label="Tổng MESS" value={fmtInt(totals.mess_count)} />

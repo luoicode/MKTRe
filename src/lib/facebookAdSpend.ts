@@ -44,6 +44,27 @@ export async function fetchFacebookManagerSpend(
   };
 }
 
+export async function syncFacebookManagerSpend(from: string, to: string) {
+  const body = from === to ? { date: from } : { since: from, until: to };
+  const { data, error } = await supabase.functions.invoke("facebook-ad-spend-sync", {
+    body,
+  });
+
+  if (error) {
+    throw new Error(error.message || "Không thể đồng bộ chi phí Facebook");
+  }
+
+  if (data && typeof data === "object" && "ok" in data && data.ok === false) {
+    const message =
+      "error" in data && typeof data.error === "string"
+        ? data.error
+        : "Không thể đồng bộ chi phí Facebook";
+    throw new Error(message);
+  }
+
+  return data;
+}
+
 function isCoverageCampaign(campaignName: string) {
   const normalized = campaignName
     .trim()

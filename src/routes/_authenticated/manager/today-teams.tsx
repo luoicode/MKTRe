@@ -26,7 +26,11 @@ import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib
 import { RefreshButton } from "@/components/RefreshButton";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { toast } from "sonner";
-import { fetchFacebookManagerSpend, formatFacebookManagerSpend } from "@/lib/facebookAdSpend";
+import {
+  fetchFacebookManagerSpend,
+  formatFacebookManagerSpend,
+  syncFacebookManagerSpend,
+} from "@/lib/facebookAdSpend";
 
 export const Route = createFileRoute("/_authenticated/manager/today-teams")({
   component: ManagerTodayTeams,
@@ -54,6 +58,7 @@ function ManagerTodayTeams() {
       : "BÁO CÁO DOANH SỐ CÁC TEAM THEO KHOẢNG NGÀY";
   const [screenshot, setScreenshot] = useState(false);
   const [now, setNow] = useState(new Date().toISOString());
+  const [isSyncingFacebookSpend, setIsSyncingFacebookSpend] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -206,8 +211,18 @@ function ManagerTodayTeams() {
     URL.revokeObjectURL(url);
   };
   const refreshData = async () => {
-    await Promise.all([refetch(), refetchFacebookSpend()]);
-    toast.success("Đã làm mới dữ liệu");
+    setIsSyncingFacebookSpend(true);
+    try {
+      await syncFacebookManagerSpend(normalizedRange.from, normalizedRange.to);
+      await Promise.all([refetch(), refetchFacebookSpend()]);
+      toast.success("Đã làm mới dữ liệu");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Không thể đồng bộ Facebook Ads";
+      toast.error(message);
+      await Promise.allSettled([refetch(), refetchFacebookSpend()]);
+    } finally {
+      setIsSyncingFacebookSpend(false);
+    }
   };
 
   return (
@@ -226,7 +241,7 @@ function ManagerTodayTeams() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <RefreshButton
-                isRefreshing={isFetching || isFacebookSpendFetching}
+                isRefreshing={isFetching || isFacebookSpendFetching || isSyncingFacebookSpend}
                 onRefresh={refreshData}
               />
               <ReportActions
@@ -294,7 +309,11 @@ function ManagerTodayTeams() {
             <S label="Tổng Chi Phí Ads" value={fmtVndDong(grand.ads)} />
             <S
               label="Chi phí trên trình quản lí"
-              value={formatFacebookManagerSpend(facebookSpend, fmtVndDong)}
+              value={
+                isSyncingFacebookSpend
+                  ? "Đang đồng bộ..."
+                  : formatFacebookManagerSpend(facebookSpend, fmtVndDong)
+              }
               variant="managerSpend"
             />
             <S label="Chi Phí ADS/MESS" value={fmtVndDong(grandMetrics.cp_mess)} />

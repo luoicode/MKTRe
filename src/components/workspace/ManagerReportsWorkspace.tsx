@@ -19,14 +19,21 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
-import { fetchFacebookManagerSpend, formatFacebookManagerSpend } from "@/lib/facebookAdSpend";
+import {
+  fetchFacebookManagerSpend,
+  formatFacebookManagerSpend,
+  syncFacebookManagerSpend,
+} from "@/lib/facebookAdSpend";
+import { RefreshButton } from "@/components/RefreshButton";
+import { toast } from "sonner";
 
 export function ManagerReportsWorkspace() {
   const { profile } = useAuth();
   const [range, setRange] = useState<DateRangeValue>(() => initialDateRange("today"));
+  const [isSyncingFacebookSpend, setIsSyncingFacebookSpend] = useState(false);
   const { from, to } = normalizeDateRange(range);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["manager-reports-range", profile?.id, from, to],
     enabled: !!profile,
     queryFn: async () => {
@@ -49,17 +56,43 @@ export function ManagerReportsWorkspace() {
       }));
     },
   });
-  const { data: facebookSpend } = useQuery({
+  const {
+    data: facebookSpend,
+    isFetching: isFacebookSpendFetching,
+    refetch: refetchFacebookSpend,
+  } = useQuery({
     queryKey: ["facebook-manager-spend", from, to],
     queryFn: () => fetchFacebookManagerSpend(from, to),
   });
+  const refreshData = async () => {
+    setIsSyncingFacebookSpend(true);
+    try {
+      await syncFacebookManagerSpend(from, to);
+      await Promise.all([refetch(), refetchFacebookSpend()]);
+      toast.success("Đã làm mới dữ liệu");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Không thể đồng bộ Facebook Ads";
+      toast.error(message);
+      await Promise.allSettled([refetch(), refetchFacebookSpend()]);
+    } finally {
+      setIsSyncingFacebookSpend(false);
+    }
+  };
 
   return (
     <div className="space-y-5 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden">
       <WorkspacePageHeader
         title="Báo cáo tổng"
         subtitle="Xem báo cáo trong phạm vi team được phân công."
-        actions={<DateRangeFilter value={range} onChange={setRange} />}
+        actions={
+          <div className="flex flex-wrap items-end gap-2">
+            <DateRangeFilter value={range} onChange={setRange} />
+            <RefreshButton
+              isRefreshing={isFetching || isFacebookSpendFetching || isSyncingFacebookSpend}
+              onRefresh={refreshData}
+            />
+          </div>
+        }
       />
 
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -67,7 +100,9 @@ export function ManagerReportsWorkspace() {
           <CardContent className="p-3">
             <p className="text-xs text-muted-foreground">Chi phí trên trình quản lí</p>
             <p className="mt-1 text-lg font-bold text-amber-900">
-              {formatFacebookManagerSpend(facebookSpend, fmtVndDong)}
+              {isSyncingFacebookSpend
+                ? "Đang đồng bộ..."
+                : formatFacebookManagerSpend(facebookSpend, fmtVndDong)}
             </p>
           </CardContent>
         </Card>
