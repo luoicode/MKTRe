@@ -24,6 +24,7 @@ import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib
 import { RefreshButton } from "@/components/RefreshButton";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { toast } from "sonner";
+import { fetchFacebookManagerSpend, formatFacebookManagerSpend } from "@/lib/facebookAdSpend";
 
 export const Route = createFileRoute("/_authenticated/leader/daily-report")({
   component: LeaderDailyReport,
@@ -66,13 +67,21 @@ function LeaderDailyReport() {
       return { teamIds, teams: teams ?? [], rows: agg.rows };
     },
   });
+  const {
+    data: facebookSpend,
+    isFetching: isFacebookSpendFetching,
+    refetch: refetchFacebookSpend,
+  } = useQuery({
+    queryKey: ["facebook-manager-spend", normalizedRange.from, normalizedRange.to],
+    queryFn: () => fetchFacebookManagerSpend(normalizedRange.from, normalizedRange.to),
+  });
 
   const totals = useMemo(() => (data ? sumTotals(data.rows) : null), [data]);
   const totalsMetrics = useMemo(() => (totals ? calculateReportMetrics(totals) : null), [totals]);
   const teamName = data?.teams.map((t) => t.name).join(", ") || "—";
   const missing = (data?.rows ?? []).filter((r) => !r.countedInTotal);
   const refreshData = async () => {
-    await refetch();
+    await Promise.all([refetch(), refetchFacebookSpend()]);
     toast.success("Đã làm mới dữ liệu");
   };
 
@@ -88,7 +97,10 @@ function LeaderDailyReport() {
               <DateRangeFilter value={range} onChange={setRange} />
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
+              <RefreshButton
+                isRefreshing={isFetching || isFacebookSpendFetching}
+                onRefresh={refreshData}
+              />
               <ReportActions
                 targetRef={ref}
                 filename={teamReportExportFilename(now, normalizedRange.to, teamName)}
@@ -149,6 +161,11 @@ function LeaderDailyReport() {
 
           <div className="grid shrink-0 grid-cols-3 gap-1.5 md:grid-cols-6">
             <Stat label="Tổng Chi Phí Ads" value={fmtVndDong(totals.ads_cost)} />
+            <Stat
+              label="Chi phí trên trình quản lí"
+              value={formatFacebookManagerSpend(facebookSpend, fmtVndDong)}
+              variant="managerSpend"
+            />
             <Stat label="Tổng MESS" value={fmtInt(totals.mess_count)} />
             <Stat label="Chi Phí ADS/MESS" value={fmtVndDong(totalsMetrics.cp_mess)} />
             <Stat label="Tổng Data" value={fmtInt(totals.data_count)} />
@@ -270,11 +287,31 @@ function teamReportExportFilename(iso: string, reportDate: string, teamName: str
   return `${hh}${mm}_${day}${month}${year}_${cleanTeam}.png`;
 }
 
-function Stat({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
+function Stat({
+  label,
+  value,
+  danger,
+  variant,
+}: {
+  label: string;
+  value: string;
+  danger?: boolean;
+  variant?: "managerSpend";
+}) {
+  const className =
+    variant === "managerSpend"
+      ? "border-amber-200 bg-amber-50"
+      : danger
+        ? "border-red-300 bg-red-50"
+        : "bg-white";
   return (
-    <div className={`rounded-lg border p-2 ${danger ? "border-red-300 bg-red-50" : "bg-white"}`}>
+    <div className={`rounded-lg border p-2 ${className}`}>
       <p className="text-[11px] text-slate-600">{label}</p>
-      <p className={`mt-0.5 text-sm font-bold ${danger ? "text-red-700" : "text-slate-900"}`}>
+      <p
+        className={`mt-0.5 text-sm font-bold ${
+          danger ? "text-red-700" : variant === "managerSpend" ? "text-amber-900" : "text-slate-900"
+        }`}
+      >
         {value}
       </p>
     </div>

@@ -26,6 +26,7 @@ import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib
 import { RefreshButton } from "@/components/RefreshButton";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { toast } from "sonner";
+import { fetchFacebookManagerSpend, formatFacebookManagerSpend } from "@/lib/facebookAdSpend";
 
 export const Route = createFileRoute("/_authenticated/manager/today-teams")({
   component: ManagerTodayTeams,
@@ -96,6 +97,14 @@ function ManagerTodayTeams() {
       setNow(new Date().toISOString());
       return { teams: rows };
     },
+  });
+  const {
+    data: facebookSpend,
+    isFetching: isFacebookSpendFetching,
+    refetch: refetchFacebookSpend,
+  } = useQuery({
+    queryKey: ["facebook-manager-spend", normalizedRange.from, normalizedRange.to],
+    queryFn: () => fetchFacebookManagerSpend(normalizedRange.from, normalizedRange.to),
   });
 
   const grand = useMemo(() => {
@@ -197,7 +206,7 @@ function ManagerTodayTeams() {
     URL.revokeObjectURL(url);
   };
   const refreshData = async () => {
-    await refetch();
+    await Promise.all([refetch(), refetchFacebookSpend()]);
     toast.success("Đã làm mới dữ liệu");
   };
 
@@ -216,7 +225,10 @@ function ManagerTodayTeams() {
               </Button>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
+              <RefreshButton
+                isRefreshing={isFetching || isFacebookSpendFetching}
+                onRefresh={refreshData}
+              />
               <ReportActions
                 targetRef={ref}
                 filename={`today-teams-${normalizedRange.from}-${normalizedRange.to}.png`}
@@ -280,6 +292,11 @@ function ManagerTodayTeams() {
               </>
             )}
             <S label="Tổng Chi Phí Ads" value={fmtVndDong(grand.ads)} />
+            <S
+              label="Chi phí trên trình quản lí"
+              value={formatFacebookManagerSpend(facebookSpend, fmtVndDong)}
+              variant="managerSpend"
+            />
             <S label="Chi Phí ADS/MESS" value={fmtVndDong(grandMetrics.cp_mess)} />
             <S label="Tổng Data" value={fmtInt(grand.data)} />
             <S label="Chi Phí/DATA trong ngày" value={fmtVndDong(grandMetrics.cp_data)} />
@@ -409,11 +426,31 @@ function ManagerTodayTeams() {
   );
 }
 
-function S({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
+function S({
+  label,
+  value,
+  danger,
+  variant,
+}: {
+  label: string;
+  value: string;
+  danger?: boolean;
+  variant?: "managerSpend";
+}) {
+  const className =
+    variant === "managerSpend"
+      ? "border-amber-200 bg-amber-50"
+      : danger
+        ? "border-red-300 bg-red-50"
+        : "bg-white";
   return (
-    <div className={`rounded-lg border p-2 ${danger ? "border-red-300 bg-red-50" : "bg-white"}`}>
+    <div className={`rounded-lg border p-2 ${className}`}>
       <p className="text-[11px] text-slate-600">{label}</p>
-      <p className={`mt-0.5 text-sm font-bold ${danger ? "text-red-700" : "text-slate-900"}`}>
+      <p
+        className={`mt-0.5 text-sm font-bold ${
+          danger ? "text-red-700" : variant === "managerSpend" ? "text-amber-900" : "text-slate-900"
+        }`}
+      >
         {value}
       </p>
     </div>

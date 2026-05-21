@@ -9,7 +9,7 @@ import { getReconciledReportIds, isReconciliationSlot } from "@/lib/reportAudit"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
-import { initialDateRange, type DateRangeValue } from "@/lib/dateRange";
+import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib/dateRange";
 import {
   Table,
   TableBody,
@@ -19,11 +19,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
+import { fetchFacebookManagerSpend, formatFacebookManagerSpend } from "@/lib/facebookAdSpend";
 
 export function ManagerReportsWorkspace() {
   const { profile } = useAuth();
   const [range, setRange] = useState<DateRangeValue>(() => initialDateRange("today"));
-  const { from, to } = range;
+  const { from, to } = normalizeDateRange(range);
 
   const { data, isLoading } = useQuery({
     queryKey: ["manager-reports-range", profile?.id, from, to],
@@ -48,6 +49,10 @@ export function ManagerReportsWorkspace() {
       }));
     },
   });
+  const { data: facebookSpend } = useQuery({
+    queryKey: ["facebook-manager-spend", from, to],
+    queryFn: () => fetchFacebookManagerSpend(from, to),
+  });
 
   return (
     <div className="space-y-5 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden">
@@ -56,6 +61,17 @@ export function ManagerReportsWorkspace() {
         subtitle="Xem báo cáo trong phạm vi team được phân công."
         actions={<DateRangeFilter value={range} onChange={setRange} />}
       />
+
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="p-3">
+            <p className="text-xs text-muted-foreground">Chi phí trên trình quản lí</p>
+            <p className="mt-1 text-lg font-bold text-amber-900">
+              {formatFacebookManagerSpend(facebookSpend, fmtVndDong)}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
 
       <Card className="md:flex md:min-h-0 md:flex-1 md:flex-col">
         <CardHeader className="shrink-0">

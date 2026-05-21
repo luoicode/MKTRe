@@ -170,6 +170,42 @@ export type Database = {
           },
         ];
       };
+      facebook_ad_spend_campaign_daily: {
+        Row: {
+          ad_account_id: string;
+          campaign_id: string;
+          campaign_name: string;
+          created_at: string;
+          id: string;
+          raw: Json | null;
+          spend: number;
+          spend_date: string;
+          synced_at: string;
+        };
+        Insert: {
+          ad_account_id: string;
+          campaign_id: string;
+          campaign_name: string;
+          created_at?: string;
+          id?: string;
+          raw?: Json | null;
+          spend?: number;
+          spend_date: string;
+          synced_at?: string;
+        };
+        Update: {
+          ad_account_id?: string;
+          campaign_id?: string;
+          campaign_name?: string;
+          created_at?: string;
+          id?: string;
+          raw?: Json | null;
+          spend?: number;
+          spend_date?: string;
+          synced_at?: string;
+        };
+        Relationships: [];
+      };
       daily_checklist_completions: {
         Row: {
           completed_at: string;
