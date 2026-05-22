@@ -104,8 +104,9 @@ export function sumTotals(rows: EmployeeLatest[]): TeamTotals {
 export async function getLatestDailyReportPerEmployee(params: {
   teamIds: string[];
   date: string; // YYYY-MM-DD
+  includeInactive?: boolean;
 }): Promise<{ rows: EmployeeLatest[]; slots: SlotMeta[] }> {
-  const { teamIds, date } = params;
+  const { teamIds, date, includeInactive = false } = params;
   if (!teamIds.length) return { rows: [], slots: [] };
 
   const [{ data: slots }, { data: memberships }] = await Promise.all([
@@ -139,8 +140,12 @@ export async function getLatestDailyReportPerEmployee(params: {
   const reconciledReportIds = await getReconciledReportIds((reports ?? []).map((r) => r.id));
 
   const { data: profiles } = userIds.length
-    ? await supabase.from("profiles").select("id, full_name, username").in("id", userIds)
-    : { data: [] as { id: string; full_name: string; username: string }[] };
+    ? await supabase
+        .from("profiles")
+        .select("id, full_name, username, status")
+        .in("id", userIds)
+        .in("status", includeInactive ? ["active", "inactive"] : ["active"])
+    : { data: [] as { id: string; full_name: string; username: string; status: string }[] };
 
   // Group reports by user, pick the "latest"
   const reportsByUser = new Map<string, typeof reports>();
@@ -203,16 +208,26 @@ export async function getLatestDailyReportPerEmployeeRange(params: {
   teamIds: string[];
   from: string; // YYYY-MM-DD
   to: string; // YYYY-MM-DD
+  includeInactive?: boolean;
 }): Promise<{ rows: EmployeeLatest[]; slots: SlotMeta[] }> {
   const from = params.from <= params.to ? params.from : params.to;
   const to = params.from <= params.to ? params.to : params.from;
-  if (from === to) return getLatestDailyReportPerEmployee({ teamIds: params.teamIds, date: from });
+  if (from === to)
+    return getLatestDailyReportPerEmployee({
+      teamIds: params.teamIds,
+      date: from,
+      includeInactive: params.includeInactive,
+    });
 
   const rowsByUser = new Map<string, EmployeeLatest>();
   let slots: SlotMeta[] = [];
 
   for (const date of enumerateDates(from, to)) {
-    const daily = await getLatestDailyReportPerEmployee({ teamIds: params.teamIds, date });
+    const daily = await getLatestDailyReportPerEmployee({
+      teamIds: params.teamIds,
+      date,
+      includeInactive: params.includeInactive,
+    });
     if (!slots.length) slots = daily.slots;
 
     for (const row of daily.rows) {

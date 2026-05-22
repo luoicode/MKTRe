@@ -42,7 +42,7 @@ export function ManagerReportsWorkspace() {
       const { data, error } = await supabase
         .from("slot_reports")
         .select(
-          "*, profiles!slot_reports_user_id_fkey(full_name, username), teams(name), report_slots(slot_name)",
+          "*, profiles!slot_reports_user_id_fkey(full_name, username, status), teams(name), report_slots(slot_name)",
         )
         .in("team_id", teamIds)
         .gte("report_date", from)
@@ -50,10 +50,12 @@ export function ManagerReportsWorkspace() {
         .order("report_date", { ascending: false });
       if (error) throw error;
       const reconciledReportIds = await getReconciledReportIds((data ?? []).map((row) => row.id));
-      return (data ?? []).map((row) => ({
-        ...row,
-        was_reconciled: reconciledReportIds.has(row.id),
-      }));
+      return (data ?? [])
+        .filter((row) => row.profiles?.status === "active")
+        .map((row) => ({
+          ...row,
+          was_reconciled: reconciledReportIds.has(row.id),
+        }));
     },
   });
   const {

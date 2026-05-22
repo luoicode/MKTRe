@@ -63,7 +63,11 @@ function LeaderSlotReport() {
       ]);
       const userIds = Array.from(new Set((members ?? []).map((m) => m.user_id)));
       const { data: profiles } = userIds.length
-        ? await supabase.from("profiles").select("id, full_name, username").in("id", userIds)
+        ? await supabase
+            .from("profiles")
+            .select("id, full_name, username")
+            .in("id", userIds)
+            .eq("status", "active")
         : { data: [] as { id: string; full_name: string; username: string }[] };
       const reportByUser = new Map((reports ?? []).map((r) => [r.user_id, r]));
       const rows = (profiles ?? []).map((p) => ({

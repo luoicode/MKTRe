@@ -81,7 +81,11 @@ function ManagerTodayTeams() {
         new Set((teams ?? []).map((t) => t.leader_id).filter(Boolean) as string[]),
       );
       const { data: leaders } = leaderIds.length
-        ? await supabase.from("profiles").select("id, full_name").in("id", leaderIds)
+        ? await supabase
+            .from("profiles")
+            .select("id, full_name")
+            .in("id", leaderIds)
+            .eq("status", "active")
         : { data: [] as { id: string; full_name: string }[] };
       const leaderMap = new Map((leaders ?? []).map((l) => [l.id, l.full_name]));
 

@@ -17,6 +17,7 @@ import { useAuth } from "@/lib/auth";
 import { getLeaderTeamIds, getManagerTeamIds } from "@/lib/dailyAggregates";
 import { getVisibleReports, monthRange, sumReportMetrics } from "@/lib/analytics";
 import { kpiPercent, kpiStatus } from "@/lib/kpi";
+import { filterVisibleProfiles } from "@/lib/profileVisibility";
 import { fmtVndDong, formatDateVN } from "@/lib/reports";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,7 +43,7 @@ import { RefreshButton } from "@/components/RefreshButton";
 import { toast } from "sonner";
 
 type TeamRow = Pick<Tables<"teams">, "id" | "name">;
-type ProfileRow = Pick<Tables<"profiles">, "id" | "full_name" | "username">;
+type ProfileRow = Pick<Tables<"profiles">, "id" | "full_name" | "username" | "status">;
 type KpiPeriod = Enums<"kpi_period">;
 type KpiTargetRow = Tables<"kpi_targets">;
 type MembershipRow = { user_id: string; team_id: string; role_in_team: OperationalRole | null };
@@ -265,11 +266,16 @@ export function KpiWorkspace() {
       const { data: users, error: usersError } = operationalUserIds.length
         ? await supabase
             .from("profiles")
-            .select("id, full_name, username")
+            .select("id, full_name, username, status")
             .in("id", operationalUserIds)
             .order("full_name")
         : { data: [], error: null };
       if (usersError) throw usersError;
+      const visibleUsers = filterVisibleProfiles(users ?? [], role);
+      const visibleUserIds = new Set(visibleUsers.map((user) => user.id));
+      for (const userId of Array.from(operationalRoleByUserId.keys())) {
+        if (!visibleUserIds.has(userId)) operationalRoleByUserId.delete(userId);
+      }
 
       const { data: kpis, error: kpisError } = await supabase
         .from("kpi_targets")
@@ -306,7 +312,7 @@ export function KpiWorkspace() {
 
       return {
         teams: teams ?? [],
-        users: (users ?? []) as ProfileRow[],
+        users: visibleUsers as ProfileRow[],
         operationalRoleByUserId,
         kpis: (kpis ?? []) as KpiTargetRow[],
         memberships: (memberships.data ?? []) as MembershipRow[],

@@ -29,6 +29,11 @@ import { useAuth } from "@/lib/auth";
 import { captureElementAsPngUrl, waitForCaptureReady } from "@/lib/captureImage";
 import { getLeaderTeamIds } from "@/lib/dailyAggregates";
 import { formatYmd } from "@/lib/dateRange";
+import {
+  canSeeInactiveProfiles,
+  filterVisibleProfileIds,
+  filterVisibleProfiles,
+} from "@/lib/profileVisibility";
 import { getTaskDeadlineState, type TaskDeadlineState } from "@/lib/taskDeadline";
 import {
   dispatchTelegramNotificationsForEntity,
@@ -65,7 +70,7 @@ import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { ReportImagePreviewDialog } from "@/components/ReportImagePreviewDialog";
 
 type TeamRow = Pick<Tables<"teams">, "id" | "name">;
-type UserRow = Pick<Tables<"profiles">, "id" | "full_name" | "username" | "avatar_url">;
+type UserRow = Pick<Tables<"profiles">, "id" | "full_name" | "username" | "avatar_url" | "status">;
 type MembershipRow = Pick<Tables<"team_memberships">, "team_id" | "user_id" | "role_in_team">;
 type TaskRow = TaskDetailsTask;
 type TemplateRow = Tables<"daily_task_templates">;
@@ -316,10 +321,12 @@ export function TasksWorkspace() {
       const { data: users } = userIds.length
         ? await supabase
             .from("profiles")
-            .select("id, full_name, username, avatar_url")
+            .select("id, full_name, username, avatar_url, status")
             .in("id", userIds)
             .order("full_name")
         : { data: [] };
+      const visibleUsers = filterVisibleProfiles(users ?? [], role);
+      const visibleUserIds = filterVisibleProfileIds(visibleUsers, role);
 
       let tasksQuery = supabase
         .from("tasks")
@@ -346,12 +353,13 @@ export function TasksWorkspace() {
       const { data: taskProfiles } = taskProfileIds.length
         ? await supabase
             .from("profiles")
-            .select("id, full_name, username, avatar_url")
+            .select("id, full_name, username, avatar_url, status")
             .in("id", taskProfileIds)
             .order("full_name")
         : { data: [] };
+      const visibleTaskProfiles = filterVisibleProfiles(taskProfiles ?? [], role);
       const profileMap = new Map(
-        [...(users ?? []), ...(taskProfiles ?? [])].map((user) => [user.id, user]),
+        [...visibleUsers, ...visibleTaskProfiles].map((user) => [user.id, user]),
       );
       const teamMap = new Map(teams.map((team) => [team.id, team]));
       const normalizedTaskRows = (rawTasks ?? []).map((row) => ({
@@ -360,6 +368,12 @@ export function TasksWorkspace() {
       }));
       const tasks: TaskRow[] = normalizedTaskRows
         .filter((row) => shouldShowTaskOnBoard(row, date))
+        .filter(
+          (row) =>
+            canSeeInactiveProfiles(role) ||
+            row.assigned_to === profile!.id ||
+            visibleUserIds.has(row.assigned_to),
+        )
         .map((row) => ({
           ...row,
           profiles: profileMap.get(row.assigned_to) ?? null,
@@ -406,9 +420,10 @@ export function TasksWorkspace() {
       const { data: completionProfiles } = completionProfileIds.length
         ? await supabase
             .from("profiles")
-            .select("id, full_name, username, avatar_url")
+            .select("id, full_name, username, avatar_url, status")
             .in("id", completionProfileIds)
         : { data: [] };
+      const visibleCompletionProfiles = filterVisibleProfiles(completionProfiles ?? [], role);
 
       if (import.meta.env.DEV) {
         console.info("[TasksWorkspace] task load debug", {
@@ -436,7 +451,7 @@ export function TasksWorkspace() {
       return {
         teams,
         memberships: (memberships ?? []) as MembershipRow[],
-        users: users ?? [],
+        users: visibleUsers,
         tasks,
         taskReadStates: (taskReadStates ?? []) as TaskReadStateRow[],
         templates: ((templates ?? []) as TemplateRow[]).filter(
@@ -444,7 +459,7 @@ export function TasksWorkspace() {
         ),
         onboardingTemplates: (onboardingTemplates ?? []) as OnboardingTemplateRow[],
         completions: (completions ?? []) as CompletionRow[],
-        completionProfiles: (completionProfiles ?? []) as UserRow[],
+        completionProfiles: visibleCompletionProfiles as UserRow[],
       };
     },
   });
@@ -3954,7 +3969,7 @@ function AssigneeMultiSelect({
               />
               <div className="min-w-0">
                 <p className="font-medium">Toàn bộ team</p>
-                <p className="text-xs text-muted-foreground">{users.length} nhân viên active</p>
+                <p className="text-xs text-muted-foreground">{users.length} nhân viên</p>
               </div>
             </div>
             <div className="my-1 border-t" />
@@ -3987,8 +4002,15 @@ function AssigneeMultiSelect({
                       tabIndex={-1}
                     />
                     <UserAvatar user={user} className="h-7 w-7 border" />
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{user.full_name ?? "Nhân viên"}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="flex min-w-0 items-center gap-2 font-medium">
+                        <span className="truncate">{user.full_name ?? "Nhân viên"}</span>
+                        {user.status === "inactive" && (
+                          <Badge variant="secondary" className="shrink-0 rounded-full text-[10px]">
+                            inactive
+                          </Badge>
+                        )}
+                      </p>
                       <p className="truncate text-xs text-muted-foreground">@{user.username}</p>
                     </div>
                   </div>

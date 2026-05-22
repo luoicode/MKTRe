@@ -78,6 +78,12 @@ export function AnalyticsDashboard({
             })
           : Promise.resolve([]),
       ]);
+      const visibleReports =
+        scope === "admin" ? reports : await filterReportRowsByActiveUsers(reports);
+      const visibleLeaderPersonalReports =
+        scope === "admin"
+          ? leaderPersonalReports
+          : await filterReportRowsByActiveUsers(leaderPersonalReports);
 
       let kpiQuery = supabase
         .from("kpi_targets")
@@ -134,8 +140,8 @@ export function AnalyticsDashboard({
       }
 
       return {
-        reports,
-        leaderPersonalReports,
+        reports: visibleReports,
+        leaderPersonalReports: visibleLeaderPersonalReports,
         kpis: kpis ?? [],
         leaderPersonalKpis,
         teamIds: teamIds ?? [],
@@ -533,6 +539,19 @@ function SalaryEstimateCard({ estimate }: { estimate: SalaryEstimate | null }) {
       </CardContent>
     </Card>
   );
+}
+
+async function filterReportRowsByActiveUsers<T extends { user_id: string }>(rows: T[]) {
+  if (!rows.length) return rows;
+  const userIds = Array.from(new Set(rows.map((row) => row.user_id)));
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id")
+    .in("id", userIds)
+    .eq("status", "active");
+  if (error) throw error;
+  const activeUserIds = new Set((data ?? []).map((row) => row.id));
+  return rows.filter((row) => activeUserIds.has(row.user_id));
 }
 
 function ChartCard({ title, children }: { title: string; children: React.ReactElement }) {

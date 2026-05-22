@@ -21,6 +21,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
 import { useAuth, type AppRole } from "@/lib/auth";
 import { getLeaderTeamIds, getManagerTeamIds } from "@/lib/dailyAggregates";
+import { canSeeInactiveProfiles, filterVisibleProfiles } from "@/lib/profileVisibility";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -58,7 +59,7 @@ type Asset = Tables<"assets">;
 type AssetGroup = "common" | "fixed" | "flexible" | "personal";
 type AssetStatus = "active" | "paused" | "revoked";
 type TeamRow = Pick<Tables<"teams">, "id" | "name">;
-type ProfileRow = Pick<Tables<"profiles">, "id" | "full_name" | "username">;
+type ProfileRow = Pick<Tables<"profiles">, "id" | "full_name" | "username" | "status">;
 type MembershipRow = Pick<Tables<"team_memberships">, "user_id" | "team_id">;
 
 const ALL = "all";
@@ -184,7 +185,7 @@ export function AssetsWorkspace() {
       if (isAdmin) {
         const { data: allProfiles, error } = await supabase
           .from("profiles")
-          .select("id, full_name, username")
+          .select("id, full_name, username, status")
           .order("full_name");
         if (error) throw error;
         return {
@@ -209,16 +210,25 @@ export function AssetsWorkspace() {
       const { data: profiles, error } = profileIds.size
         ? await supabase
             .from("profiles")
-            .select("id, full_name, username")
+            .select("id, full_name, username, status")
             .in("id", Array.from(profileIds))
             .order("full_name")
         : { data: [], error: null };
       if (error) throw error;
+      const visibleProfiles = filterVisibleProfiles(profiles ?? [], role);
+      const visibleProfileIds = new Set(visibleProfiles.map((row) => row.id));
+      const visibleScopedAssets = scopedAssets.filter(
+        (asset) =>
+          canSeeInactiveProfiles(role) ||
+          !asset.owner_profile_id ||
+          asset.owner_profile_id === profile!.id ||
+          visibleProfileIds.has(asset.owner_profile_id),
+      );
 
       return {
-        assets: scopedAssets,
+        assets: visibleScopedAssets,
         teams: teamsResult.data ?? [],
-        profiles: profiles ?? [],
+        profiles: visibleProfiles,
         memberships,
         visibleTeamIds,
       };

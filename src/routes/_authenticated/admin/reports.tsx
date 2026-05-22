@@ -79,6 +79,7 @@ function AdminReports() {
         teamIds: selectedTeamIds,
         from: normalizedRange.from,
         to: normalizedRange.to,
+        includeInactive: true,
       });
 
       const leaderNames = await getLeaderNamesByTeam(selectedTeamIds);

@@ -55,7 +55,20 @@ export function RankingWorkspace() {
       });
       if (error) throw error;
 
-      const marketingRows = rankRows(entries ?? []);
+      let scopedEntries = entries ?? [];
+      if (role !== "admin" && scopedEntries.length) {
+        const ids = Array.from(new Set(scopedEntries.map((entry) => entry.id).filter(Boolean)));
+        const { data: activeProfiles, error: activeProfilesError } = await supabase
+          .from("profiles")
+          .select("id")
+          .in("id", ids)
+          .eq("status", "active");
+        if (activeProfilesError) throw activeProfilesError;
+        const activeIds = new Set((activeProfiles ?? []).map((entry) => entry.id));
+        scopedEntries = scopedEntries.filter((entry) => activeIds.has(entry.id));
+      }
+
+      const marketingRows = rankRows(scopedEntries);
       return {
         marketingRows,
         teamRows: rankTeams(marketingRows),

@@ -70,7 +70,11 @@ export function ManagerDirectoryWorkspace({ mode }: { mode: DirectoryMode }) {
       const userIds = Array.from(new Set([...memberUserIds, ...leaderIds]));
       const [{ data: profiles }, { data: roles }] = userIds.length
         ? await Promise.all([
-            supabase.from("profiles").select("id, full_name, username, status").in("id", userIds),
+            supabase
+              .from("profiles")
+              .select("id, full_name, username, status")
+              .in("id", userIds)
+              .eq("status", "active"),
             supabase.from("user_roles").select("user_id, role").in("user_id", userIds),
           ])
         : [{ data: [] }, { data: [] }];
