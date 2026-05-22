@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { toPng } from "html-to-image";
 import { Button } from "@/components/ui/button";
 import { Camera, Eye, EyeOff, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
+import { captureElementAsPngUrl } from "@/lib/captureImage";
 import { chooseReportImageDirectory } from "@/utils/reportImageStorage";
 import {
   ReportSheetImageTemplate,
@@ -31,23 +31,26 @@ export function ReportActions({
 
   const capture = async () => {
     const target = sheetData ? sheetRef.current : targetRef.current;
-    if (!target) return;
+    if (!target) {
+      toast.error("Không tìm thấy vùng báo cáo để chụp");
+      return;
+    }
     setBusy(true);
     try {
-      const dataUrl = await toPng(target, {
-        cacheBust: true,
-        pixelRatio: 2,
+      const { blob, url } = await captureElementAsPngUrl({
+        target,
         backgroundColor: "#ffffff",
+        fullContent: true,
+        pixelRatio: 2,
       });
-      const blob = await (await fetch(dataUrl)).blob();
       setImageBlob(blob);
       setImageUrl((currentUrl) => {
         if (currentUrl) URL.revokeObjectURL(currentUrl);
-        return URL.createObjectURL(blob);
+        return url;
       });
       setPreviewOpen(true);
-    } catch {
-      toast.error("Không tạo được ảnh báo cáo");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Không tạo được ảnh báo cáo");
     } finally {
       setBusy(false);
     }
@@ -67,7 +70,7 @@ export function ReportActions({
     <div className="flex flex-wrap gap-2 print:hidden">
       <Button onClick={capture} disabled={busy} size="sm">
         <Camera className="mr-2 h-4 w-4" />
-        {busy ? "Đang xuất..." : "Tải ảnh"}
+        {busy ? "Đang chụp..." : "Tải ảnh"}
       </Button>
       <Button
         onClick={chooseFolder}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { toPng } from "html-to-image";
 import { toast } from "sonner";
+import { captureElementAsPngUrl } from "@/lib/captureImage";
 import { calculateReportMetrics } from "@/lib/reports";
 import {
   ReportSheetImageTemplate,
@@ -57,23 +57,26 @@ export function SubmittedReportCard({
   const sheetData = toSheetData(data);
 
   const generatePreview = useCallback(async () => {
-    if (!exportRef.current) return;
+    if (!exportRef.current) {
+      toast.error("Không tìm thấy mẫu ảnh báo cáo");
+      return;
+    }
     setGenerating(true);
     try {
-      const dataUrl = await toPng(exportRef.current, {
-        cacheBust: true,
-        pixelRatio: 2,
+      const { blob, url } = await captureElementAsPngUrl({
+        target: exportRef.current,
         backgroundColor: "#ffffff",
+        fullContent: true,
+        pixelRatio: 2,
       });
-      const blob = await (await fetch(dataUrl)).blob();
       setImageBlob(blob);
       setImageUrl((currentUrl) => {
         if (currentUrl) URL.revokeObjectURL(currentUrl);
-        return URL.createObjectURL(blob);
+        return url;
       });
       toast.success("Đã gửi báo cáo thành công");
-    } catch {
-      toast.error("Không tạo được ảnh báo cáo");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Không tạo được ảnh báo cáo");
     } finally {
       setGenerating(false);
     }

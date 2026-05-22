@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { toPng } from "html-to-image";
 import {
   CalendarDays,
   Camera,
@@ -27,6 +26,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { Enums, Tables, TablesInsert } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
+import { captureElementAsPngUrl, waitForCaptureReady } from "@/lib/captureImage";
 import { getLeaderTeamIds } from "@/lib/dailyAggregates";
 import { formatYmd } from "@/lib/dateRange";
 import { getTaskDeadlineState, type TaskDeadlineState } from "@/lib/taskDeadline";
@@ -766,25 +766,28 @@ export function TasksWorkspace() {
 
   const captureChecklistBoard = async () => {
     const target = checklistBoardRef.current;
-    if (!target) return;
+    if (!target) {
+      toast.error("Không tìm thấy vùng checklist để chụp");
+      return;
+    }
     setScreenshotBusy(true);
     setScreenshotMode(true);
     try {
-      await new Promise((resolve) => window.requestAnimationFrame(resolve));
-      const dataUrl = await toPng(target, {
-        cacheBust: true,
-        pixelRatio: 2,
+      await waitForCaptureReady();
+      const { blob, url } = await captureElementAsPngUrl({
+        target,
         backgroundColor: "#f8fafc",
+        fullContent: true,
+        pixelRatio: 2,
       });
-      const blob = await (await fetch(dataUrl)).blob();
       setScreenshotBlob(blob);
       setScreenshotUrl((currentUrl) => {
         if (currentUrl) URL.revokeObjectURL(currentUrl);
-        return URL.createObjectURL(blob);
+        return url;
       });
       setScreenshotPreviewOpen(true);
-    } catch {
-      toast.error("Không tạo được ảnh checklist");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Không tạo được ảnh checklist");
     } finally {
       setScreenshotMode(false);
       setScreenshotBusy(false);
@@ -3913,8 +3916,14 @@ function AssigneeMultiSelect({
             <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-[min(28rem,calc(100vw-2rem))] p-0">
-          <div className="border-b p-2">
+        <PopoverContent
+          align="start"
+          sideOffset={6}
+          className="flex max-h-[min(420px,calc(100vh-7rem))] w-[min(28rem,calc(100vw-2rem))] flex-col overflow-hidden p-0"
+          onWheel={(event) => event.stopPropagation()}
+          onTouchMove={(event) => event.stopPropagation()}
+        >
+          <div className="sticky top-0 z-10 shrink-0 border-b bg-popover p-2">
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -3922,7 +3931,7 @@ function AssigneeMultiSelect({
               className="h-9"
             />
           </div>
-          <div className="max-h-72 overflow-y-auto p-1">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1 pr-1.5 [scrollbar-width:thin]">
             <div
               role="button"
               tabIndex={0}
