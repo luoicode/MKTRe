@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Flame, Medal, Minus, Trophy, Users } from "lucide-react";
+import { ArrowDown, ArrowUp, Crown, Flame, Medal, Minus, Trophy, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
@@ -149,14 +149,17 @@ async function scopeRankingEntries(
 ) {
   if (!entries.length) return entries;
 
-  const activeIds = await getActiveProfileIds(entries.map((entry) => entry.id).filter(Boolean));
-  let scopedEntries = entries.filter((entry) => activeIds.has(entry.id));
+  let scopedEntries = entries;
 
   if (role === "employee" || role === "leader") {
-    const teamIds =
+    const directTeamIds =
       role === "leader"
         ? await getLeaderTeamIds(profileId)
         : await getActiveMembershipTeamIds(profileId);
+    const fallbackTeamIds = entries
+      .filter((entry) => entry.id === profileId && typeof entry.team_id === "string")
+      .map((entry) => entry.team_id as string);
+    const teamIds = directTeamIds.length ? directTeamIds : fallbackTeamIds;
     const visibleTeamIds = new Set(teamIds);
     if (!visibleTeamIds.size) return scopedEntries.filter((entry) => entry.id === profileId);
 
@@ -174,17 +177,6 @@ async function scopeRankingEntries(
   }
 
   return scopedEntries;
-}
-
-async function getActiveProfileIds(profileIds: string[]) {
-  if (!profileIds.length) return new Set<string>();
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id")
-    .in("id", Array.from(new Set(profileIds)))
-    .eq("status", "active");
-  if (error) throw error;
-  return new Set((data ?? []).map((entry) => entry.id));
 }
 
 async function getActiveMembershipTeamIds(profileId: string) {
@@ -398,7 +390,7 @@ function TeamRankingTable({ rows, isLoading }: { rows: TeamRankingRow[]; isLoadi
 
 function TopCard({ row, rank, active }: { row: RankingRow; rank: number; active: boolean }) {
   const styles: Record<number, string> = {
-    1: "z-10 border-amber-200 bg-gradient-to-b from-amber-50 to-white md:min-h-[205px] md:scale-[1.02]",
+    1: "z-10 border-amber-200 bg-gradient-to-b from-amber-50 to-white shadow-[0_18px_45px_rgba(245,158,11,0.22)] ring-2 ring-amber-200/70 md:min-h-[205px] md:scale-[1.02]",
     2: "border-slate-200 bg-gradient-to-b from-slate-50 to-white md:min-h-[175px] md:scale-[0.96]",
     3: "border-orange-200 bg-gradient-to-b from-orange-50 to-white md:min-h-[175px] md:scale-[0.96]",
   };
@@ -409,7 +401,17 @@ function TopCard({ row, rank, active }: { row: RankingRow; rank: number; active:
   };
 
   return (
-    <Card className={cn("relative overflow-hidden rounded-3xl border-2 shadow-sm", styles[rank])}>
+    <Card
+      className={cn(
+        "relative overflow-hidden rounded-3xl border-2 shadow-sm transition-transform duration-300 hover:-translate-y-0.5",
+        styles[rank],
+      )}
+    >
+      {rank === 1 && (
+        <div className="pointer-events-none absolute right-4 top-4 rounded-full bg-amber-300/25 p-2 text-amber-500 animate-pulse">
+          <Crown className="h-5 w-5" />
+        </div>
+      )}
       <CardContent
         className={cn(
           "flex h-full flex-col items-center text-center",
@@ -423,7 +425,7 @@ function TopCard({ row, rank, active }: { row: RankingRow; rank: number; active:
           )}
         >
           <Medal className="h-3 w-3" />
-          Top {rank}
+          {rank === 1 ? "Top 1 👑" : `Top ${rank}`}
         </span>
         <RankingAvatar row={row} className="mt-3 border-4 border-white shadow-md" />
         <div className="mt-3 min-w-0">
@@ -516,14 +518,58 @@ function RankingAvatar({ row, className }: { row: RankingRow; className?: string
 }
 
 function RankCell({ rank, movement }: { rank: number; movement: RankMovement }) {
+  const badge = getRankBadge(rank);
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
       <MovementIcon movement={movement} />
-      <span className={cn("font-extrabold", rank <= 3 ? "text-slate-950" : "text-slate-600")}>
-        {rank}
+      <span
+        title={`Hạng ${rank}`}
+        className={cn(
+          "inline-flex h-8 min-w-[54px] items-center justify-center gap-1 rounded-full px-2 text-xs font-extrabold shadow-sm ring-1 transition-transform duration-200 hover:scale-105",
+          badge.className,
+        )}
+      >
+        <span aria-hidden="true" className="text-sm leading-none">
+          {badge.icon}
+        </span>
+        <span>{rank}</span>
       </span>
     </div>
   );
+}
+
+function getRankBadge(rank: number) {
+  if (rank === 1) {
+    return {
+      icon: "👑",
+      className: "bg-amber-100 text-amber-800 ring-amber-200 shadow-amber-100",
+    };
+  }
+  if (rank === 2) {
+    return {
+      icon: "🥈",
+      className: "bg-slate-100 text-slate-700 ring-slate-200",
+    };
+  }
+  if (rank === 3) {
+    return {
+      icon: "🥉",
+      className: "bg-orange-100 text-orange-800 ring-orange-200",
+    };
+  }
+
+  const topTenIcons = ["🔥", "⚡", "🚀", "😎", "🎯", "💎", "✨"];
+  if (rank <= 10) {
+    return {
+      icon: topTenIcons[(rank - 4) % topTenIcons.length],
+      className: "bg-sky-50 text-sky-700 ring-sky-100",
+    };
+  }
+
+  return {
+    icon: "🌱",
+    className: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+  };
 }
 
 function MovementIcon({ movement }: { movement: RankMovement }) {
