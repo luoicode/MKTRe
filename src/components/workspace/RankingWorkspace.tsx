@@ -160,12 +160,8 @@ async function scopeRankingEntries(
     const visibleTeamIds = new Set(teamIds);
     if (!visibleTeamIds.size) return scopedEntries.filter((entry) => entry.id === profileId);
 
-    const visibleMemberIds = await getActiveTeamMemberIds(teamIds, activeIds);
     scopedEntries = scopedEntries.filter(
-      (entry) =>
-        visibleMemberIds.has(entry.id) &&
-        typeof entry.team_id === "string" &&
-        visibleTeamIds.has(entry.team_id),
+      (entry) => typeof entry.team_id === "string" && visibleTeamIds.has(entry.team_id),
     );
   } else if (role === "manager") {
     const teamIds = await getManagerTeamIds(profileId);
@@ -199,17 +195,6 @@ async function getActiveMembershipTeamIds(profileId: string) {
     .eq("is_active", true);
   if (error) throw error;
   return Array.from(new Set((data ?? []).map((entry) => entry.team_id)));
-}
-
-async function getActiveTeamMemberIds(teamIds: string[], activeIds: Set<string>) {
-  if (!teamIds.length) return new Set<string>();
-  const { data, error } = await supabase
-    .from("team_memberships")
-    .select("user_id")
-    .in("team_id", teamIds)
-    .eq("is_active", true);
-  if (error) throw error;
-  return new Set((data ?? []).map((entry) => entry.user_id).filter((id) => activeIds.has(id)));
 }
 
 function CurrentRankTag({ rank, total }: { rank: number | null; total: number }) {
