@@ -39,6 +39,7 @@ import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -48,6 +49,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -219,6 +221,8 @@ export function TasksWorkspace() {
   const [task, setTask] = useState({
     team_id: "",
     assigned_to: "",
+    assignee_mode: "individual" as "individual" | "team",
+    assigned_to_ids: [] as string[],
     title: "",
     description: "",
     link_url: "",
@@ -849,70 +853,89 @@ export function TasksWorkspace() {
 
   const createTask = async () => {
     const teamId = normalizeUuid(task.team_id);
-    const assignedTo = normalizeUuid(task.assigned_to);
     const assignedBy = normalizeUuid(profile?.id);
-    if (!teamId || !assignedTo || !assignedBy || !task.title.trim()) {
+    const assigneeIds =
+      task.assignee_mode === "team"
+        ? taskUsers.map((user) => user.id)
+        : task.assigned_to_ids.map((id) => normalizeUuid(id)).filter((id): id is string => !!id);
+    const uniqueAssigneeIds = Array.from(new Set(assigneeIds));
+    if (!teamId || !uniqueAssigneeIds.length || !assignedBy || !task.title.trim()) {
       toast.error("Chọn team, nhân viên và nhập tiêu đề task");
       return;
     }
-    if (!taskUsers.some((user) => user.id === assignedTo)) {
+    const taskUserIds = new Set(taskUsers.map((user) => user.id));
+    if (uniqueAssigneeIds.some((assigneeId) => !taskUserIds.has(assigneeId))) {
       toast.error("Nhân viên được giao phải là thành viên active của team đã chọn");
       return;
     }
-    const payload = {
-      p_team_id: teamId,
-      p_assigned_to: assignedTo,
-      p_title: task.title.trim(),
-      p_description: task.description.trim() || null,
-      p_task_date: date,
-      p_deadline: task.deadline ? new Date(task.deadline).toISOString() : null,
-      p_priority: task.priority,
-    };
-    if (import.meta.env.DEV) {
-      console.info("[TasksWorkspace] create task rpc payload", {
-        team_id: payload.p_team_id,
-        assigned_to: payload.p_assigned_to,
-        assigned_by: assignedBy,
-        created_by: null,
-        task_date: payload.p_task_date,
-      });
-    }
-    const { data: createdTask, error } = await supabase.rpc("create_task_rpc", payload);
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-    if (import.meta.env.DEV) console.info("[TasksWorkspace] created task rpc result", createdTask);
-    const createdTaskId = Array.isArray(createdTask)
-      ? createdTask[0]?.id
-      : (createdTask as { id?: string } | null)?.id;
+
     const taskLinkUrl = task.link_url.trim() || null;
-    if (createdTaskId && taskLinkUrl) {
-      const { error: linkError } = await supabase
-        .from("tasks")
-        .update({ link_url: taskLinkUrl })
-        .eq("id", createdTaskId);
-      if (linkError) {
-        toast.error(linkError.message);
+    for (const assigneeId of uniqueAssigneeIds) {
+      const payload = {
+        p_team_id: teamId,
+        p_assigned_to: assigneeId,
+        p_title: task.title.trim(),
+        p_description: task.description.trim() || null,
+        p_task_date: date,
+        p_deadline: task.deadline ? new Date(task.deadline).toISOString() : null,
+        p_priority: task.priority,
+      };
+      if (import.meta.env.DEV) {
+        console.info("[TasksWorkspace] create task rpc payload", {
+          team_id: payload.p_team_id,
+          assigned_to: payload.p_assigned_to,
+          assigned_by: assignedBy,
+          created_by: null,
+          task_date: payload.p_task_date,
+        });
+      }
+      const { data: createdTask, error } = await supabase.rpc("create_task_rpc", payload);
+      if (error) {
+        toast.error(error.message);
         return;
       }
+      if (import.meta.env.DEV) {
+        console.info("[TasksWorkspace] created task rpc result", createdTask);
+      }
+      const createdTaskId = Array.isArray(createdTask)
+        ? createdTask[0]?.id
+        : (createdTask as { id?: string } | null)?.id;
+
+      if (createdTaskId && taskLinkUrl) {
+        const { error: linkError } = await supabase
+          .from("tasks")
+          .update({ link_url: taskLinkUrl })
+          .eq("id", createdTaskId);
+        if (linkError) {
+          toast.error(linkError.message);
+          return;
+        }
+      }
+
+      await sendTelegramNotification({
+        recipient_profile_id: assigneeId,
+        entity_type: "task",
+        entity_id: createdTaskId ?? null,
+        title: "Nhiệm vụ mới",
+        message: `Bạn có task mới: ${task.title.trim()}.`,
+        type: "task_assigned",
+        metadata: {
+          task_id: createdTaskId ?? null,
+          team_id: teamId,
+        },
+        dedupe_key: `task_assigned:${createdTaskId ?? task.title.trim()}:${assigneeId}`,
+      });
     }
-    await sendTelegramNotification({
-      recipient_profile_id: assignedTo,
-      entity_type: "task",
-      entity_id: createdTaskId ?? null,
-      title: "Nhiệm vụ mới",
-      message: `Bạn có task mới: ${task.title.trim()}.`,
-      type: "task_assigned",
-      metadata: {
-        task_id: createdTaskId ?? null,
-        team_id: teamId,
-      },
-      dedupe_key: `task_assigned:${createdTaskId ?? task.title.trim()}:${assignedTo}`,
-    });
-    toast.success("Đã giao task");
+    toast.success(
+      uniqueAssigneeIds.length === 1
+        ? "Đã giao task"
+        : `Đã giao task cho ${uniqueAssigneeIds.length} nhân viên`,
+    );
     setTask((current) => ({
       ...current,
+      assigned_to: "",
+      assigned_to_ids: [],
+      assignee_mode: "individual",
       title: "",
       description: "",
       link_url: "",
@@ -1565,15 +1588,31 @@ export function TasksWorkspace() {
           <TeamSelect
             teams={data?.teams ?? []}
             value={task.team_id}
-            onChange={(value) => setTask({ ...task, team_id: value, assigned_to: "" })}
+            onChange={(value) =>
+              setTask({
+                ...task,
+                team_id: value,
+                assigned_to: "",
+                assigned_to_ids: [],
+                assignee_mode: "individual",
+              })
+            }
           />
         </Field>
       )}
       <Field label="Nhân viên">
-        <UserSelect
+        <AssigneeMultiSelect
           users={taskUsers}
-          value={task.assigned_to}
-          onChange={(value) => setTask({ ...task, assigned_to: value })}
+          mode={task.assignee_mode}
+          selectedIds={task.assigned_to_ids}
+          onChange={(mode, selectedIds) =>
+            setTask({
+              ...task,
+              assignee_mode: mode,
+              assigned_to_ids: selectedIds,
+              assigned_to: selectedIds[0] ?? "",
+            })
+          }
           disabled={!task.team_id}
         />
       </Field>
@@ -3826,33 +3865,157 @@ function priorityPillClass(value: string | null | undefined) {
   return "border-amber-100 bg-amber-50 text-amber-700 hover:bg-amber-50";
 }
 
-function UserSelect({
+function AssigneeMultiSelect({
   users,
-  value,
+  mode,
+  selectedIds,
   onChange,
   disabled,
 }: {
   users: UserRow[];
-  value: string;
-  onChange: (value: string) => void;
+  mode: "individual" | "team";
+  selectedIds: string[];
+  onChange: (mode: "individual" | "team", selectedIds: string[]) => void;
   disabled?: boolean;
 }) {
+  const [search, setSearch] = useState("");
+  const selectedUsers = users.filter((user) => selectedIds.includes(user.id));
+  const filteredUsers = users.filter((user) => {
+    const keyword = search.trim().toLowerCase();
+    if (!keyword) return true;
+    return [user.full_name, user.username].some((value) => value?.toLowerCase().includes(keyword));
+  });
+  const label =
+    mode === "team"
+      ? "Toàn bộ team"
+      : selectedIds.length
+        ? `Đã chọn ${selectedIds.length} nhân viên`
+        : "Chọn nhân viên";
+
+  const toggleUser = (userId: string) => {
+    const nextIds = selectedIds.includes(userId)
+      ? selectedIds.filter((id) => id !== userId)
+      : [...selectedIds, userId];
+    onChange("individual", nextIds);
+  };
+
   return (
-    <Select value={value} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger>
-        <SelectValue placeholder="Chọn nhân viên" />
-      </SelectTrigger>
-      <SelectContent>
-        {users.map((user) => (
-          <SelectItem key={user.id} value={user.id}>
-            <span className="flex items-center gap-2">
-              <UserAvatar user={user} className="border" />
-              <span>{user.full_name}</span>
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="space-y-2">
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={disabled}
+            className="h-10 w-full justify-between rounded-lg px-3 font-normal"
+          >
+            <span className="truncate">{label}</span>
+            <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-[min(28rem,calc(100vw-2rem))] p-0">
+          <div className="border-b p-2">
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Tìm nhân viên..."
+              className="h-9"
+            />
+          </div>
+          <div className="max-h-72 overflow-y-auto p-1">
+            <div
+              role="button"
+              tabIndex={0}
+              className={cn(
+                "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-muted",
+                mode === "team" && "bg-primary/10 text-primary",
+              )}
+              onClick={() => onChange(mode === "team" ? "individual" : "team", [])}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  onChange(mode === "team" ? "individual" : "team", []);
+                }
+              }}
+            >
+              <Checkbox
+                checked={mode === "team"}
+                aria-label="Chọn toàn bộ team"
+                className="pointer-events-none"
+                tabIndex={-1}
+              />
+              <div className="min-w-0">
+                <p className="font-medium">Toàn bộ team</p>
+                <p className="text-xs text-muted-foreground">{users.length} nhân viên active</p>
+              </div>
+            </div>
+            <div className="my-1 border-t" />
+            {filteredUsers.length ? (
+              filteredUsers.map((user) => {
+                const checked = mode === "individual" && selectedIds.includes(user.id);
+                return (
+                  <div
+                    key={user.id}
+                    role="button"
+                    tabIndex={mode === "team" ? -1 : 0}
+                    className={cn(
+                      "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-muted",
+                      mode === "team" && "cursor-not-allowed opacity-50",
+                      checked && "bg-primary/10",
+                    )}
+                    aria-disabled={mode === "team"}
+                    onClick={() => {
+                      if (mode !== "team") toggleUser(user.id);
+                    }}
+                    onKeyDown={(event) => {
+                      if (mode === "team") return;
+                      if (event.key === "Enter" || event.key === " ") toggleUser(user.id);
+                    }}
+                  >
+                    <Checkbox
+                      checked={checked}
+                      aria-label={`Chọn ${user.full_name}`}
+                      className="pointer-events-none"
+                      tabIndex={-1}
+                    />
+                    <UserAvatar user={user} className="h-7 w-7 border" />
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{user.full_name ?? "Nhân viên"}</p>
+                      <p className="truncate text-xs text-muted-foreground">@{user.username}</p>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                Không tìm thấy nhân viên
+              </p>
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+      <div className="flex flex-wrap gap-1.5">
+        {mode === "team" ? (
+          <Badge variant="secondary">Toàn bộ team</Badge>
+        ) : selectedUsers.length ? (
+          selectedUsers.map((user) => (
+            <Badge key={user.id} variant="outline" className="gap-1.5 rounded-full py-1">
+              <UserAvatar user={user} className="h-5 w-5 border" />
+              <span className="max-w-28 truncate">{user.full_name ?? user.username}</span>
+              <button
+                type="button"
+                className="rounded-full text-muted-foreground hover:text-foreground"
+                onClick={() => toggleUser(user.id)}
+                aria-label={`Bỏ chọn ${user.full_name}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))
+        ) : (
+          <Badge variant="secondary">Chưa chọn nhân viên</Badge>
+        )}
+      </div>
+    </div>
   );
 }
 
