@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, Flame, Medal, Minus, Trophy, Users } from "lucide-r
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
+import { getLeaderTeamIds, getManagerTeamIds } from "@/lib/dailyAggregates";
 import { formatYmd } from "@/lib/dateRange";
 import { fmtVndDong } from "@/lib/reports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,7 +47,7 @@ export function RankingWorkspace() {
   const range = getPeriodRange(effectivePeriod);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ["global-ranking", effectivePeriod, range.from, range.to],
+    queryKey: ["global-ranking", profile?.id, role, effectivePeriod, range.from, range.to],
     enabled: !!profile && !!role,
     queryFn: async () => {
       const { data: entries, error } = await supabase.rpc("get_ranking_entries", {
@@ -55,18 +56,7 @@ export function RankingWorkspace() {
       });
       if (error) throw error;
 
-      let scopedEntries = entries ?? [];
-      if (role !== "admin" && scopedEntries.length) {
-        const ids = Array.from(new Set(scopedEntries.map((entry) => entry.id).filter(Boolean)));
-        const { data: activeProfiles, error: activeProfilesError } = await supabase
-          .from("profiles")
-          .select("id")
-          .in("id", ids)
-          .eq("status", "active");
-        if (activeProfilesError) throw activeProfilesError;
-        const activeIds = new Set((activeProfiles ?? []).map((entry) => entry.id));
-        scopedEntries = scopedEntries.filter((entry) => activeIds.has(entry.id));
-      }
+      const scopedEntries = await scopeRankingEntries(entries ?? [], role, profile!.id);
 
       const marketingRows = rankRows(scopedEntries);
       return {
@@ -150,6 +140,76 @@ export function RankingWorkspace() {
       </div>
     </div>
   );
+}
+
+async function scopeRankingEntries(
+  entries: RankingEntry[],
+  role: string | null,
+  profileId: string,
+) {
+  if (!entries.length) return entries;
+
+  const activeIds = await getActiveProfileIds(entries.map((entry) => entry.id).filter(Boolean));
+  let scopedEntries = entries.filter((entry) => activeIds.has(entry.id));
+
+  if (role === "employee" || role === "leader") {
+    const teamIds =
+      role === "leader"
+        ? await getLeaderTeamIds(profileId)
+        : await getActiveMembershipTeamIds(profileId);
+    const visibleTeamIds = new Set(teamIds);
+    if (!visibleTeamIds.size) return scopedEntries.filter((entry) => entry.id === profileId);
+
+    const visibleMemberIds = await getActiveTeamMemberIds(teamIds, activeIds);
+    scopedEntries = scopedEntries.filter(
+      (entry) =>
+        visibleMemberIds.has(entry.id) &&
+        typeof entry.team_id === "string" &&
+        visibleTeamIds.has(entry.team_id),
+    );
+  } else if (role === "manager") {
+    const teamIds = await getManagerTeamIds(profileId);
+    if (teamIds.length) {
+      const visibleTeamIds = new Set(teamIds);
+      scopedEntries = scopedEntries.filter(
+        (entry) => typeof entry.team_id === "string" && visibleTeamIds.has(entry.team_id),
+      );
+    }
+  }
+
+  return scopedEntries;
+}
+
+async function getActiveProfileIds(profileIds: string[]) {
+  if (!profileIds.length) return new Set<string>();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id")
+    .in("id", Array.from(new Set(profileIds)))
+    .eq("status", "active");
+  if (error) throw error;
+  return new Set((data ?? []).map((entry) => entry.id));
+}
+
+async function getActiveMembershipTeamIds(profileId: string) {
+  const { data, error } = await supabase
+    .from("team_memberships")
+    .select("team_id")
+    .eq("user_id", profileId)
+    .eq("is_active", true);
+  if (error) throw error;
+  return Array.from(new Set((data ?? []).map((entry) => entry.team_id)));
+}
+
+async function getActiveTeamMemberIds(teamIds: string[], activeIds: Set<string>) {
+  if (!teamIds.length) return new Set<string>();
+  const { data, error } = await supabase
+    .from("team_memberships")
+    .select("user_id")
+    .in("team_id", teamIds)
+    .eq("is_active", true);
+  if (error) throw error;
+  return new Set((data ?? []).map((entry) => entry.user_id).filter((id) => activeIds.has(id)));
 }
 
 function CurrentRankTag({ rank, total }: { rank: number | null; total: number }) {

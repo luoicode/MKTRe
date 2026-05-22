@@ -198,9 +198,7 @@ export function AssetsWorkspace() {
       }
 
       profileIds.add(profile!.id);
-      if (role !== "employee") {
-        for (const row of memberships) profileIds.add(row.user_id);
-      }
+      for (const row of memberships) profileIds.add(row.user_id);
       for (const asset of scopedAssets) {
         if (asset.owner_profile_id) profileIds.add(asset.owner_profile_id);
         if (asset.assigned_by) profileIds.add(asset.assigned_by);
@@ -397,14 +395,17 @@ export function AssetsWorkspace() {
       toast.error("Chọn user nhận tài sản cố định");
       return;
     }
+    const normalizedAssetType = normalizeAssetType(assetType);
+    const allowsMultiplePersonalAssets = normalizedAssetType === "facebook";
     if (
       form.asset_group === "personal" &&
+      !allowsMultiplePersonalAssets &&
       assets.some(
         (asset) =>
           asset.id !== form.id &&
           asset.asset_group === "personal" &&
           asset.owner_profile_id === profile.id &&
-          normalizeAssetType(asset.asset_type) === normalizeAssetType(assetType) &&
+          normalizeAssetType(asset.asset_type) === normalizedAssetType &&
           form.asset_type !== OTHER_TYPE,
       )
     ) {
@@ -829,6 +830,11 @@ export function AssetsWorkspace() {
       <AssetDetailDialog
         asset={detailAsset}
         teamName={detailAsset?.owner_team_id ? teamMap.get(detailAsset.owner_team_id) : null}
+        teamMemberNames={
+          detailAsset?.owner_team_id
+            ? getTeamMemberNames(detailAsset.owner_team_id, memberships, profileMap)
+            : []
+        }
         ownerName={
           detailAsset?.owner_profile_id
             ? profileMap.get(detailAsset.owner_profile_id)?.full_name
@@ -852,6 +858,18 @@ function buildProfileTeamMap(memberships: MembershipRow[]) {
   return map;
 }
 
+function getTeamMemberNames(
+  teamId: string,
+  memberships: MembershipRow[],
+  profileMap: Map<string, ProfileRow>,
+) {
+  return memberships
+    .filter((membership) => membership.team_id === teamId)
+    .map((membership) => profileMap.get(membership.user_id)?.full_name)
+    .filter((name): name is string => Boolean(name))
+    .sort((a, b) => a.localeCompare(b, "vi"));
+}
+
 function canViewAssetForRole(
   asset: Asset,
   role: AppRole,
@@ -863,7 +881,8 @@ function canViewAssetForRole(
   if (asset.asset_group === "common") return true;
 
   if (role === "employee") {
-    return asset.owner_profile_id === profileId || asset.created_by === profileId;
+    if (asset.owner_profile_id === profileId || asset.created_by === profileId) return true;
+    return Boolean(asset.owner_team_id && visibleTeamIds.has(asset.owner_team_id));
   }
 
   if (role === "leader") {
@@ -1383,6 +1402,7 @@ function AssetStatusIndicator({ asset, showText = false }: { asset: Asset; showT
 function AssetDetailDialog({
   asset,
   teamName,
+  teamMemberNames,
   ownerName,
   assignerName,
   canViewSensitive,
@@ -1390,6 +1410,7 @@ function AssetDetailDialog({
 }: {
   asset: Asset | null;
   teamName?: string | null;
+  teamMemberNames: string[];
   ownerName?: string | null;
   assignerName?: string | null;
   canViewSensitive: boolean;
@@ -1397,6 +1418,7 @@ function AssetDetailDialog({
 }) {
   const group = (asset?.asset_group ?? "flexible") as AssetGroup;
   const owner = group === "common" ? "Toàn công ty" : (ownerName ?? teamName ?? "Cá nhân");
+  const assignedScope = getAssetAssignedScopeLabel(group, ownerName, teamName);
   const link = normalizeUrl(asset?.link_url ?? "");
   const sensitiveNote = asset ? getSensitiveNote(asset) : null;
   const publicDescription = asset ? getPublicAssetDescription(asset) : "";
@@ -1434,6 +1456,7 @@ function AssetDetailDialog({
               </div>
               <DetailMeta label="Giá trị" value={asset.value || "Chưa có"} />
               <DetailMeta label="Chủ sở hữu" value={owner} />
+              <DetailMeta label="Cấp cho" value={assignedScope} />
               <DetailMeta label="Người cấp" value={assignerName ?? "Không rõ"} />
               <DetailMeta label="Ngày cấp" value={formatDate(asset.created_at)} />
               <DetailMeta label="Ngày cập nhật" value={formatDate(asset.updated_at)} />
@@ -1470,6 +1493,16 @@ function AssetDetailDialog({
                   {publicDescription || "Chưa có mô tả."}
                 </p>
               </div>
+              {asset.owner_team_id && (
+                <div className="rounded-2xl border bg-muted/30 p-3 md:col-span-2">
+                  <p className="text-xs text-muted-foreground">Thành viên team có quyền xem</p>
+                  <p className="mt-1 text-sm font-medium text-slate-800">
+                    {teamMemberNames.length
+                      ? teamMemberNames.join(", ")
+                      : "Chưa có thành viên active trong dữ liệu hiện tại."}
+                  </p>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -1683,6 +1716,18 @@ function assetOwnerLabel(
   }
   if (asset.owner_team_id) return teamMap.get(asset.owner_team_id) ?? "Không rõ team";
   return group === "personal" ? "Cá nhân" : "Chưa gán";
+}
+
+function getAssetAssignedScopeLabel(
+  group: AssetGroup,
+  ownerName?: string | null,
+  teamName?: string | null,
+) {
+  if (group === "common") return "Toàn công ty";
+  if (teamName) return teamName;
+  if (ownerName) return ownerName;
+  if (group === "personal") return "Cá nhân";
+  return "Chưa gán";
 }
 
 function assetAssignerLabel(asset: Asset, profileMap: Map<string, ProfileRow>) {

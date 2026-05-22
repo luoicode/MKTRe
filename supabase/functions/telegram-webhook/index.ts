@@ -59,6 +59,21 @@ type NotificationRow = {
   type: string | null;
 };
 
+type ApprovalNotificationRow = {
+  id: string;
+  metadata: Record<string, unknown> | null;
+};
+
+const APPROVAL_NOTIFICATION_TYPES = [
+  "leave_request_created",
+  "task_pending_review",
+  "task_completion_pending_review",
+  "checklist_pending_review",
+  "onboarding_pending_review",
+  "onboarding_review",
+  "onboarding_review_pending",
+];
+
 function parseStartCode(text: string | undefined) {
   const trimmed = text?.trim() ?? "";
   if (!trimmed) return null;
@@ -249,6 +264,71 @@ async function sendNotificationTelegram(
   }
 }
 
+async function markApprovalNotificationsProcessed(
+  service: ReturnType<typeof createClient>,
+  parsed: CallbackPayload,
+  reviewerProfileId: string,
+  approved: boolean,
+) {
+  const now = new Date().toISOString();
+  const { data, error } = await service
+    .from("notifications")
+    .select("id, metadata")
+    .eq("entity_type", parsed.entityType)
+    .eq("entity_id", parsed.entityId)
+    .in("type", APPROVAL_NOTIFICATION_TYPES);
+
+  if (error) {
+    console.error("[telegram-webhook] failed to load approval notifications", {
+      entityType: parsed.entityType,
+      entityId: parsed.entityId,
+      error: error.message,
+    });
+    return;
+  }
+
+  const rows = (data ?? []) as ApprovalNotificationRow[];
+  if (!rows.length) {
+    console.log("[telegram-webhook] no approval notifications to mark processed", {
+      entityType: parsed.entityType,
+      entityId: parsed.entityId,
+    });
+    return;
+  }
+
+  const approvalStatus = approved ? "approved" : "rejected";
+  const updates = rows.map((row) =>
+    service
+      .from("notifications")
+      .update({
+        is_read: true,
+        metadata: {
+          ...(row.metadata ?? {}),
+          approval_status: approvalStatus,
+          approved,
+          reviewed_by: reviewerProfileId,
+          reviewed_at: now,
+          processed_at: now,
+          processed_source: "telegram",
+        },
+      })
+      .eq("id", row.id),
+  );
+
+  const results = await Promise.allSettled(updates);
+  const failed = results.filter(
+    (result) =>
+      result.status === "rejected" ||
+      (result.status === "fulfilled" && Boolean(result.value.error)),
+  ).length;
+  console.log("[telegram-webhook] approval notifications processed", {
+    entityType: parsed.entityType,
+    entityId: parsed.entityId,
+    notificationCount: rows.length,
+    failed,
+  });
+}
+
 async function handleCallback(service: ReturnType<typeof createClient>, update: TelegramUpdate) {
   const callback = update.callback_query;
   const callbackId = callback?.id;
@@ -361,6 +441,7 @@ async function handleCallback(service: ReturnType<typeof createClient>, update: 
   }
 
   await logCallback("success", reviewerProfileId, null);
+  await markApprovalNotificationsProcessed(service, parsed, reviewerProfileId, approved);
 
   const { data: reviewer } = await service
     .from("profiles")
