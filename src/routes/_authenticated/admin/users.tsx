@@ -205,7 +205,12 @@ function AdminUsers() {
     queryFn: async () => {
       const [{ data: profiles, error }, { data: teams, error: teamsError }] = await Promise.all([
         supabase.from("profiles").select("*").order("created_at", { ascending: false }),
-        supabase.from("teams").select("id, name").eq("status", "active").order("name"),
+        supabase
+          .from("teams")
+          .select("id, name")
+          .eq("status", "active")
+          .eq("department", "marketing")
+          .order("name"),
       ]);
       if (error) throw error;
       if (teamsError) throw teamsError;

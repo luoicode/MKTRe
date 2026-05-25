@@ -4,6 +4,7 @@ import { Database, Loader2, Lock, Pencil, PhoneCall, Plus, Save, UploadCloud } f
 import { toast } from "sonner";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
+import { RefreshButton } from "@/components/RefreshButton";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -120,10 +121,18 @@ export function MarketingFloatingPoolWorkspace() {
         title="Kho thả nổi"
         subtitle="Đẩy data cho Sale xử lý và theo dõi tình trạng chăm sóc"
         rightContent={
-          <div className="grid min-w-0 grid-cols-3 gap-2">
-            <MarketingLeadStat label="Tổng số" value={stats.total} tone="slate" />
-            <MarketingLeadStat label="Sale đã nhận" value={stats.assigned} tone="blue" />
-            <MarketingLeadStat label="Đã chốt" value={stats.closed} tone="green" />
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+            <RefreshButton
+              isRefreshing={leadsQuery.isFetching}
+              onRefresh={async () => {
+                await leadsQuery.refetch();
+              }}
+            />
+            <div className="grid min-w-0 grid-cols-3 gap-2">
+              <MarketingLeadStat label="Tổng số" value={stats.total} tone="slate" />
+              <MarketingLeadStat label="Sale đã nhận" value={stats.assigned} tone="blue" />
+              <MarketingLeadStat label="Đã chốt" value={stats.closed} tone="green" />
+            </div>
           </div>
         }
         actions={

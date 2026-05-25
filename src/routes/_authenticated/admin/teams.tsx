@@ -29,8 +29,11 @@ import { toast } from "sonner";
 import { SearchableSelect, SearchableMultiSelect } from "@/components/SearchableSelect";
 import { RefreshButton } from "@/components/RefreshButton";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export const Route = createFileRoute("/_authenticated/admin/teams")({ component: AdminTeams });
+
+type TeamDepartment = "marketing" | "sale";
 
 interface ProfileWithRole {
   id: string;
@@ -44,6 +47,7 @@ interface ProfileWithRole {
 interface TeamWithMembershipLeader {
   id: string;
   name: string;
+  department: string;
   status: string;
   created_at: string;
   profiles: { full_name: string; username: string } | null;
@@ -52,6 +56,7 @@ interface TeamWithMembershipLeader {
 
 function AdminTeams() {
   const qc = useQueryClient();
+  const [department, setDepartment] = useState<TeamDepartment>("marketing");
   const {
     data: teams,
     isLoading,
@@ -149,8 +154,13 @@ function AdminTeams() {
   const [open, setOpen] = useState(false);
   const [memberOf, setMemberOf] = useState<string | null>(null);
 
-  const leaders = (profiles ?? []).filter((p) => p.role === "leader");
-  const employees = (profiles ?? []).filter((p) => p.role === "employee");
+  const visibleTeams = (teams ?? []).filter((team) => team.department === department);
+  const leaders = (profiles ?? []).filter((p) =>
+    department === "marketing" ? p.role === "leader" : false,
+  );
+  const employees = (profiles ?? []).filter((p) =>
+    department === "marketing" ? p.role === "employee" : p.role === "sale",
+  );
   const refreshData = async () => {
     await Promise.all([refetchTeams(), refetchProfiles()]);
     toast.success("Đã làm mới dữ liệu");
@@ -160,7 +170,7 @@ function AdminTeams() {
     <div className="space-y-6">
       <WorkspacePageHeader
         title="Quản lý team"
-        subtitle="Tạo team, gán Leader & nhân viên"
+        subtitle="Quản lý team Marketing và Sale tách biệt"
         actions={
           <>
             <RefreshButton
@@ -174,6 +184,7 @@ function AdminTeams() {
                 </Button>
               </DialogTrigger>
               <CreateTeamDialog
+                department={department}
                 leaders={leaders}
                 onClose={() => {
                   setOpen(false);
@@ -185,57 +196,38 @@ function AdminTeams() {
         }
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Teams</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Tên</TableHead>
-                  <TableHead>Leader</TableHead>
-                  <TableHead>Trạng thái</TableHead>
-                  <TableHead className="w-32" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(teams ?? []).map((t) => {
-                  const leader =
-                    t.membershipLeader ??
-                    (t.profiles as { full_name: string; username: string } | null);
-                  return (
-                    <TableRow key={t.id}>
-                      <TableCell className="font-medium">{t.name}</TableCell>
-                      <TableCell>
-                        {leader ? `${leader.full_name} (@${leader.username})` : "—"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={t.status === "active" ? "default" : "secondary"}>
-                          {t.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Button size="sm" variant="ghost" onClick={() => setMemberOf(t.id)}>
-                          <UserPlus className="h-4 w-4 mr-1" /> Thành viên
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      <Tabs value={department} onValueChange={(value) => setDepartment(value as TeamDepartment)}>
+        <TabsList className="h-10 rounded-xl bg-slate-100 p-1">
+          <TabsTrigger value="marketing" className="px-4">
+            Marketing
+          </TabsTrigger>
+          <TabsTrigger value="sale" className="px-4">
+            Sale
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="marketing" className="mt-4 space-y-4">
+          <TeamsTable
+            teams={visibleTeams}
+            isLoading={isLoading}
+            emptyText="Chưa có Team Marketing."
+            onOpenMembers={setMemberOf}
+          />
+        </TabsContent>
+        <TabsContent value="sale" className="mt-4 space-y-4">
+          <TeamsTable
+            teams={visibleTeams}
+            isLoading={isLoading}
+            emptyText="Chưa có Team Sale."
+            onOpenMembers={setMemberOf}
+          />
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={!!memberOf} onOpenChange={(o) => !o && setMemberOf(null)}>
         {memberOf && (
           <MembersDialog
             teamId={memberOf}
+            department={department}
             employees={employees}
             onClose={() => setMemberOf(null)}
             onChanged={() => {
@@ -249,13 +241,89 @@ function AdminTeams() {
   );
 }
 
+function TeamsTable({
+  teams,
+  isLoading,
+  emptyText,
+  onOpenMembers,
+}: {
+  teams: TeamWithMembershipLeader[];
+  isLoading: boolean;
+  emptyText: string;
+  onOpenMembers: (teamId: string) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Teams</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Loader2 className="mx-auto h-6 w-6 animate-spin" />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Tên</TableHead>
+                <TableHead>Leader</TableHead>
+                <TableHead>Trạng thái</TableHead>
+                <TableHead className="w-32" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {teams.map((t) => {
+                const leader =
+                  t.membershipLeader ??
+                  (t.profiles as { full_name: string; username: string } | null);
+                return (
+                  <TableRow key={t.id}>
+                    <TableCell className="font-medium">{t.name}</TableCell>
+                    <TableCell>
+                      {leader ? `${leader.full_name} (@${leader.username})` : "—"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={t.status === "active" ? "default" : "secondary"}>
+                        {t.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Button size="sm" variant="ghost" onClick={() => onOpenMembers(t.id)}>
+                        <UserPlus className="h-4 w-4 mr-1" /> Thành viên
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {!teams.length && (
+                <TableRow>
+                  <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
+                    {emptyText}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 interface SimpleProfile {
   id: string;
   full_name: string;
   username: string;
 }
 
-function CreateTeamDialog({ leaders, onClose }: { leaders: SimpleProfile[]; onClose: () => void }) {
+function CreateTeamDialog({
+  department,
+  leaders,
+  onClose,
+}: {
+  department: TeamDepartment;
+  leaders: SimpleProfile[];
+  onClose: () => void;
+}) {
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
   const [leaderId, setLeaderId] = useState<string>("");
@@ -271,6 +339,7 @@ function CreateTeamDialog({ leaders, onClose }: { leaders: SimpleProfile[]; onCl
       .from("teams")
       .insert({
         name,
+        department,
         description: desc || null,
         leader_id: leaderId || null,
         status: "active",
@@ -304,7 +373,7 @@ function CreateTeamDialog({ leaders, onClose }: { leaders: SimpleProfile[]; onCl
   return (
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>Tạo team mới</DialogTitle>
+        <DialogTitle>Tạo team {department === "marketing" ? "Marketing" : "Sale"} mới</DialogTitle>
       </DialogHeader>
       <div className="space-y-3">
         <div>
@@ -315,20 +384,27 @@ function CreateTeamDialog({ leaders, onClose }: { leaders: SimpleProfile[]; onCl
           <Label>Mô tả</Label>
           <Textarea value={desc} onChange={(e) => setDesc(e.target.value)} />
         </div>
-        <div>
-          <Label>Leader</Label>
-          <SearchableSelect
-            value={leaderId}
-            onChange={setLeaderId}
-            options={leaders.map((p) => ({
-              value: p.id,
-              label: p.full_name,
-              sub: `@${p.username}`,
-            }))}
-            placeholder="Chọn leader"
-            emptyText="Không có user role Leader"
-          />
-        </div>
+        {department === "marketing" ? (
+          <div>
+            <Label>Leader Marketing</Label>
+            <SearchableSelect
+              value={leaderId}
+              onChange={setLeaderId}
+              options={leaders.map((p) => ({
+                value: p.id,
+                label: p.full_name,
+                sub: `@${p.username}`,
+              }))}
+              placeholder="Chọn Leader Marketing"
+              emptyText="Không có user role Leader Marketing"
+            />
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
+            Phase này chưa có role Leader Sale riêng, nên team Sale chỉ tạo team và gán nhân viên
+            Sale.
+          </div>
+        )}
       </div>
       <DialogFooter>
         <Button onClick={submit} disabled={loading}>
@@ -341,11 +417,13 @@ function CreateTeamDialog({ leaders, onClose }: { leaders: SimpleProfile[]; onCl
 
 function MembersDialog({
   teamId,
+  department,
   employees,
   onClose,
   onChanged,
 }: {
   teamId: string;
+  department: TeamDepartment;
   employees: ProfileWithRole[];
   onClose: () => void;
   onChanged: () => void;
@@ -469,7 +547,8 @@ function MembersDialog({
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <p>
               Một nhân viên chỉ được thuộc về 1 team tại một thời điểm. Nhân viên đang thuộc team
-              khác sẽ không xuất hiện trong danh sách thêm mới.
+              {department === "marketing" ? " Marketing" : " Sale"} khác sẽ không xuất hiện trong
+              danh sách thêm mới.
             </p>
           </div>
         </div>

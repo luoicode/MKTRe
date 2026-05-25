@@ -6,6 +6,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
   Target,
   Trash2,
@@ -493,7 +494,7 @@ export function AdminFloatingLeadsWorkspace() {
   });
   const [editForm, setEditForm] = useState<AdminLeadEditForm | null>(null);
   const normalizedRange = normalizeDateRange(range);
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["admin-floating-leads", normalizedRange.from, normalizedRange.to],
     queryFn: async () => {
       const [leads, sales, marketers] = await Promise.all([
@@ -559,6 +560,15 @@ export function AdminFloatingLeadsWorkspace() {
       }),
     [data?.leads, marketingId, saleId, search, status],
   );
+  const adminLeadStats = useMemo(
+    () => ({
+      total: visibleLeads.length,
+      unassigned: visibleLeads.filter((lead) => !lead.assigned_sale_id && !lead.is_closed).length,
+      assigned: visibleLeads.filter((lead) => !!lead.assigned_sale_id && !lead.is_closed).length,
+      closed: visibleLeads.filter((lead) => lead.is_closed).length,
+    }),
+    [visibleLeads],
+  );
   const openCreateDialog = () => {
     setCreateForm((current) => ({
       ...current,
@@ -599,7 +609,7 @@ export function AdminFloatingLeadsWorkspace() {
     <div className="space-y-4">
       <Card className="rounded-2xl border-slate-200 bg-white shadow-sm">
         <CardContent className="space-y-3 p-4">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-start 2xl:justify-between">
             <div className="flex min-w-0 items-start gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                 <Database className="h-5 w-5" />
@@ -612,10 +622,45 @@ export function AdminFloatingLeadsWorkspace() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-end gap-2 xl:justify-end">
+            <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 2xl:justify-center">
+              <AdminLeadStatCard
+                label="Tổng lead"
+                value={adminLeadStats.total}
+                className="from-slate-900 to-slate-700 text-white"
+              />
+              <AdminLeadStatCard
+                label="Chưa nhận"
+                value={adminLeadStats.unassigned}
+                className="from-amber-50 to-orange-50 text-amber-800"
+              />
+              <AdminLeadStatCard
+                label="Đã nhận"
+                value={adminLeadStats.assigned}
+                className="from-blue-50 to-cyan-50 text-blue-800"
+              />
+              <AdminLeadStatCard
+                label="Đã chốt"
+                value={adminLeadStats.closed}
+                className="from-emerald-50 to-teal-50 text-emerald-800"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-end gap-2 2xl:justify-end">
               <Button className="h-9 rounded-xl gap-2" onClick={openCreateDialog}>
                 <Plus className="h-4 w-4" />
                 Thêm số
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9 rounded-xl gap-2"
+                disabled={isFetching}
+                onClick={async () => {
+                  await refetch();
+                }}
+              >
+                <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+                Tải lại
               </Button>
               <DateRangeFilter
                 value={range}
@@ -1284,6 +1329,32 @@ function AdminSaleMetric({
       <CardContent className="p-4">
         <p className="text-xs font-semibold text-muted-foreground">{title}</p>
         <p className="mt-1 text-2xl font-black">{value}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AdminLeadStatCard({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: number;
+  className: string;
+}) {
+  return (
+    <Card
+      className={cn(
+        "min-w-[96px] overflow-hidden rounded-xl border-0 bg-gradient-to-br shadow-sm",
+        className,
+      )}
+    >
+      <CardContent className="flex items-center justify-between gap-2 px-3 py-2">
+        <div>
+          <p className="text-[11px] font-semibold leading-tight opacity-75">{label}</p>
+          <p className="text-lg font-black leading-tight">{formatSaleInteger(value)}</p>
+        </div>
       </CardContent>
     </Card>
   );

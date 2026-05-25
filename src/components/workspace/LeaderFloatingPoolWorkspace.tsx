@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Database, Loader2, Search } from "lucide-react";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
+import { RefreshButton } from "@/components/RefreshButton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -43,7 +44,12 @@ export function LeaderFloatingPoolWorkspace() {
   const [search, setSearch] = useState("");
   const normalizedRange = normalizeDateRange(range);
 
-  const { data: leads = [], isLoading } = useQuery({
+  const {
+    data: leads = [],
+    isLoading,
+    isFetching,
+    refetch,
+  } = useQuery({
     queryKey: ["leader-floating-leads", normalizedRange.from, normalizedRange.to],
     queryFn: () => fetchLeaderFloatingLeads(normalizedRange.from, normalizedRange.to),
   });
@@ -101,10 +107,18 @@ export function LeaderFloatingPoolWorkspace() {
         title="Kho thả nổi Team"
         subtitle="Theo dõi data thả nổi do team Marketing của bạn đẩy cho Sale"
         rightContent={
-          <div className="grid min-w-0 grid-cols-3 gap-2">
-            <LeaderLeadStat label="Tổng số" value={stats.total} tone="slate" />
-            <LeaderLeadStat label="Sale nhận" value={stats.assigned} tone="blue" />
-            <LeaderLeadStat label="Đã chốt" value={stats.closed} tone="green" />
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+            <RefreshButton
+              isRefreshing={isFetching}
+              onRefresh={async () => {
+                await refetch();
+              }}
+            />
+            <div className="grid min-w-0 grid-cols-3 gap-2">
+              <LeaderLeadStat label="Tổng số" value={stats.total} tone="slate" />
+              <LeaderLeadStat label="Sale nhận" value={stats.assigned} tone="blue" />
+              <LeaderLeadStat label="Đã chốt" value={stats.closed} tone="green" />
+            </div>
           </div>
         }
       />

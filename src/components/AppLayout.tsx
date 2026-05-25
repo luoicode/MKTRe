@@ -61,13 +61,13 @@ const NAV: NavItem[] = [
   { to: "/admin/kpi", label: "KPI", icon: Target, roles: ["admin"] },
   { to: "/admin/floating-pool", label: "Kho thả nổi", icon: Warehouse, roles: ["admin"] },
   { to: "/admin/users", label: "Người dùng", icon: Users, roles: ["admin"] },
-  { to: "/admin/teams", label: "Team Marketing", icon: UsersRound, roles: ["admin"] },
+  { to: "/admin/teams", label: "Quản lý team", icon: UsersRound, roles: ["admin"] },
   { to: "/admin/tasks", label: "Công việc", icon: CheckSquare, roles: ["admin"] },
   { to: "/admin/attendance", label: "Điểm danh", icon: CalendarCheck, roles: ["admin"] },
   { to: "/admin/notifications", label: "Thông báo", icon: Bell, roles: ["admin"] },
   { to: "/admin/assets", label: "Tài sản", icon: Package, roles: ["admin"] },
   { to: "/admin/ranking", label: "Ranking Marketing", icon: Trophy, roles: ["admin"] },
-  { to: "/admin/resources", label: "Hướng dẫn tân thủ", icon: BookOpen, roles: ["admin"] },
+  { to: "/admin/resources", label: "Đào tạo", icon: BookOpen, roles: ["admin"] },
 
   // Marketing Manager
   {
@@ -85,7 +85,7 @@ const NAV: NavItem[] = [
   { to: "/manager/teams", label: "Team Marketing", icon: UsersRound, roles: ["manager"] },
   {
     to: "/manager/resources",
-    label: "Hướng dẫn tân thủ",
+    label: "Đào tạo",
     icon: BookOpen,
     roles: ["manager"],
   },
@@ -105,7 +105,7 @@ const NAV: NavItem[] = [
   { to: "/leader/attendance", label: "Điểm danh", icon: CalendarCheck, roles: ["leader"] },
   { to: "/leader/assets", label: "Tài sản", icon: Package, roles: ["leader"] },
   { to: "/leader/ranking", label: "Ranking Marketing", icon: Trophy, roles: ["leader"] },
-  { to: "/leader/resources", label: "Hướng dẫn tân thủ", icon: BookOpen, roles: ["leader"] },
+  { to: "/leader/resources", label: "Đào tạo", icon: BookOpen, roles: ["leader"] },
 
   // Employee
   {
@@ -121,14 +121,14 @@ const NAV: NavItem[] = [
   { to: "/employee/attendance", label: "Điểm danh", icon: CalendarCheck, roles: ["employee"] },
   { to: "/employee/assets", label: "Tài sản", icon: Package, roles: ["employee"] },
   { to: "/employee/ranking", label: "Ranking Marketing", icon: Trophy, roles: ["employee"] },
-  { to: "/employee/resources", label: "Hướng dẫn tân thủ", icon: BookOpen, roles: ["employee"] },
+  { to: "/employee/resources", label: "Đào tạo", icon: BookOpen, roles: ["employee"] },
 
   // Sale
   { to: "/sale/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["sale"] },
   { to: "/sale/report", label: "Nhập báo cáo", icon: ClipboardList, roles: ["sale"] },
   { to: "/sale/kpi", label: "KPI", icon: Target, roles: ["sale"] },
   { to: "/sale/floating-pool", label: "Kho thả nổi", icon: Warehouse, roles: ["sale"] },
-  { to: "/sale/profile", label: "Hướng dẫn tân thủ", icon: BookOpen, roles: ["sale"] },
+  { to: "/sale/profile", label: "Đào tạo", icon: BookOpen, roles: ["sale"] },
 ];
 
 export function AppLayout({ children }: { children: ReactNode }) {

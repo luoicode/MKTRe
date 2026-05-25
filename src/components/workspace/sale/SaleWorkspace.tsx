@@ -31,6 +31,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { SaleReportForm } from "@/components/workspace/sale/SaleReportForm";
@@ -187,6 +194,8 @@ export function SaleFloatingPoolWorkspace() {
   const queryClient = useQueryClient();
   const [range, setRange] = useState<DateRangeValue>(() => initialDateRange("today"));
   const [activeLeadTab, setActiveLeadTab] = useState<"pool" | "mine">("pool");
+  const [poolStatusFilter, setPoolStatusFilter] = useState("all");
+  const [mineStatusFilter, setMineStatusFilter] = useState("all");
   const [leadDrafts, setLeadDrafts] = useState<Record<string, FloatingLeadCareDraft>>({});
   const [recentlyUpdatedLeadIds, setRecentlyUpdatedLeadIds] = useState<Set<string>>(
     () => new Set(),
@@ -234,7 +243,14 @@ export function SaleFloatingPoolWorkspace() {
       ),
     [allLeads, profile?.id, range],
   );
-  const visibleLeads = activeLeadTab === "mine" ? myLeads : poolLeads;
+  const visibleLeads = useMemo(() => {
+    const source = activeLeadTab === "mine" ? myLeads : poolLeads;
+    return source.filter((lead) =>
+      activeLeadTab === "mine"
+        ? matchesMineStatusFilter(lead, mineStatusFilter)
+        : matchesPoolStatusFilter(lead, poolStatusFilter),
+    );
+  }, [activeLeadTab, mineStatusFilter, myLeads, poolLeads, poolStatusFilter]);
   const statLeads = useMemo(() => uniqueLeads([...poolLeads, ...myLeads]), [myLeads, poolLeads]);
   const stats = useMemo(
     () => ({
@@ -400,7 +416,39 @@ export function SaleFloatingPoolWorkspace() {
             />
           </div>
         }
-        actions={<DateRangeFilter value={range} onChange={setRange} hideLabel />}
+        actions={
+          <>
+            <DateRangeFilter value={range} onChange={setRange} hideLabel />
+            <Select
+              value={activeLeadTab === "mine" ? mineStatusFilter : poolStatusFilter}
+              onValueChange={activeLeadTab === "mine" ? setMineStatusFilter : setPoolStatusFilter}
+            >
+              <SelectTrigger
+                aria-label="Tình trạng"
+                className="h-10 w-44 rounded-xl border-slate-200 bg-white text-sm font-semibold shadow-sm"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {activeLeadTab === "mine" ? (
+                  <>
+                    <SelectItem value="all">Tất cả tình trạng</SelectItem>
+                    <SelectItem value="processing">Đang xử lý</SelectItem>
+                    <SelectItem value="closed">Đã chốt</SelectItem>
+                  </>
+                ) : (
+                  <>
+                    <SelectItem value="all">Tất cả tình trạng</SelectItem>
+                    <SelectItem value="unclaimed">Chưa ai nhận</SelectItem>
+                    <SelectItem value="called_1">Đã gọi 1</SelectItem>
+                    <SelectItem value="called_2">Đã gọi 2</SelectItem>
+                    <SelectItem value="called_3">Đã gọi 3</SelectItem>
+                  </>
+                )}
+              </SelectContent>
+            </Select>
+          </>
+        }
       />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1006,6 +1054,23 @@ function getLeadCallStatusCount(lead: Pick<FloatingLeadRow, "call_1" | "call_2" 
   if (lead.call_2?.trim()) return 2;
   if (lead.call_1?.trim()) return 1;
   return 0;
+}
+
+function matchesPoolStatusFilter(lead: FloatingLeadRow, filter: string) {
+  if (filter === "all") return true;
+  const count = getLeadCallStatusCount(lead);
+  if (filter === "unclaimed") return count === 0;
+  if (filter === "called_1") return count === 1;
+  if (filter === "called_2") return count === 2;
+  if (filter === "called_3") return count === 3;
+  return true;
+}
+
+function matchesMineStatusFilter(lead: FloatingLeadRow, filter: string) {
+  if (filter === "all") return true;
+  if (filter === "processing") return !lead.is_closed;
+  if (filter === "closed") return lead.is_closed;
+  return true;
 }
 
 function uniqueLeads(leads: FloatingLeadRow[]) {

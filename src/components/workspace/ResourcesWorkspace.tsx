@@ -1031,7 +1031,7 @@ export function ResourcesWorkspace() {
       <div className="flex h-full min-h-0 items-center justify-center">
         <div className="rounded-3xl border bg-card px-8 py-7 text-center shadow-sm">
           <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
-          <div className="mt-3 text-sm font-semibold">Đang tải hướng dẫn tân thủ...</div>
+          <div className="mt-3 text-sm font-semibold">Đang tải đào tạo...</div>
           <div className="mt-1 text-xs text-muted-foreground">
             Đang đồng bộ lộ trình và tiến độ.
           </div>
@@ -1047,9 +1047,9 @@ export function ResourcesWorkspace() {
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
             <X className="h-5 w-5" />
           </div>
-          <h2 className="mt-4 text-lg font-bold">Không tải được onboarding</h2>
+          <h2 className="mt-4 text-lg font-bold">Không tải được đào tạo</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            {error instanceof Error ? error.message : "Có lỗi khi tải dữ liệu hướng dẫn tân thủ."}
+            {error instanceof Error ? error.message : "Có lỗi khi tải dữ liệu đào tạo."}
           </p>
           <Button className="mt-5 rounded-full" onClick={() => refetch()}>
             Tải lại
@@ -1069,9 +1069,7 @@ export function ResourcesWorkspace() {
             </div>
             <div className="min-w-0">
               <h1 className="text-xl font-black tracking-tight">
-                {canSwitchDepartments
-                  ? "Hướng dẫn tân thủ"
-                  : `Hướng dẫn tân thủ ${currentDepartmentLabel}`}
+                {canSwitchDepartments ? "Đào tạo" : `Đào tạo ${currentDepartmentLabel}`}
               </h1>
               <p className="mt-1 text-sm text-muted-foreground">
                 Tài liệu, quy trình và onboarding nội bộ
