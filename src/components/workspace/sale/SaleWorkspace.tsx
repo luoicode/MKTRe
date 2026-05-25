@@ -206,10 +206,25 @@ export function SaleFloatingPoolWorkspace() {
     },
   });
   const allLeads = useMemo(() => leadsQuery.data ?? [], [leadsQuery.data]);
-  const poolLeads = useMemo(
-    () => allLeads.filter((lead) => isLeadVisibleInSalePool(lead, range)),
-    [allLeads, range],
-  );
+  const poolLeads = useMemo(() => {
+    const currentSaleId = profile?.id;
+    return allLeads.filter((lead) => {
+      const hiddenReason = getSalePoolHiddenReason(lead, currentSaleId);
+      if (hiddenReason) {
+        console.debug("[sale-floating-pool][filter-out]", {
+          currentSaleId,
+          leadId: lead.id,
+          assignedSaleId: lead.assigned_sale_id,
+          claimCount: lead.claim_count,
+          blockedSaleIds: lead.blocked_sale_ids,
+          isClosed: lead.is_closed,
+          reason: hiddenReason,
+        });
+        return false;
+      }
+      return true;
+    });
+  }, [allLeads, profile?.id]);
   const myLeads = useMemo(
     () =>
       allLeads.filter(
@@ -234,10 +249,7 @@ export function SaleFloatingPoolWorkspace() {
   const currentSaleName = profile?.full_name || profile?.username || "Sale";
 
   const isLeadOwnedByCurrentSale = (lead: FloatingLeadRow) =>
-    !!profile &&
-    (lead.assigned_sale_id === profile.id ||
-      lead.closed_by === profile.id ||
-      lead.assigned_sale_name === profile.full_name);
+    !!profile && (lead.assigned_sale_id === profile.id || lead.closed_by === profile.id);
 
   const refreshLeads = () =>
     queryClient.invalidateQueries({
@@ -541,7 +553,7 @@ export function SaleFloatingPoolWorkspace() {
                           </td>
                           <td className="px-3 py-3">
                             {isPoolTab ? (
-                              <LeadPoolStatusBadge claimCount={lead.claim_count} />
+                              <LeadPoolStatusBadge lead={lead} />
                             ) : (
                               <LeadClosedCheckbox
                                 checked={draft.is_closed}
@@ -669,7 +681,7 @@ export function SaleFloatingPoolWorkspace() {
                           onChange={(value) => updateLeadField(lead, "call_3", value)}
                         />
                         {isPoolTab ? (
-                          <LeadPoolStatusBadge claimCount={lead.claim_count} />
+                          <LeadPoolStatusBadge lead={lead} />
                         ) : (
                           <>
                             <LeadClosedCheckbox
@@ -919,8 +931,8 @@ function LeadActionButton({
   );
 }
 
-function LeadPoolStatusBadge({ claimCount }: { claimCount: number }) {
-  const normalizedCount = Math.min(Math.max(claimCount, 0), 3);
+function LeadPoolStatusBadge({ lead }: { lead: FloatingLeadRow }) {
+  const normalizedCount = getLeadCallStatusCount(lead);
   const label = normalizedCount === 0 ? "Chưa ai nhận" : `Đã gọi ${normalizedCount}`;
   const styles = [
     "border-slate-200 bg-slate-50 text-slate-700",
@@ -981,12 +993,19 @@ function isLeadInDateRange(lead: FloatingLeadRow, range: DateRangeValue) {
   return lead.lead_date >= range.from && lead.lead_date <= range.to;
 }
 
-function isLeadVisibleInSalePool(lead: FloatingLeadRow, range: DateRangeValue) {
-  if (lead.is_closed || lead.assigned_sale_id) return false;
-  // "Hôm nay" is the operational pool: today's uploads plus old unclosed leads
-  // that are still available after midnight release.
-  if (range.preset === "today") return true;
-  return isLeadInDateRange(lead, range);
+function getSalePoolHiddenReason(lead: FloatingLeadRow, currentSaleId?: string) {
+  if (lead.is_closed) return "closed";
+  if (lead.assigned_sale_id) return "assigned";
+  if (lead.claim_count >= 3) return "max_claim_count";
+  if (currentSaleId && lead.blocked_sale_ids.includes(currentSaleId)) return "blocked_for_sale";
+  return null;
+}
+
+function getLeadCallStatusCount(lead: Pick<FloatingLeadRow, "call_1" | "call_2" | "call_3">) {
+  if (lead.call_3?.trim()) return 3;
+  if (lead.call_2?.trim()) return 2;
+  if (lead.call_1?.trim()) return 1;
+  return 0;
 }
 
 function uniqueLeads(leads: FloatingLeadRow[]) {

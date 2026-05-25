@@ -19,9 +19,11 @@ import { initialDateRange, type DateRangeValue } from "@/lib/dateRange";
 import {
   createMarketingFloatingLeads,
   fetchMarketingFloatingLeads,
+  getFloatingLeadDisplayStatus,
   todayYmd,
   updateMarketingFloatingLeadSource,
   validateLeadPhones,
+  type FloatingLeadDisplayStatus,
   type FloatingLeadRow,
 } from "@/lib/floatingLeads";
 import { cn } from "@/lib/utils";
@@ -46,7 +48,7 @@ export function MarketingFloatingPoolWorkspace() {
     () => ({
       total: leads.length,
       assigned: leads.filter((lead) => !!lead.assigned_sale_id).length,
-      closed: leads.filter((lead) => lead.status === "Đã bị chốt").length,
+      closed: leads.filter((lead) => lead.is_closed).length,
     }),
     [leads],
   );
@@ -288,6 +290,7 @@ function MarketingLeadRow({
   onPhoneDraftChange: (phone: string) => void;
 }) {
   const isAssigned = !!lead.assigned_sale_id;
+  const displayStatus = getFloatingLeadDisplayStatus(lead);
   return (
     <tr
       className={cn(
@@ -326,16 +329,7 @@ function MarketingLeadRow({
       <td className="px-3 py-3 text-slate-600">{lead.call_2 || "—"}</td>
       <td className="px-3 py-3 text-slate-600">{lead.call_3 || "—"}</td>
       <td className="px-3 py-3">
-        <span
-          className={cn(
-            "inline-flex rounded-full border px-2.5 py-1 text-xs font-bold",
-            lead.status === "Đã bị chốt"
-              ? "border-emerald-100 bg-emerald-50 text-emerald-700"
-              : "border-slate-200 bg-slate-50 text-slate-700",
-          )}
-        >
-          {lead.status}
-        </span>
+        <MarketingLeadStatusBadge status={displayStatus} />
       </td>
       <td className="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">
         {formatLeadUpdatedAt(lead.updated_at)}
@@ -375,6 +369,7 @@ function MarketingLeadMobileCard({
   onPhoneDraftChange: (phone: string) => void;
 }) {
   const isAssigned = !!lead.assigned_sale_id;
+  const displayStatus = getFloatingLeadDisplayStatus(lead);
   return (
     <div
       className={cn(
@@ -407,9 +402,7 @@ function MarketingLeadMobileCard({
           )}
         </div>
         <div className="flex items-center gap-2">
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
-            {lead.status}
-          </span>
+          <MarketingLeadStatusBadge status={displayStatus} />
           <MarketingLeadActionButton
             isAssigned={isAssigned}
             isEditing={isEditing}
@@ -435,6 +428,27 @@ function MarketingLeadMobileCard({
         </p>
       </div>
     </div>
+  );
+}
+
+function MarketingLeadStatusBadge({ status }: { status: FloatingLeadDisplayStatus }) {
+  const styles: Record<FloatingLeadDisplayStatus, string> = {
+    "Đã bị chốt": "border-emerald-100 bg-emerald-50 text-emerald-700",
+    "Đã gọi 1": "border-blue-100 bg-blue-50 text-blue-700",
+    "Đã gọi 2": "border-amber-100 bg-amber-50 text-amber-700",
+    "Đã gọi 3": "border-rose-100 bg-rose-50 text-rose-700",
+    "Chưa gọi": "border-slate-200 bg-slate-50 text-slate-700",
+  };
+
+  return (
+    <span
+      className={cn(
+        "inline-flex rounded-full border px-2.5 py-1 text-xs font-bold",
+        styles[status],
+      )}
+    >
+      {status}
+    </span>
   );
 }
 

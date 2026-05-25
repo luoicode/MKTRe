@@ -19,6 +19,13 @@ export type FloatingLeadCareDraft = Pick<
 
 export type FloatingLeadCallField = "call_1" | "call_2" | "call_3";
 
+export type FloatingLeadDisplayStatus =
+  | "Đã bị chốt"
+  | "Đã gọi 3"
+  | "Đã gọi 2"
+  | "Đã gọi 1"
+  | "Chưa gọi";
+
 export const floatingLeadStatuses: FloatingLeadStatus[] = [
   "Chưa gọi",
   "Không nghe máy",
@@ -40,6 +47,16 @@ export function getFloatingLeadCallSlot(lead: Pick<FloatingLeadRow, "claim_count
 export function getFloatingLeadCallField(lead: Pick<FloatingLeadRow, "claim_count">) {
   const slot = getFloatingLeadCallSlot(lead);
   return `call_${slot}` as FloatingLeadCallField;
+}
+
+export function getFloatingLeadDisplayStatus(
+  lead: Pick<FloatingLeadRow, "is_closed" | "call_1" | "call_2" | "call_3">,
+): FloatingLeadDisplayStatus {
+  if (lead.is_closed) return "Đã bị chốt";
+  if (lead.call_3?.trim()) return "Đã gọi 3";
+  if (lead.call_2?.trim()) return "Đã gọi 2";
+  if (lead.call_1?.trim()) return "Đã gọi 1";
+  return "Chưa gọi";
 }
 
 export async function fetchSaleFloatingLeads(from?: string, to?: string) {
