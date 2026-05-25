@@ -206,6 +206,103 @@ export type Database = {
         };
         Relationships: [];
       };
+      floating_leads: {
+        Row: {
+          assigned_at: string | null;
+          assigned_sale_id: string | null;
+          assigned_sale_name: string | null;
+          blocked_sale_ids: string[];
+          call_1: string | null;
+          call_2: string | null;
+          call_3: string | null;
+          claim_count: number;
+          closed_at: string | null;
+          closed_by: string | null;
+          created_at: string;
+          created_by: string;
+          created_by_name: string | null;
+          id: string;
+          is_closed: boolean;
+          last_claimed_at: string | null;
+          lead_date: string;
+          note: string | null;
+          phone: string;
+          source: string | null;
+          status: string;
+          updated_at: string;
+        };
+        Insert: {
+          assigned_at?: string | null;
+          assigned_sale_id?: string | null;
+          assigned_sale_name?: string | null;
+          blocked_sale_ids?: string[];
+          call_1?: string | null;
+          call_2?: string | null;
+          call_3?: string | null;
+          claim_count?: number;
+          closed_at?: string | null;
+          closed_by?: string | null;
+          created_at?: string;
+          created_by: string;
+          created_by_name?: string | null;
+          id?: string;
+          is_closed?: boolean;
+          last_claimed_at?: string | null;
+          lead_date?: string;
+          note?: string | null;
+          phone: string;
+          source?: string | null;
+          status?: string;
+          updated_at?: string;
+        };
+        Update: {
+          assigned_at?: string | null;
+          assigned_sale_id?: string | null;
+          assigned_sale_name?: string | null;
+          blocked_sale_ids?: string[];
+          call_1?: string | null;
+          call_2?: string | null;
+          call_3?: string | null;
+          claim_count?: number;
+          closed_at?: string | null;
+          closed_by?: string | null;
+          created_at?: string;
+          created_by?: string;
+          created_by_name?: string | null;
+          id?: string;
+          is_closed?: boolean;
+          last_claimed_at?: string | null;
+          lead_date?: string;
+          note?: string | null;
+          phone?: string;
+          source?: string | null;
+          status?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "floating_leads_assigned_sale_id_fkey";
+            columns: ["assigned_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "floating_leads_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "floating_leads_closed_by_fkey";
+            columns: ["closed_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       daily_checklist_completions: {
         Row: {
           completed_at: string;
@@ -1557,6 +1654,74 @@ export type Database = {
           },
         ];
       };
+      sale_reports: {
+        Row: {
+          created_at: string;
+          floating_data_closed: number;
+          floating_data_received: number;
+          floating_revenue: number;
+          id: string;
+          new_customer_revenue: number;
+          new_data_closed: number;
+          new_data_received: number;
+          note: string | null;
+          old_customers: number;
+          report_date: string;
+          slot_key: string;
+          slot_time: string;
+          status: string;
+          submitted_at: string | null;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          floating_data_closed?: number;
+          floating_data_received?: number;
+          floating_revenue?: number;
+          id?: string;
+          new_customer_revenue?: number;
+          new_data_closed?: number;
+          new_data_received?: number;
+          note?: string | null;
+          old_customers?: number;
+          report_date: string;
+          slot_key: string;
+          slot_time: string;
+          status?: string;
+          submitted_at?: string | null;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          floating_data_closed?: number;
+          floating_data_received?: number;
+          floating_revenue?: number;
+          id?: string;
+          new_customer_revenue?: number;
+          new_data_closed?: number;
+          new_data_received?: number;
+          note?: string | null;
+          old_customers?: number;
+          report_date?: string;
+          slot_key?: string;
+          slot_time?: string;
+          status?: string;
+          submitted_at?: string | null;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "sale_reports_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       slot_reports: {
         Row: {
           ads_cost: number;
@@ -2224,6 +2389,10 @@ export type Database = {
       leads_team: { Args: { _team_id: string }; Returns: boolean };
       manager_leads_team: { Args: { _team_id: string }; Returns: boolean };
       manager_leads_user: { Args: { _user_id: string }; Returns: boolean };
+      release_expired_floating_leads_for_sale: {
+        Args: { p_sale_id: string };
+        Returns: number;
+      };
       telegram_review_leave_request: {
         Args: { _approved: boolean; _leave_request_id: string; _reviewer_profile_id: string };
         Returns: Json;
@@ -2253,7 +2422,7 @@ export type Database = {
       user_in_my_team: { Args: { _user_id: string }; Returns: boolean };
     };
     Enums: {
-      app_role: "admin" | "leader" | "employee" | "manager";
+      app_role: "admin" | "leader" | "employee" | "manager" | "sale";
       kpi_period: "day" | "week" | "month";
       report_status: "draft" | "submitted" | "approved" | "rejected" | "locked";
       task_status: "todo" | "in_progress" | "rejected" | "pending_review" | "done";
@@ -2385,7 +2554,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "leader", "employee", "manager"],
+      app_role: ["admin", "leader", "employee", "manager", "sale"],
       kpi_period: ["day", "week", "month"],
       report_status: ["draft", "submitted", "approved", "rejected", "locked"],
       task_status: ["todo", "in_progress", "rejected", "pending_review", "done"],

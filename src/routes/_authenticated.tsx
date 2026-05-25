@@ -27,12 +27,14 @@ function AuthGuard() {
       manager: "/manager",
       leader: "/leader",
       employee: "/employee",
+      sale: "/sale",
     };
     const home: Record<AppRole, string> = {
       admin: "/admin/dashboard",
       manager: "/manager/dashboard",
       leader: "/leader/dashboard",
       employee: "/employee/dashboard",
+      sale: "/sale/dashboard",
     };
     const sharedAuthenticatedPaths = ["/notifications"];
     if (sharedAuthenticatedPaths.some((sharedPath) => path === sharedPath)) return;

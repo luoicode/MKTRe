@@ -87,7 +87,7 @@ function LeaderSlotReport() {
   return (
     <div className="w-full min-w-0 space-y-4">
       <WorkspacePageHeader
-        title="Báo cáo tổng"
+        title="Báo cáo Marketing"
         subtitle="Xem chính xác báo cáo lũy kế của từng nhân viên tại đúng mốc giờ. Không cộng dồn nhiều khung giờ."
         actions={
           <>

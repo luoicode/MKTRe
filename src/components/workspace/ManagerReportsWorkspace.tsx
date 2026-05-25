@@ -84,8 +84,8 @@ export function ManagerReportsWorkspace() {
   return (
     <div className="space-y-5 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden">
       <WorkspacePageHeader
-        title="Báo cáo tổng"
-        subtitle="Xem báo cáo trong phạm vi team được phân công."
+        title="Báo cáo Marketing"
+        subtitle="Xem báo cáo Marketing trong phạm vi team được phân công."
         actions={
           <div className="flex flex-wrap items-end gap-2">
             <DateRangeFilter value={range} onChange={setRange} />
@@ -131,7 +131,7 @@ export function ManagerReportsWorkspace() {
                     <TableHead>Loại</TableHead>
                     <TableHead>Cập nhật cuối</TableHead>
                     <TableHead>Team</TableHead>
-                    <TableHead>Nhân viên</TableHead>
+                    <TableHead>Nhân viên Marketing</TableHead>
                     <TableHead>Ads</TableHead>
                     <TableHead>Data</TableHead>
                     <TableHead>Đơn</TableHead>

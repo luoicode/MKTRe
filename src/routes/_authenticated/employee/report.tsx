@@ -133,8 +133,8 @@ function shouldAutoAdvance(
   canBypassSlotLock = false,
 ) {
   if (!active || !nextId || active.id === nextId) return false;
-  if (canBypassSlotLock) return false;
   if (isLocked(active, now)) return true;
+  if (canBypassSlotLock) return false;
   const next = slots.find((slot) => slot.id === nextId);
   return !!next && isOpen(next, now) && !isOpen(active, now);
 }
@@ -185,7 +185,7 @@ function canEditReport(
   existing?: { status: string | null; submitted_at?: string | null } | null,
   canBypassSlotLock = false,
 ) {
-  if (canBypassSlotLock) return true;
+  if (canBypassSlotLock && !isLocked(slot, now)) return true;
   if (!isOpen(slot, now)) return false;
   if (!existing) return true;
   const status = String(existing.status ?? "");
@@ -214,15 +214,6 @@ function slotVisual(
       badge: "bg-emerald-100 text-emerald-700",
     };
   }
-  if (canBypassSlotLock) {
-    return {
-      label: "Đang mở",
-      icon: Clock3,
-      className:
-        "border-emerald-200 bg-emerald-50 text-emerald-700 data-[state=active]:bg-emerald-600 data-[state=active]:text-white",
-      badge: "bg-emerald-100 text-emerald-700",
-    };
-  }
   const state = slotTimingState(slot, now);
   if (state === "locked") {
     return {
@@ -231,6 +222,15 @@ function slotVisual(
       className:
         "border-red-200 bg-red-50 text-red-700 opacity-90 data-[state=active]:bg-red-600 data-[state=active]:text-white",
       badge: "bg-red-100 text-red-700",
+    };
+  }
+  if (canBypassSlotLock) {
+    return {
+      label: "Đang mở",
+      icon: Clock3,
+      className:
+        "border-emerald-200 bg-emerald-50 text-emerald-700 data-[state=active]:bg-emerald-600 data-[state=active]:text-white",
+      badge: "bg-emerald-100 text-emerald-700",
     };
   }
   if (state === "open") {

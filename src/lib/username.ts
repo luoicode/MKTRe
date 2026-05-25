@@ -4,5 +4,5 @@ export function usernameToEmail(username: string): string {
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9._-]/g, "_");
-  return `${sanitized}@mktre.local`;
+  return `${sanitized}@mkt.local`;
 }

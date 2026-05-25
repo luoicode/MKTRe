@@ -16,10 +16,19 @@ const ROLE_HOME: Record<AppRole, string> = {
   manager: "/manager/dashboard",
   leader: "/leader/dashboard",
   employee: "/employee/dashboard",
+  sale: "/sale/dashboard",
 };
-const INTERNAL_AUTH_DOMAIN = "mktre.local";
-const SUPPORTED_AUTH_DOMAINS = ["dasnotri.com"];
-const ALLOWED_AUTH_DOMAINS = new Set([INTERNAL_AUTH_DOMAIN, ...SUPPORTED_AUTH_DOMAINS]);
+const MARKETING_AUTH_DOMAIN = "mkt.local";
+const ADMIN_AUTH_DOMAIN = "admin.local";
+const SALE_AUTH_DOMAIN = "sale.local";
+const LEGACY_AUTH_DOMAINS = ["mktre.local", "dasnotri.com"];
+const SUPPORTED_AUTH_DOMAINS = [
+  MARKETING_AUTH_DOMAIN,
+  SALE_AUTH_DOMAIN,
+  ADMIN_AUTH_DOMAIN,
+  ...LEGACY_AUTH_DOMAINS,
+];
+const ALLOWED_AUTH_DOMAINS = new Set(SUPPORTED_AUTH_DOMAINS);
 
 function normalizeLoginName(value: string) {
   const raw = value.trim().toLowerCase();
@@ -44,7 +53,9 @@ function getLoginCandidates(value: string) {
   if (!loginName) return { candidates: [], error: null };
 
   const candidates = [
-    `${loginName}@${INTERNAL_AUTH_DOMAIN}`,
+    `${loginName}@${MARKETING_AUTH_DOMAIN}`,
+    `${loginName}@${SALE_AUTH_DOMAIN}`,
+    `${loginName}@${ADMIN_AUTH_DOMAIN}`,
     ...SUPPORTED_AUTH_DOMAINS.map((domain) => `${loginName}@${domain}`),
   ];
 

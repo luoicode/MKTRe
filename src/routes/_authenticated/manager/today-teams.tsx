@@ -233,7 +233,7 @@ function ManagerTodayTeams() {
     <div className="w-full min-w-0 space-y-2 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden">
       <WorkspacePageHeader
         className="screenshot-hide"
-        title="Báo cáo tổng"
+        title="Báo cáo Marketing"
         subtitle={`${formatDateVN(normalizedRange.from)} - ${formatDateVN(normalizedRange.to)}`}
         actions={
           <>

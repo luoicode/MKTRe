@@ -480,7 +480,7 @@ export function KpiWorkspace() {
   return (
     <PageShell>
       <WorkspacePageHeader
-        title={role === "employee" || role === "leader" ? "KPI cá nhân" : "KPI"}
+        title={role === "employee" || role === "leader" ? "KPI Marketing cá nhân" : "KPI Marketing"}
         subtitle={`${profile?.full_name ?? "Nhân sự"} · ${periodLabel}`}
         actions={
           <>

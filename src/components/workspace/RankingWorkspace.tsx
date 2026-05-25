@@ -82,7 +82,7 @@ export function RankingWorkspace() {
     <div className="space-y-4 md:flex md:h-full md:min-h-0 md:flex-col md:gap-4 md:space-y-0 md:overflow-hidden">
       <WorkspacePageHeader
         icon={<Trophy className="h-5 w-5" />}
-        title="Xếp hạng"
+        title="Ranking Marketing"
         badge={
           <div className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
             <Trophy className="h-3.5 w-3.5" />

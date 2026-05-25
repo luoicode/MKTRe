@@ -239,8 +239,8 @@ export function AnalyticsDashboard({
   return (
     <PageShell className="gap-3">
       <WorkspacePageHeader
-        title="Tổng quan"
-        subtitle={`${scope === "admin" ? "Toàn hệ thống" : scope === "manager" ? "TP Marketing" : scope === "leader" ? "Leader team" : "Cá nhân"} · Doanh thu, ads, KPI và hiệu suất theo khoảng ngày.`}
+        title="Dashboard Marketing"
+        subtitle={`${scope === "admin" ? "Toàn hệ thống Marketing" : scope === "manager" ? "TP Marketing" : scope === "leader" ? "Leader Marketing" : "Cá nhân Marketing"} · Doanh thu, ads, KPI và hiệu suất theo khoảng ngày.`}
         actions={
           <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row md:items-end">
             <SalaryHeaderSummary estimate={salaryEstimate} />
@@ -271,7 +271,7 @@ export function AnalyticsDashboard({
           ) : null}
 
           <OverviewSection
-            title={scope === "leader" ? "Tổng quan team" : "Tổng quan"}
+            title={scope === "leader" ? "Tổng quan Team Marketing" : "Tổng quan Marketing"}
             subtitle={
               scope === "leader"
                 ? "Tổng hợp toàn team, bao gồm cả báo cáo của Leader"

@@ -31,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Plus, Edit } from "lucide-react";
+import { Edit, Loader2, Megaphone, Plus, ShieldCheck, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
 import { RefreshButton } from "@/components/RefreshButton";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -39,7 +39,8 @@ import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({ component: AdminUsers });
 
-type AppRole = "admin" | "manager" | "leader" | "employee";
+type AppRole = "admin" | "manager" | "leader" | "employee" | "sale";
+type Department = "marketing" | "sale" | "admin";
 type UserStatus = "active" | "inactive";
 type FixedAssetType = "hotline" | "odoo";
 type FixedAssetForm = Record<FixedAssetType, string>;
@@ -65,8 +66,45 @@ interface TeamOption {
 const ROLE_LABELS: Record<AppRole, string> = {
   admin: "Admin",
   manager: "Trưởng phòng Marketing",
-  leader: "Leader",
-  employee: "Nhân viên",
+  leader: "Leader Marketing",
+  employee: "Nhân viên Marketing",
+  sale: "Nhân viên Sale",
+};
+
+const DEPARTMENT_OPTIONS: Array<{
+  value: Department;
+  label: string;
+  description: string;
+  icon: typeof Megaphone;
+}> = [
+  {
+    value: "marketing",
+    label: "Marketing",
+    description: "Báo cáo, KPI, công việc và team Marketing",
+    icon: Megaphone,
+  },
+  {
+    value: "sale",
+    label: "Sale",
+    description: "Khu Sale độc lập, dùng dữ liệu mock phase này",
+    icon: ShoppingBag,
+  },
+  {
+    value: "admin",
+    label: "Admin/Quản trị",
+    description: "Quản trị hệ thống Workspace MIZ",
+    icon: ShieldCheck,
+  },
+];
+
+const ROLE_OPTIONS_BY_DEPARTMENT: Record<Department, Array<{ value: AppRole; label: string }>> = {
+  marketing: [
+    { value: "manager", label: "Trưởng phòng Marketing" },
+    { value: "leader", label: "Leader Marketing" },
+    { value: "employee", label: "Nhân viên Marketing" },
+  ],
+  sale: [{ value: "sale", label: "Nhân viên Sale" }],
+  admin: [{ value: "admin", label: "Admin" }],
 };
 
 const NONE_TEAM = "__none__";
@@ -109,6 +147,32 @@ function normalizeInternalLoginPreview(value: string) {
   const raw = value.trim().toLowerCase();
   const localPart = raw.includes("@") ? raw.split("@")[0] : raw;
   return localPart.replace(/\s+/g, "").replace(/[^a-z0-9._-]/g, "_");
+}
+
+function departmentForRole(role: AppRole | null | undefined): Department {
+  if (role === "sale") return "sale";
+  if (role === "admin") return "admin";
+  return "marketing";
+}
+
+function defaultRoleForDepartment(department: Department): AppRole {
+  return ROLE_OPTIONS_BY_DEPARTMENT[department][0].value;
+}
+
+function roleOptionsForDepartment(department: Department) {
+  return ROLE_OPTIONS_BY_DEPARTMENT[department];
+}
+
+function loginDomainForDepartment(department: Department) {
+  if (department === "sale") return "sale.local";
+  if (department === "admin") return "admin.local";
+  return "mkt.local";
+}
+
+function internalLoginEmailPreview(value: string, department: Department) {
+  const loginName = normalizeInternalLoginPreview(value);
+  if (!loginName) return "";
+  return `${loginName}@${loginDomainForDepartment(department)}`;
 }
 
 function normalizePhone(value: string) {
@@ -337,7 +401,8 @@ function CreateUserDialog({
     username: "",
     phone: "",
     password: "",
-    role: "employee",
+    department: "marketing" as Department,
+    role: "employee" as AppRole,
     status: "active",
     team_id: "",
     fixedAssets: emptyFixedAssets,
@@ -351,7 +416,7 @@ function CreateUserDialog({
       return;
     }
     if (form.role === "employee" && !form.team_id) {
-      toast.error("Chọn team cho employee để tạo checklist onboarding");
+      toast.error("Chọn team cho Nhân viên Marketing để tạo checklist onboarding");
       return;
     }
     setLoading(true);
@@ -416,6 +481,19 @@ function CreateUserDialog({
         <DialogTitle>Tạo tài khoản mới</DialogTitle>
       </DialogHeader>
       <div className="space-y-3">
+        <DepartmentRoleFields
+          department={form.department}
+          role={form.role}
+          onDepartmentChange={(department) =>
+            setForm({
+              ...form,
+              department,
+              role: defaultRoleForDepartment(department),
+              team_id: department === "marketing" ? form.team_id : "",
+            })
+          }
+          onRoleChange={(role) => setForm({ ...form, role })}
+        />
         <div>
           <Label>Họ tên</Label>
           <Input
@@ -432,7 +510,7 @@ function CreateUserDialog({
           />
           <p className="mt-1 text-xs text-muted-foreground">
             {normalizeInternalLoginPreview(form.username)
-              ? `Hệ thống sẽ tạo tài khoản đăng nhập: ${normalizeInternalLoginPreview(form.username)}`
+              ? `Hệ thống sẽ tạo tài khoản đăng nhập: ${internalLoginEmailPreview(form.username, form.department)}`
               : "Chỉ nhập tài khoản nội bộ, không nhập email thật."}
           </p>
         </div>
@@ -453,23 +531,9 @@ function CreateUserDialog({
             inputMode="tel"
           />
         </div>
-        <div>
-          <Label>Vai trò</Label>
-          <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="admin">Admin</SelectItem>
-              <SelectItem value="manager">Trưởng phòng Marketing</SelectItem>
-              <SelectItem value="leader">Leader Team</SelectItem>
-              <SelectItem value="employee">Nhân viên</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
         {(form.role === "employee" || form.role === "leader") && (
           <div>
-            <Label>Team</Label>
+            <Label>Team Marketing</Label>
             <Select
               value={form.team_id || NONE_TEAM}
               onValueChange={(v) => setForm({ ...form, team_id: v === NONE_TEAM ? "" : v })}
@@ -479,7 +543,7 @@ function CreateUserDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={NONE_TEAM}>
-                  {form.role === "employee" ? "Chọn team" : "Không thuộc team"}
+                  {form.role === "employee" ? "Chọn Team Marketing" : "Không thuộc Team Marketing"}
                 </SelectItem>
                 {teams.map((team) => (
                   <SelectItem key={team.id} value={team.id}>
@@ -502,10 +566,12 @@ function CreateUserDialog({
             </SelectContent>
           </Select>
         </div>
-        <FixedAssetsFields
-          value={form.fixedAssets}
-          onChange={(fixedAssets) => setForm({ ...form, fixedAssets })}
-        />
+        {form.department === "marketing" && (
+          <FixedAssetsFields
+            value={form.fixedAssets}
+            onChange={(fixedAssets) => setForm({ ...form, fixedAssets })}
+          />
+        )}
       </div>
       <DialogFooter>
         <Button onClick={submit} disabled={loading}>
@@ -532,6 +598,7 @@ function EditUserDialog({
     full_name: user.full_name,
     username: user.username,
     phone: user.phone ?? "",
+    department: departmentForRole(user.role),
     role: user.role ?? ("employee" as AppRole),
     status: user.status,
     team_id: user.activeTeamId ?? "",
@@ -662,6 +729,19 @@ function EditUserDialog({
         <DialogTitle>Chỉnh sửa: {user.username}</DialogTitle>
       </DialogHeader>
       <div className="space-y-3">
+        <DepartmentRoleFields
+          department={form.department}
+          role={form.role}
+          onDepartmentChange={(department) =>
+            setForm({
+              ...form,
+              department,
+              role: defaultRoleForDepartment(department),
+              team_id: department === "marketing" ? form.team_id : "",
+            })
+          }
+          onRoleChange={(role) => setForm({ ...form, role })}
+        />
         <div>
           <Label>Họ tên</Label>
           <Input
@@ -686,23 +766,9 @@ function EditUserDialog({
             inputMode="tel"
           />
         </div>
-        <div>
-          <Label>Vai trò</Label>
-          <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v as AppRole })}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="admin">Admin</SelectItem>
-              <SelectItem value="manager">Trưởng phòng Marketing</SelectItem>
-              <SelectItem value="leader">Leader Team</SelectItem>
-              <SelectItem value="employee">Nhân viên</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
         {canAssignTeam && (
           <div>
-            <Label>Team</Label>
+            <Label>Team Marketing</Label>
             <Select
               value={form.team_id || NONE_TEAM}
               onValueChange={(v) => setForm({ ...form, team_id: v === NONE_TEAM ? "" : v })}
@@ -711,7 +777,7 @@ function EditUserDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NONE_TEAM}>Không thuộc team</SelectItem>
+                <SelectItem value={NONE_TEAM}>Không thuộc Team Marketing</SelectItem>
                 {teams.map((team) => (
                   <SelectItem key={team.id} value={team.id}>
                     {team.name}
@@ -736,11 +802,13 @@ function EditUserDialog({
             </SelectContent>
           </Select>
         </div>
-        <FixedAssetsFields
-          value={form.fixedAssets}
-          disabled={assetsLoading}
-          onChange={(fixedAssets) => setForm({ ...form, fixedAssets })}
-        />
+        {form.department === "marketing" && (
+          <FixedAssetsFields
+            value={form.fixedAssets}
+            disabled={assetsLoading}
+            onChange={(fixedAssets) => setForm({ ...form, fixedAssets })}
+          />
+        )}
       </div>
       <DialogFooter>
         <Button onClick={submit} disabled={loading}>
@@ -748,6 +816,70 @@ function EditUserDialog({
         </Button>
       </DialogFooter>
     </DialogContent>
+  );
+}
+
+function DepartmentRoleFields({
+  department,
+  role,
+  onDepartmentChange,
+  onRoleChange,
+}: {
+  department: Department;
+  role: AppRole;
+  onDepartmentChange: (department: Department) => void;
+  onRoleChange: (role: AppRole) => void;
+}) {
+  const roleOptions = roleOptionsForDepartment(department);
+  return (
+    <div className="space-y-3 rounded-2xl border bg-slate-50/70 p-3">
+      <div>
+        <Label>Bộ phận</Label>
+        <Select
+          value={department}
+          onValueChange={(value) => onDepartmentChange(value as Department)}
+        >
+          <SelectTrigger className="mt-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {DEPARTMENT_OPTIONS.map((option) => {
+              const Icon = option.icon;
+              return (
+                <SelectItem key={option.value} value={option.value}>
+                  <span className="inline-flex items-center gap-2">
+                    <Icon className="h-4 w-4" />
+                    {option.label}
+                  </span>
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {DEPARTMENT_OPTIONS.find((option) => option.value === department)?.description}
+        </p>
+      </div>
+
+      <div>
+        <Label>Vai trò</Label>
+        <Select value={role} onValueChange={(value) => onRoleChange(value as AppRole)}>
+          <SelectTrigger className="mt-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {roleOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Domain đăng nhập: @{loginDomainForDepartment(department)}
+        </p>
+      </div>
+    </div>
   );
 }
 

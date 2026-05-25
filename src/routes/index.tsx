@@ -19,6 +19,7 @@ function Index() {
     else if (role === "manager") navigate({ to: "/manager/dashboard" });
     else if (role === "leader") navigate({ to: "/leader/dashboard" });
     else if (role === "employee") navigate({ to: "/employee/dashboard" });
+    else if (role === "sale") navigate({ to: "/sale/dashboard" });
     else navigate({ to: "/login" });
   }, [loading, session, role, navigate]);
 

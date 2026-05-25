@@ -18,6 +18,9 @@ import {
   Bell,
   CalendarCheck,
   Menu,
+  ClipboardList,
+  Warehouse,
+  Info,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -53,27 +56,32 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   // Admin
-  { to: "/admin/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["admin"] },
-  { to: "/admin/reports", label: "Báo cáo", icon: FileText, roles: ["admin"] },
-  { to: "/admin/kpi", label: "KPI", icon: Target, roles: ["admin"] },
+  { to: "/admin/dashboard", label: "Dashboard Marketing", icon: LayoutDashboard, roles: ["admin"] },
+  { to: "/admin/reports", label: "Báo cáo Marketing", icon: FileText, roles: ["admin"] },
+  { to: "/admin/kpi", label: "KPI Marketing", icon: Target, roles: ["admin"] },
   { to: "/admin/users", label: "Người dùng", icon: Users, roles: ["admin"] },
-  { to: "/admin/teams", label: "Team", icon: UsersRound, roles: ["admin"] },
+  { to: "/admin/teams", label: "Team Marketing", icon: UsersRound, roles: ["admin"] },
   { to: "/admin/tasks", label: "Công việc", icon: CheckSquare, roles: ["admin"] },
   { to: "/admin/attendance", label: "Điểm danh", icon: CalendarCheck, roles: ["admin"] },
   { to: "/admin/notifications", label: "Thông báo", icon: Bell, roles: ["admin"] },
   { to: "/admin/assets", label: "Tài sản", icon: Package, roles: ["admin"] },
-  { to: "/admin/ranking", label: "Xếp hạng", icon: Trophy, roles: ["admin"] },
+  { to: "/admin/ranking", label: "Ranking Marketing", icon: Trophy, roles: ["admin"] },
   { to: "/admin/resources", label: "Hướng dẫn tân thủ", icon: BookOpen, roles: ["admin"] },
 
   // Marketing Manager
-  { to: "/manager/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["manager"] },
-  { to: "/manager/kpi", label: "KPI", icon: Target, roles: ["manager"] },
+  {
+    to: "/manager/dashboard",
+    label: "Dashboard Marketing",
+    icon: LayoutDashboard,
+    roles: ["manager"],
+  },
+  { to: "/manager/kpi", label: "KPI Marketing", icon: Target, roles: ["manager"] },
   { to: "/manager/tasks", label: "Công việc", icon: CheckSquare, roles: ["manager"] },
   { to: "/manager/attendance", label: "Điểm danh", icon: CalendarCheck, roles: ["manager"] },
   { to: "/manager/notifications", label: "Thông báo", icon: Bell, roles: ["manager"] },
   { to: "/manager/assets", label: "Tài sản", icon: Package, roles: ["manager"] },
-  { to: "/manager/ranking", label: "Xếp hạng", icon: Trophy, roles: ["manager"] },
-  { to: "/manager/teams", label: "Team", icon: UsersRound, roles: ["manager"] },
+  { to: "/manager/ranking", label: "Ranking Marketing", icon: Trophy, roles: ["manager"] },
+  { to: "/manager/teams", label: "Team Marketing", icon: UsersRound, roles: ["manager"] },
   {
     to: "/manager/resources",
     label: "Hướng dẫn tân thủ",
@@ -82,25 +90,43 @@ const NAV: NavItem[] = [
   },
 
   // Leader
-  { to: "/leader/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["leader"] },
+  {
+    to: "/leader/dashboard",
+    label: "Dashboard Marketing",
+    icon: LayoutDashboard,
+    roles: ["leader"],
+  },
   { to: "/leader/report-slots", label: "Nhập báo cáo", icon: FileText, roles: ["leader"] },
-  { to: "/leader/daily-report", label: "Báo cáo", icon: FileText, roles: ["leader"] },
-  { to: "/leader/kpi", label: "KPI", icon: Target, roles: ["leader"] },
+  { to: "/leader/daily-report", label: "Báo cáo Marketing", icon: FileText, roles: ["leader"] },
+  { to: "/leader/kpi", label: "KPI Marketing", icon: Target, roles: ["leader"] },
   { to: "/leader/tasks", label: "Công việc", icon: CheckSquare, roles: ["leader"] },
   { to: "/leader/attendance", label: "Điểm danh", icon: CalendarCheck, roles: ["leader"] },
   { to: "/leader/assets", label: "Tài sản", icon: Package, roles: ["leader"] },
-  { to: "/leader/ranking", label: "Xếp hạng", icon: Trophy, roles: ["leader"] },
+  { to: "/leader/ranking", label: "Ranking Marketing", icon: Trophy, roles: ["leader"] },
   { to: "/leader/resources", label: "Hướng dẫn tân thủ", icon: BookOpen, roles: ["leader"] },
 
   // Employee
-  { to: "/employee/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["employee"] },
+  {
+    to: "/employee/dashboard",
+    label: "Dashboard Marketing",
+    icon: LayoutDashboard,
+    roles: ["employee"],
+  },
   { to: "/employee/report", label: "Nhập báo cáo", icon: FileText, roles: ["employee"] },
-  { to: "/employee/kpi", label: "KPI", icon: Target, roles: ["employee"] },
+  { to: "/employee/floating-pool", label: "Kho thả nổi", icon: Warehouse, roles: ["employee"] },
+  { to: "/employee/kpi", label: "KPI Marketing", icon: Target, roles: ["employee"] },
   { to: "/employee/tasks", label: "Công việc", icon: CheckSquare, roles: ["employee"] },
   { to: "/employee/attendance", label: "Điểm danh", icon: CalendarCheck, roles: ["employee"] },
   { to: "/employee/assets", label: "Tài sản", icon: Package, roles: ["employee"] },
-  { to: "/employee/ranking", label: "Xếp hạng", icon: Trophy, roles: ["employee"] },
+  { to: "/employee/ranking", label: "Ranking Marketing", icon: Trophy, roles: ["employee"] },
   { to: "/employee/resources", label: "Hướng dẫn tân thủ", icon: BookOpen, roles: ["employee"] },
+
+  // Sale
+  { to: "/sale/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["sale"] },
+  { to: "/sale/report", label: "Nhập báo cáo", icon: ClipboardList, roles: ["sale"] },
+  { to: "/sale/kpi", label: "KPI", icon: Target, roles: ["sale"] },
+  { to: "/sale/floating-pool", label: "Kho thả nổi", icon: Warehouse, roles: ["sale"] },
+  { to: "/sale/profile", label: "Thông tin", icon: Info, roles: ["sale"] },
 ];
 
 export function AppLayout({ children }: { children: ReactNode }) {

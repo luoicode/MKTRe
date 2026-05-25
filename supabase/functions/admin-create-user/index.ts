@@ -9,7 +9,9 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const INTERNAL_AUTH_DOMAIN = "mktre.local";
+const MARKETING_AUTH_DOMAIN = "mkt.local";
+const ADMIN_AUTH_DOMAIN = "admin.local";
+const SALE_AUTH_DOMAIN = "sale.local";
 
 function normalizeLoginName(value: string) {
   const raw = value.trim().toLowerCase();
@@ -64,7 +66,7 @@ Deno.serve(async (req: Request) => {
       full_name: string;
       username: string;
       password: string;
-      role: "admin" | "manager" | "leader" | "employee";
+      role: "admin" | "manager" | "leader" | "employee" | "sale";
       status?: "active" | "inactive";
     };
 
@@ -88,7 +90,13 @@ Deno.serve(async (req: Request) => {
         { status: 400, headers: corsHeaders },
       );
     }
-    const email = `${normalizedUsername}@${INTERNAL_AUTH_DOMAIN}`;
+    const emailDomain =
+      role === "sale"
+        ? SALE_AUTH_DOMAIN
+        : role === "admin"
+          ? ADMIN_AUTH_DOMAIN
+          : MARKETING_AUTH_DOMAIN;
+    const email = `${normalizedUsername}@${emailDomain}`;
 
     const { data: existingProfile, error: existingProfileError } = await admin
       .from("profiles")

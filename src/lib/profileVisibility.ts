@@ -1,6 +1,6 @@
 import type { Tables } from "@/integrations/supabase/types";
 
-export type AppRole = "admin" | "manager" | "leader" | "employee" | null | undefined;
+export type AppRole = "admin" | "manager" | "leader" | "employee" | "sale" | null | undefined;
 export type ProfileVisibilityStatus = Pick<Tables<"profiles">, "status">;
 
 export function canSeeInactiveProfiles(role: AppRole) {

@@ -2,13 +2,14 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { supabase } from "@/integrations/supabase/client";
 import type { Session, User } from "@supabase/supabase-js";
 
-export type AppRole = "admin" | "manager" | "leader" | "employee";
+export type AppRole = "admin" | "manager" | "leader" | "employee" | "sale";
 
 export const ROLE_LABELS: Record<AppRole, string> = {
   admin: "Admin",
-  manager: "Trưởng Phòng Marketing",
-  leader: "Leader Team",
-  employee: "Nhân viên",
+  manager: "Trưởng phòng Marketing",
+  leader: "Leader Marketing",
+  employee: "Nhân viên Marketing",
+  sale: "Nhân viên Sale",
 };
 
 export interface Profile {

@@ -13,6 +13,11 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
+import { Route as AuthenticatedSaleReportRouteImport } from './routes/_authenticated/sale/report'
+import { Route as AuthenticatedSaleProfileRouteImport } from './routes/_authenticated/sale/profile'
+import { Route as AuthenticatedSaleKpiRouteImport } from './routes/_authenticated/sale/kpi'
+import { Route as AuthenticatedSaleFloatingPoolRouteImport } from './routes/_authenticated/sale/floating-pool'
+import { Route as AuthenticatedSaleDashboardRouteImport } from './routes/_authenticated/sale/dashboard'
 import { Route as AuthenticatedManagerTodayTeamsRouteImport } from './routes/_authenticated/manager/today-teams'
 import { Route as AuthenticatedManagerTeamsRouteImport } from './routes/_authenticated/manager/teams'
 import { Route as AuthenticatedManagerTasksRouteImport } from './routes/_authenticated/manager/tasks'
@@ -50,6 +55,7 @@ import { Route as AuthenticatedEmployeeRankingRouteImport } from './routes/_auth
 import { Route as AuthenticatedEmployeeProfileRouteImport } from './routes/_authenticated/employee/profile'
 import { Route as AuthenticatedEmployeeKpiRouteImport } from './routes/_authenticated/employee/kpi'
 import { Route as AuthenticatedEmployeeHistoryRouteImport } from './routes/_authenticated/employee/history'
+import { Route as AuthenticatedEmployeeFloatingPoolRouteImport } from './routes/_authenticated/employee/floating-pool'
 import { Route as AuthenticatedEmployeeDashboardRouteImport } from './routes/_authenticated/employee/dashboard'
 import { Route as AuthenticatedEmployeeAttendanceRouteImport } from './routes/_authenticated/employee/attendance'
 import { Route as AuthenticatedEmployeeAssetsRouteImport } from './routes/_authenticated/employee/assets'
@@ -85,6 +91,34 @@ const AuthenticatedNotificationsRoute =
   AuthenticatedNotificationsRouteImport.update({
     id: '/notifications',
     path: '/notifications',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedSaleReportRoute = AuthenticatedSaleReportRouteImport.update({
+  id: '/sale/report',
+  path: '/sale/report',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedSaleProfileRoute =
+  AuthenticatedSaleProfileRouteImport.update({
+    id: '/sale/profile',
+    path: '/sale/profile',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedSaleKpiRoute = AuthenticatedSaleKpiRouteImport.update({
+  id: '/sale/kpi',
+  path: '/sale/kpi',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedSaleFloatingPoolRoute =
+  AuthenticatedSaleFloatingPoolRouteImport.update({
+    id: '/sale/floating-pool',
+    path: '/sale/floating-pool',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedSaleDashboardRoute =
+  AuthenticatedSaleDashboardRouteImport.update({
+    id: '/sale/dashboard',
+    path: '/sale/dashboard',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedManagerTodayTeamsRoute =
@@ -307,6 +341,12 @@ const AuthenticatedEmployeeHistoryRoute =
     path: '/employee/history',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedEmployeeFloatingPoolRoute =
+  AuthenticatedEmployeeFloatingPoolRouteImport.update({
+    id: '/employee/floating-pool',
+    path: '/employee/floating-pool',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedEmployeeDashboardRoute =
   AuthenticatedEmployeeDashboardRouteImport.update({
     id: '/employee/dashboard',
@@ -420,6 +460,7 @@ export interface FileRoutesByFullPath {
   '/employee/assets': typeof AuthenticatedEmployeeAssetsRoute
   '/employee/attendance': typeof AuthenticatedEmployeeAttendanceRoute
   '/employee/dashboard': typeof AuthenticatedEmployeeDashboardRoute
+  '/employee/floating-pool': typeof AuthenticatedEmployeeFloatingPoolRoute
   '/employee/history': typeof AuthenticatedEmployeeHistoryRoute
   '/employee/kpi': typeof AuthenticatedEmployeeKpiRoute
   '/employee/profile': typeof AuthenticatedEmployeeProfileRoute
@@ -457,6 +498,11 @@ export interface FileRoutesByFullPath {
   '/manager/tasks': typeof AuthenticatedManagerTasksRoute
   '/manager/teams': typeof AuthenticatedManagerTeamsRoute
   '/manager/today-teams': typeof AuthenticatedManagerTodayTeamsRoute
+  '/sale/dashboard': typeof AuthenticatedSaleDashboardRoute
+  '/sale/floating-pool': typeof AuthenticatedSaleFloatingPoolRoute
+  '/sale/kpi': typeof AuthenticatedSaleKpiRoute
+  '/sale/profile': typeof AuthenticatedSaleProfileRoute
+  '/sale/report': typeof AuthenticatedSaleReportRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -478,6 +524,7 @@ export interface FileRoutesByTo {
   '/employee/assets': typeof AuthenticatedEmployeeAssetsRoute
   '/employee/attendance': typeof AuthenticatedEmployeeAttendanceRoute
   '/employee/dashboard': typeof AuthenticatedEmployeeDashboardRoute
+  '/employee/floating-pool': typeof AuthenticatedEmployeeFloatingPoolRoute
   '/employee/history': typeof AuthenticatedEmployeeHistoryRoute
   '/employee/kpi': typeof AuthenticatedEmployeeKpiRoute
   '/employee/profile': typeof AuthenticatedEmployeeProfileRoute
@@ -515,6 +562,11 @@ export interface FileRoutesByTo {
   '/manager/tasks': typeof AuthenticatedManagerTasksRoute
   '/manager/teams': typeof AuthenticatedManagerTeamsRoute
   '/manager/today-teams': typeof AuthenticatedManagerTodayTeamsRoute
+  '/sale/dashboard': typeof AuthenticatedSaleDashboardRoute
+  '/sale/floating-pool': typeof AuthenticatedSaleFloatingPoolRoute
+  '/sale/kpi': typeof AuthenticatedSaleKpiRoute
+  '/sale/profile': typeof AuthenticatedSaleProfileRoute
+  '/sale/report': typeof AuthenticatedSaleReportRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -538,6 +590,7 @@ export interface FileRoutesById {
   '/_authenticated/employee/assets': typeof AuthenticatedEmployeeAssetsRoute
   '/_authenticated/employee/attendance': typeof AuthenticatedEmployeeAttendanceRoute
   '/_authenticated/employee/dashboard': typeof AuthenticatedEmployeeDashboardRoute
+  '/_authenticated/employee/floating-pool': typeof AuthenticatedEmployeeFloatingPoolRoute
   '/_authenticated/employee/history': typeof AuthenticatedEmployeeHistoryRoute
   '/_authenticated/employee/kpi': typeof AuthenticatedEmployeeKpiRoute
   '/_authenticated/employee/profile': typeof AuthenticatedEmployeeProfileRoute
@@ -575,6 +628,11 @@ export interface FileRoutesById {
   '/_authenticated/manager/tasks': typeof AuthenticatedManagerTasksRoute
   '/_authenticated/manager/teams': typeof AuthenticatedManagerTeamsRoute
   '/_authenticated/manager/today-teams': typeof AuthenticatedManagerTodayTeamsRoute
+  '/_authenticated/sale/dashboard': typeof AuthenticatedSaleDashboardRoute
+  '/_authenticated/sale/floating-pool': typeof AuthenticatedSaleFloatingPoolRoute
+  '/_authenticated/sale/kpi': typeof AuthenticatedSaleKpiRoute
+  '/_authenticated/sale/profile': typeof AuthenticatedSaleProfileRoute
+  '/_authenticated/sale/report': typeof AuthenticatedSaleReportRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -598,6 +656,7 @@ export interface FileRouteTypes {
     | '/employee/assets'
     | '/employee/attendance'
     | '/employee/dashboard'
+    | '/employee/floating-pool'
     | '/employee/history'
     | '/employee/kpi'
     | '/employee/profile'
@@ -635,6 +694,11 @@ export interface FileRouteTypes {
     | '/manager/tasks'
     | '/manager/teams'
     | '/manager/today-teams'
+    | '/sale/dashboard'
+    | '/sale/floating-pool'
+    | '/sale/kpi'
+    | '/sale/profile'
+    | '/sale/report'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -656,6 +720,7 @@ export interface FileRouteTypes {
     | '/employee/assets'
     | '/employee/attendance'
     | '/employee/dashboard'
+    | '/employee/floating-pool'
     | '/employee/history'
     | '/employee/kpi'
     | '/employee/profile'
@@ -693,6 +758,11 @@ export interface FileRouteTypes {
     | '/manager/tasks'
     | '/manager/teams'
     | '/manager/today-teams'
+    | '/sale/dashboard'
+    | '/sale/floating-pool'
+    | '/sale/kpi'
+    | '/sale/profile'
+    | '/sale/report'
   id:
     | '__root__'
     | '/'
@@ -715,6 +785,7 @@ export interface FileRouteTypes {
     | '/_authenticated/employee/assets'
     | '/_authenticated/employee/attendance'
     | '/_authenticated/employee/dashboard'
+    | '/_authenticated/employee/floating-pool'
     | '/_authenticated/employee/history'
     | '/_authenticated/employee/kpi'
     | '/_authenticated/employee/profile'
@@ -752,6 +823,11 @@ export interface FileRouteTypes {
     | '/_authenticated/manager/tasks'
     | '/_authenticated/manager/teams'
     | '/_authenticated/manager/today-teams'
+    | '/_authenticated/sale/dashboard'
+    | '/_authenticated/sale/floating-pool'
+    | '/_authenticated/sale/kpi'
+    | '/_authenticated/sale/profile'
+    | '/_authenticated/sale/report'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -788,6 +864,41 @@ declare module '@tanstack/react-router' {
       path: '/notifications'
       fullPath: '/notifications'
       preLoaderRoute: typeof AuthenticatedNotificationsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/sale/report': {
+      id: '/_authenticated/sale/report'
+      path: '/sale/report'
+      fullPath: '/sale/report'
+      preLoaderRoute: typeof AuthenticatedSaleReportRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/sale/profile': {
+      id: '/_authenticated/sale/profile'
+      path: '/sale/profile'
+      fullPath: '/sale/profile'
+      preLoaderRoute: typeof AuthenticatedSaleProfileRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/sale/kpi': {
+      id: '/_authenticated/sale/kpi'
+      path: '/sale/kpi'
+      fullPath: '/sale/kpi'
+      preLoaderRoute: typeof AuthenticatedSaleKpiRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/sale/floating-pool': {
+      id: '/_authenticated/sale/floating-pool'
+      path: '/sale/floating-pool'
+      fullPath: '/sale/floating-pool'
+      preLoaderRoute: typeof AuthenticatedSaleFloatingPoolRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/sale/dashboard': {
+      id: '/_authenticated/sale/dashboard'
+      path: '/sale/dashboard'
+      fullPath: '/sale/dashboard'
+      preLoaderRoute: typeof AuthenticatedSaleDashboardRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/manager/today-teams': {
@@ -1049,6 +1160,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedEmployeeHistoryRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/employee/floating-pool': {
+      id: '/_authenticated/employee/floating-pool'
+      path: '/employee/floating-pool'
+      fullPath: '/employee/floating-pool'
+      preLoaderRoute: typeof AuthenticatedEmployeeFloatingPoolRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/employee/dashboard': {
       id: '/_authenticated/employee/dashboard'
       path: '/employee/dashboard'
@@ -1182,6 +1300,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedEmployeeAssetsRoute: typeof AuthenticatedEmployeeAssetsRoute
   AuthenticatedEmployeeAttendanceRoute: typeof AuthenticatedEmployeeAttendanceRoute
   AuthenticatedEmployeeDashboardRoute: typeof AuthenticatedEmployeeDashboardRoute
+  AuthenticatedEmployeeFloatingPoolRoute: typeof AuthenticatedEmployeeFloatingPoolRoute
   AuthenticatedEmployeeHistoryRoute: typeof AuthenticatedEmployeeHistoryRoute
   AuthenticatedEmployeeKpiRoute: typeof AuthenticatedEmployeeKpiRoute
   AuthenticatedEmployeeProfileRoute: typeof AuthenticatedEmployeeProfileRoute
@@ -1219,6 +1338,11 @@ interface AuthenticatedRouteChildren {
   AuthenticatedManagerTasksRoute: typeof AuthenticatedManagerTasksRoute
   AuthenticatedManagerTeamsRoute: typeof AuthenticatedManagerTeamsRoute
   AuthenticatedManagerTodayTeamsRoute: typeof AuthenticatedManagerTodayTeamsRoute
+  AuthenticatedSaleDashboardRoute: typeof AuthenticatedSaleDashboardRoute
+  AuthenticatedSaleFloatingPoolRoute: typeof AuthenticatedSaleFloatingPoolRoute
+  AuthenticatedSaleKpiRoute: typeof AuthenticatedSaleKpiRoute
+  AuthenticatedSaleProfileRoute: typeof AuthenticatedSaleProfileRoute
+  AuthenticatedSaleReportRoute: typeof AuthenticatedSaleReportRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -1240,6 +1364,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedEmployeeAssetsRoute: AuthenticatedEmployeeAssetsRoute,
   AuthenticatedEmployeeAttendanceRoute: AuthenticatedEmployeeAttendanceRoute,
   AuthenticatedEmployeeDashboardRoute: AuthenticatedEmployeeDashboardRoute,
+  AuthenticatedEmployeeFloatingPoolRoute:
+    AuthenticatedEmployeeFloatingPoolRoute,
   AuthenticatedEmployeeHistoryRoute: AuthenticatedEmployeeHistoryRoute,
   AuthenticatedEmployeeKpiRoute: AuthenticatedEmployeeKpiRoute,
   AuthenticatedEmployeeProfileRoute: AuthenticatedEmployeeProfileRoute,
@@ -1278,6 +1404,11 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedManagerTasksRoute: AuthenticatedManagerTasksRoute,
   AuthenticatedManagerTeamsRoute: AuthenticatedManagerTeamsRoute,
   AuthenticatedManagerTodayTeamsRoute: AuthenticatedManagerTodayTeamsRoute,
+  AuthenticatedSaleDashboardRoute: AuthenticatedSaleDashboardRoute,
+  AuthenticatedSaleFloatingPoolRoute: AuthenticatedSaleFloatingPoolRoute,
+  AuthenticatedSaleKpiRoute: AuthenticatedSaleKpiRoute,
+  AuthenticatedSaleProfileRoute: AuthenticatedSaleProfileRoute,
+  AuthenticatedSaleReportRoute: AuthenticatedSaleReportRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
