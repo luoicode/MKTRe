@@ -69,6 +69,7 @@ import { Route as AuthenticatedAdminProfileRouteImport } from './routes/_authent
 import { Route as AuthenticatedAdminNotificationsRouteImport } from './routes/_authenticated/admin/notifications'
 import { Route as AuthenticatedAdminManagerAssignmentsRouteImport } from './routes/_authenticated/admin/manager-assignments'
 import { Route as AuthenticatedAdminKpiRouteImport } from './routes/_authenticated/admin/kpi'
+import { Route as AuthenticatedAdminFloatingPoolRouteImport } from './routes/_authenticated/admin/floating-pool'
 import { Route as AuthenticatedAdminDashboardRouteImport } from './routes/_authenticated/admin/dashboard'
 import { Route as AuthenticatedAdminAttendanceRouteImport } from './routes/_authenticated/admin/attendance'
 import { Route as AuthenticatedAdminAssetsRouteImport } from './routes/_authenticated/admin/assets'
@@ -421,6 +422,12 @@ const AuthenticatedAdminKpiRoute = AuthenticatedAdminKpiRouteImport.update({
   path: '/admin/kpi',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAdminFloatingPoolRoute =
+  AuthenticatedAdminFloatingPoolRouteImport.update({
+    id: '/admin/floating-pool',
+    path: '/admin/floating-pool',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminDashboardRoute =
   AuthenticatedAdminDashboardRouteImport.update({
     id: '/admin/dashboard',
@@ -447,6 +454,7 @@ export interface FileRoutesByFullPath {
   '/admin/assets': typeof AuthenticatedAdminAssetsRoute
   '/admin/attendance': typeof AuthenticatedAdminAttendanceRoute
   '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
+  '/admin/floating-pool': typeof AuthenticatedAdminFloatingPoolRoute
   '/admin/kpi': typeof AuthenticatedAdminKpiRoute
   '/admin/manager-assignments': typeof AuthenticatedAdminManagerAssignmentsRoute
   '/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
@@ -511,6 +519,7 @@ export interface FileRoutesByTo {
   '/admin/assets': typeof AuthenticatedAdminAssetsRoute
   '/admin/attendance': typeof AuthenticatedAdminAttendanceRoute
   '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
+  '/admin/floating-pool': typeof AuthenticatedAdminFloatingPoolRoute
   '/admin/kpi': typeof AuthenticatedAdminKpiRoute
   '/admin/manager-assignments': typeof AuthenticatedAdminManagerAssignmentsRoute
   '/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
@@ -577,6 +586,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/assets': typeof AuthenticatedAdminAssetsRoute
   '/_authenticated/admin/attendance': typeof AuthenticatedAdminAttendanceRoute
   '/_authenticated/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
+  '/_authenticated/admin/floating-pool': typeof AuthenticatedAdminFloatingPoolRoute
   '/_authenticated/admin/kpi': typeof AuthenticatedAdminKpiRoute
   '/_authenticated/admin/manager-assignments': typeof AuthenticatedAdminManagerAssignmentsRoute
   '/_authenticated/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
@@ -643,6 +653,7 @@ export interface FileRouteTypes {
     | '/admin/assets'
     | '/admin/attendance'
     | '/admin/dashboard'
+    | '/admin/floating-pool'
     | '/admin/kpi'
     | '/admin/manager-assignments'
     | '/admin/notifications'
@@ -707,6 +718,7 @@ export interface FileRouteTypes {
     | '/admin/assets'
     | '/admin/attendance'
     | '/admin/dashboard'
+    | '/admin/floating-pool'
     | '/admin/kpi'
     | '/admin/manager-assignments'
     | '/admin/notifications'
@@ -772,6 +784,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/assets'
     | '/_authenticated/admin/attendance'
     | '/_authenticated/admin/dashboard'
+    | '/_authenticated/admin/floating-pool'
     | '/_authenticated/admin/kpi'
     | '/_authenticated/admin/manager-assignments'
     | '/_authenticated/admin/notifications'
@@ -1258,6 +1271,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminKpiRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/floating-pool': {
+      id: '/_authenticated/admin/floating-pool'
+      path: '/admin/floating-pool'
+      fullPath: '/admin/floating-pool'
+      preLoaderRoute: typeof AuthenticatedAdminFloatingPoolRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/dashboard': {
       id: '/_authenticated/admin/dashboard'
       path: '/admin/dashboard'
@@ -1287,6 +1307,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminAssetsRoute: typeof AuthenticatedAdminAssetsRoute
   AuthenticatedAdminAttendanceRoute: typeof AuthenticatedAdminAttendanceRoute
   AuthenticatedAdminDashboardRoute: typeof AuthenticatedAdminDashboardRoute
+  AuthenticatedAdminFloatingPoolRoute: typeof AuthenticatedAdminFloatingPoolRoute
   AuthenticatedAdminKpiRoute: typeof AuthenticatedAdminKpiRoute
   AuthenticatedAdminManagerAssignmentsRoute: typeof AuthenticatedAdminManagerAssignmentsRoute
   AuthenticatedAdminNotificationsRoute: typeof AuthenticatedAdminNotificationsRoute
@@ -1350,6 +1371,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminAssetsRoute: AuthenticatedAdminAssetsRoute,
   AuthenticatedAdminAttendanceRoute: AuthenticatedAdminAttendanceRoute,
   AuthenticatedAdminDashboardRoute: AuthenticatedAdminDashboardRoute,
+  AuthenticatedAdminFloatingPoolRoute: AuthenticatedAdminFloatingPoolRoute,
   AuthenticatedAdminKpiRoute: AuthenticatedAdminKpiRoute,
   AuthenticatedAdminManagerAssignmentsRoute:
     AuthenticatedAdminManagerAssignmentsRoute,

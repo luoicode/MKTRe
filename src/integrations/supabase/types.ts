@@ -689,9 +689,12 @@ export type Database = {
           created_at: string;
           created_by: string | null;
           description: string | null;
+          department: string;
           document_type: string | null;
+          file_type: string;
           id: string;
           is_active: boolean;
+          is_pinned: boolean;
           link_url: string | null;
           sort_order: number;
           title: string;
@@ -702,9 +705,12 @@ export type Database = {
           created_at?: string;
           created_by?: string | null;
           description?: string | null;
+          department?: string;
           document_type?: string | null;
+          file_type?: string;
           id?: string;
           is_active?: boolean;
+          is_pinned?: boolean;
           link_url?: string | null;
           sort_order?: number;
           title: string;
@@ -715,9 +721,12 @@ export type Database = {
           created_at?: string;
           created_by?: string | null;
           description?: string | null;
+          department?: string;
           document_type?: string | null;
+          file_type?: string;
           id?: string;
           is_active?: boolean;
+          is_pinned?: boolean;
           link_url?: string | null;
           sort_order?: number;
           title?: string;

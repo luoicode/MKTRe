@@ -56,9 +56,10 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   // Admin
-  { to: "/admin/dashboard", label: "Dashboard Marketing", icon: LayoutDashboard, roles: ["admin"] },
-  { to: "/admin/reports", label: "Báo cáo Marketing", icon: FileText, roles: ["admin"] },
-  { to: "/admin/kpi", label: "KPI Marketing", icon: Target, roles: ["admin"] },
+  { to: "/admin/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["admin"] },
+  { to: "/admin/reports", label: "Báo cáo", icon: FileText, roles: ["admin"] },
+  { to: "/admin/kpi", label: "KPI", icon: Target, roles: ["admin"] },
+  { to: "/admin/floating-pool", label: "Kho thả nổi", icon: Warehouse, roles: ["admin"] },
   { to: "/admin/users", label: "Người dùng", icon: Users, roles: ["admin"] },
   { to: "/admin/teams", label: "Team Marketing", icon: UsersRound, roles: ["admin"] },
   { to: "/admin/tasks", label: "Công việc", icon: CheckSquare, roles: ["admin"] },
@@ -126,7 +127,7 @@ const NAV: NavItem[] = [
   { to: "/sale/report", label: "Nhập báo cáo", icon: ClipboardList, roles: ["sale"] },
   { to: "/sale/kpi", label: "KPI", icon: Target, roles: ["sale"] },
   { to: "/sale/floating-pool", label: "Kho thả nổi", icon: Warehouse, roles: ["sale"] },
-  { to: "/sale/profile", label: "Thông tin", icon: Info, roles: ["sale"] },
+  { to: "/sale/profile", label: "Hướng dẫn tân thủ", icon: BookOpen, roles: ["sale"] },
 ];
 
 export function AppLayout({ children }: { children: ReactNode }) {

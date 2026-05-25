@@ -5,16 +5,22 @@ import {
   Award,
   BookOpenCheck,
   CheckCircle2,
+  Download,
   ExternalLink,
+  FileSpreadsheet,
   FileText,
   GraduationCap,
   HelpCircle,
+  Link2,
   Loader2,
   Lock,
+  Megaphone,
   Pencil,
+  Pin,
   Plus,
   RotateCcw,
   Save,
+  Search,
   Send,
   ShieldCheck,
   Trash2,
@@ -47,7 +53,6 @@ import type { Json, Tables, TablesInsert, TablesUpdate } from "@/integrations/su
 import { useAuth } from "@/lib/auth";
 import { insertNotificationsWithTelegram } from "@/lib/telegram";
 import { cn } from "@/lib/utils";
-import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 
 type OnboardingSection = Tables<"onboarding_sections">;
 type OnboardingCard = Tables<"onboarding_cards">;
@@ -61,6 +66,9 @@ type TeamMembership = Pick<Tables<"team_memberships">, "team_id" | "user_id" | "
 type QuestionType = "text" | "multiple_choice" | "checkbox";
 type AnswerDraft = Record<string, string | string[]>;
 type OnboardingAnswerStatus = "locked" | "open" | "submitted" | "approved" | "rejected";
+type InfoDepartment = "marketing" | "sale";
+type InternalDocumentFileType = "pdf" | "docx" | "xlsx" | "link" | "announcement";
+type InternalDocumentFilter = "all" | InternalDocumentFileType | "pinned" | "recent";
 
 type CardFormState = {
   id: string;
@@ -87,12 +95,15 @@ type QuestionFormState = {
 
 type DocumentFormState = {
   id: string;
+  department: InfoDepartment;
   title: string;
   description: string;
   link_url: string;
   document_type: string;
+  file_type: InternalDocumentFileType;
   sort_order: number;
   is_active: boolean;
+  is_pinned: boolean;
 };
 
 const SECTION_KEYS = ["intro", "training", "advanced"] as const;
@@ -127,13 +138,40 @@ const emptyQuestionForm: QuestionFormState = {
 
 const emptyDocumentForm: DocumentFormState = {
   id: "",
+  department: "marketing",
   title: "",
   description: "",
   link_url: "",
   document_type: "Tài liệu",
+  file_type: "link",
   sort_order: 0,
   is_active: true,
+  is_pinned: false,
 };
+
+const departmentTabs: Array<{ value: InfoDepartment; label: string; description: string }> = [
+  {
+    value: "marketing",
+    label: "Marketing",
+    description: "Quy trình ads, KPI, content, báo cáo và onboarding MKT",
+  },
+  {
+    value: "sale",
+    label: "Sale",
+    description: "Quy trình nhận lead, script gọi, Odoo, KPI và onboarding Sale",
+  },
+];
+
+const documentTypeFilters: Array<{ value: InternalDocumentFilter; label: string }> = [
+  { value: "all", label: "Tất cả" },
+  { value: "pdf", label: "PDF" },
+  { value: "docx", label: "Word" },
+  { value: "xlsx", label: "Excel" },
+  { value: "link", label: "Link" },
+  { value: "announcement", label: "Thông báo" },
+  { value: "pinned", label: "Ghim" },
+  { value: "recent", label: "Mới cập nhật" },
+];
 
 export function ResourcesWorkspace() {
   const { profile, role } = useAuth();
@@ -141,7 +179,16 @@ export function ResourcesWorkspace() {
   const isAdmin = role === "admin";
   const isEmployee = role === "employee";
   const canViewProgress = role === "admin" || role === "manager" || role === "leader";
+  const canManageDocuments = role === "admin" || role === "leader";
+  const canSwitchDepartments = isAdmin;
+  const canQueryAllDepartments = role === "admin" || role === "manager";
+  const allowedDepartment: InfoDepartment = role === "sale" ? "sale" : "marketing";
 
+  const [activeDepartment, setActiveDepartment] = useState<InfoDepartment>(
+    role === "sale" ? "sale" : "marketing",
+  );
+  const [documentTypeFilter, setDocumentTypeFilter] = useState<InternalDocumentFilter>("all");
+  const [documentSearch, setDocumentSearch] = useState("");
   const [selectedCard, setSelectedCard] = useState<OnboardingCard | null>(null);
   const [cardDialogOpen, setCardDialogOpen] = useState(false);
   const [questionDialogOpen, setQuestionDialogOpen] = useState(false);
@@ -154,6 +201,13 @@ export function ResourcesWorkspace() {
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
   const [progressSearch, setProgressSearch] = useState("");
   const [progressStatus, setProgressStatus] = useState("all");
+  const currentDepartment = canSwitchDepartments ? activeDepartment : allowedDepartment;
+
+  useEffect(() => {
+    if (!canSwitchDepartments && activeDepartment !== allowedDepartment) {
+      setActiveDepartment(allowedDepartment);
+    }
+  }, [activeDepartment, allowedDepartment, canSwitchDepartments]);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["onboarding-workspace", role, profile?.id],
@@ -174,24 +228,34 @@ export function ResourcesWorkspace() {
         .select("*")
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true });
-      let documentsQuery = supabase
-        .from("onboarding_documents")
-        .select("*")
-        .order("sort_order", { ascending: true })
-        .order("created_at", { ascending: true });
+      const buildDocumentsQuery = (withDepartmentFilter: boolean) => {
+        let query = supabase
+          .from("onboarding_documents")
+          .select("*")
+          .order("sort_order", { ascending: true })
+          .order("created_at", { ascending: true });
+
+        if (!isAdmin) {
+          query = query.eq("is_active", true);
+        }
+        if (!canQueryAllDepartments && withDepartmentFilter) {
+          query = query.eq("department", allowedDepartment);
+        }
+
+        return query;
+      };
 
       if (!isAdmin) {
         sectionsQuery = sectionsQuery.eq("is_active", true);
         cardsQuery = cardsQuery.eq("is_active", true);
         questionsQuery = questionsQuery.eq("is_active", true);
-        documentsQuery = documentsQuery.eq("is_active", true);
       }
 
       const [
         sectionsResult,
         cardsResult,
         questionsResult,
-        documentsResult,
+        initialDocumentsResult,
         progressResult,
         answersResult,
         allProgressResult,
@@ -203,7 +267,7 @@ export function ResourcesWorkspace() {
         sectionsQuery,
         cardsQuery,
         questionsQuery,
-        documentsQuery,
+        buildDocumentsQuery(true),
         supabase.from("onboarding_card_progress").select("*").eq("profile_id", profile!.id),
         supabase.from("onboarding_answers").select("*").eq("profile_id", profile!.id),
         canViewProgress
@@ -228,6 +292,30 @@ export function ResourcesWorkspace() {
           .select("team_id, user_id, is_active")
           .eq("is_active", true),
       ]);
+
+      let documentsResult = initialDocumentsResult;
+      if (documentsResult.error && isDocumentDepartmentSchemaError(documentsResult.error)) {
+        if (!canQueryAllDepartments && allowedDepartment === "sale") {
+          console.warn(
+            "[onboarding-documents] department column is not ready; returning empty sale documents",
+            documentsResult.error.message,
+          );
+          documentsResult = {
+            data: [],
+            error: null,
+            count: null,
+            status: 200,
+            statusText: "OK",
+            success: true,
+          };
+        } else {
+          console.warn(
+            "[onboarding-documents] department column is not ready; falling back to legacy marketing documents",
+            documentsResult.error.message,
+          );
+          documentsResult = await buildDocumentsQuery(false);
+        }
+      }
 
       const firstError =
         sectionsResult.error ??
@@ -284,6 +372,36 @@ export function ResourcesWorkspace() {
   const documents = data?.documents ?? EMPTY_DOCUMENTS;
   const progress = data?.progress ?? EMPTY_PROGRESS;
   const answers = data?.answers ?? EMPTY_ANSWERS;
+  const currentDepartmentLabel = getDepartmentLabel(currentDepartment);
+  const visibleDocuments = useMemo(() => {
+    const keyword = documentSearch.trim().toLowerCase();
+    return documents
+      .filter((document) => getDocumentDepartment(document) === currentDepartment)
+      .filter((document) => {
+        const fileType = getDocumentFileType(document);
+        const matchesType =
+          documentTypeFilter === "all" ||
+          fileType === documentTypeFilter ||
+          (documentTypeFilter === "pinned" && document.is_pinned) ||
+          (documentTypeFilter === "recent" && isRecentlyUpdated(document.updated_at));
+        const matchesSearch =
+          !keyword ||
+          document.title.toLowerCase().includes(keyword) ||
+          (document.description ?? "").toLowerCase().includes(keyword) ||
+          (document.document_type ?? "").toLowerCase().includes(keyword);
+        return matchesType && matchesSearch;
+      })
+      .sort(
+        (a, b) =>
+          Number(b.is_pinned ?? false) - Number(a.is_pinned ?? false) ||
+          (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+      );
+  }, [currentDepartment, documentSearch, documentTypeFilter, documents]);
+  const pinnedDocuments = useMemo(
+    () => visibleDocuments.filter((document) => document.is_pinned).slice(0, 6),
+    [visibleDocuments],
+  );
 
   const progressByCard = useMemo(
     () => new Map(progress.map((item) => [item.card_id, item])),
@@ -520,14 +638,17 @@ export function ResourcesWorkspace() {
       document
         ? {
             id: document.id,
+            department: getDocumentDepartment(document),
             title: document.title,
             description: document.description ?? "",
             link_url: document.link_url ?? "",
             document_type: document.document_type ?? "Tài liệu",
+            file_type: getDocumentFileType(document),
             sort_order: document.sort_order ?? 0,
             is_active: document.is_active,
+            is_pinned: document.is_pinned ?? false,
           }
-        : emptyDocumentForm,
+        : { ...emptyDocumentForm, department: currentDepartment },
     );
     setDocumentDialogOpen(true);
   };
@@ -630,12 +751,15 @@ export function ResourcesWorkspace() {
       return;
     }
     const payload: TablesUpdate<"onboarding_documents"> = {
+      department: canSwitchDepartments ? documentForm.department : currentDepartment,
       title: documentForm.title.trim(),
       description: documentForm.description.trim() || null,
       link_url: documentForm.link_url.trim() || null,
       document_type: documentForm.document_type.trim() || null,
+      file_type: documentForm.file_type,
       sort_order: Number(documentForm.sort_order) || 0,
       is_active: documentForm.is_active,
+      is_pinned: documentForm.is_pinned,
       updated_by: profile?.id,
     };
 
@@ -937,249 +1061,297 @@ export function ResourcesWorkspace() {
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col gap-4 overflow-hidden">
-      <WorkspacePageHeader
-        icon={<GraduationCap className="h-5 w-5" />}
-        title="Hướng dẫn tân thủ"
-        subtitle="Lộ trình onboarding, đào tạo và văn bản cần đọc cho nhân sự mới."
-        badge={
-          <Badge
-            className={cn(
-              "rounded-full px-4 py-2 text-sm shadow-sm",
-              certificateReady
-                ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100"
-                : "bg-indigo-100 text-indigo-700 hover:bg-indigo-100",
-            )}
-          >
-            {certificateReady ? (
-              <>
-                <Award className="mr-1.5 h-4 w-4" /> Đã được chứng nhận
-              </>
-            ) : (
-              `${completedCards}/${totalCards}`
-            )}
-          </Badge>
-        }
-        actions={
-          <>
-            {isAdmin && (
-              <Button variant="outline" onClick={() => openDocumentForm()}>
-                <Plus className="mr-2 h-4 w-4" /> Tài liệu
-              </Button>
-            )}
-          </>
-        }
-        className="overflow-hidden backdrop-blur supports-[backdrop-filter]:bg-background/85"
-      >
-        <div className="h-1.5 bg-muted">
-          <div
-            className={cn(
-              "h-full transition-all",
-              certificateReady ? "bg-emerald-500" : "bg-indigo-500",
-            )}
-            style={{ width: `${progressPercent}%` }}
-          />
-        </div>
-      </WorkspacePageHeader>
-
-      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
-        {sections.map((section, index) => {
-          const sectionCards = learningCardsBySection.get(section.id) ?? [];
-          const sectionQuestions = questionsBySection.get(section.id) ?? [];
-          const sectionAnswer = answerBySection.get(section.id);
-          const answerStatus = getAnswerStatus(sectionAnswer);
-          const needsReview = isEmployee && isSectionReviewRequired(section);
-          const unlocked = visibility.sectionUnlocked.get(section.id) === true;
-          const sectionCompletedCount = sectionCards.filter(
-            (card) => progressByCard.get(card.id)?.completed_at,
-          ).length;
-          const sectionCardsComplete =
-            sectionCards.length > 0 && sectionCompletedCount === sectionCards.length;
-          const quizDone =
-            sectionQuestions.length === 0 || isSectionQuizApproved(section, sectionAnswer);
-          const sectionComplete = sectionCardsComplete && quizDone;
-          const sectionPercent =
-            sectionCards.length > 0
-              ? Math.round((sectionCompletedCount / sectionCards.length) * 100)
-              : 0;
-          return (
-            <section
-              key={section.id}
-              className={cn(
-                "overflow-hidden rounded-3xl border bg-card shadow-sm",
-                isEmployee && !unlocked && "bg-muted/30",
-              )}
-            >
-              <div className="border-b bg-gradient-to-br from-background via-background to-muted/35 p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-background shadow-sm ring-1 ring-border">
-                        <SectionIcon index={index} />
-                      </div>
-                      <div>
-                        <h2 className="text-xl font-bold">{section.title}</h2>
-                        <p className="mt-0.5 text-sm text-muted-foreground">
-                          {section.description ?? "Click vào từng thẻ để xem chi tiết"}
-                        </p>
-                      </div>
-                      <SectionStatusBadge
-                        locked={isEmployee && !unlocked}
-                        complete={sectionComplete}
-                        unlocked={unlocked}
-                        answerStatus={needsReview ? answerStatus : undefined}
-                      />
-                    </div>
-                    <div className="mt-4 flex max-w-xl items-center gap-3">
-                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className={cn(
-                            "h-full rounded-full transition-all",
-                            sectionComplete ? "bg-emerald-500" : "bg-indigo-500",
-                          )}
-                          style={{ width: `${sectionPercent}%` }}
-                        />
-                      </div>
-                      <span className="text-xs font-semibold text-muted-foreground">
-                        {sectionCompletedCount}/{sectionCards.length || 0}
-                      </span>
-                    </div>
-                  </div>
-                  {isAdmin && (
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => openQuestionForm(section.id)}
-                      >
-                        <Plus className="mr-2 h-4 w-4" /> Câu hỏi
-                      </Button>
-                      <Button size="sm" onClick={() => openCardForm(section.id)}>
-                        <Plus className="mr-2 h-4 w-4" /> Thêm thẻ
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="p-5">
-                {sectionCards.length ? (
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    {sectionCards.map((card, cardIndex) => {
-                      const completed = !!progressByCard.get(card.id)?.completed_at;
-                      const cardUnlocked = visibility.cardUnlocked.get(card.id) === true;
-                      return (
-                        <OnboardingCardItem
-                          key={card.id}
-                          card={card}
-                          step={cardIndex + 1}
-                          locked={isEmployee && !cardUnlocked}
-                          completed={completed}
-                          canEdit={isAdmin}
-                          onOpen={() => {
-                            if (isEmployee && !cardUnlocked) {
-                              toast.warning("Bạn cần hoàn thành thẻ trước đó");
-                              return;
-                            }
-                            setSelectedCard(card);
-                          }}
-                          onEdit={() => openCardForm(section.id, card)}
-                          onDelete={() => deleteCard(card.id)}
-                        />
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <EmptyState text="Chưa có thẻ giới thiệu." />
-                )}
-
-                {isEmployee &&
-                  unlocked &&
-                  sectionQuestions.length > 0 &&
-                  sectionCardsComplete &&
-                  (!sectionAnswer || answerStatus === "rejected") && (
-                    <QuizCta
-                      section={section}
-                      reviewRequired={needsReview}
-                      rejectedNote={answerStatus === "rejected" ? sectionAnswer?.review_note : null}
-                      onClick={() => setQuizSection(section)}
-                    />
-                  )}
-
-                {isEmployee && needsReview && answerStatus === "submitted" && (
-                  <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900">
-                    <div className="flex items-center gap-2 font-semibold">
-                      <ShieldCheck className="h-4 w-4" />
-                      Chờ Leader duyệt
-                    </div>
-                    <p className="mt-1 text-amber-800/80">
-                      Bạn đã gửi câu trả lời section này. Section tiếp theo sẽ mở sau khi Leader
-                      duyệt.
-                    </p>
-                  </div>
-                )}
-
-                {isEmployee && needsReview && answerStatus === "approved" && (
-                  <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm text-emerald-900">
-                    <div className="flex items-center gap-2 font-semibold">
-                      <CheckCircle2 className="h-4 w-4" />
-                      Đã duyệt
-                    </div>
-                    <p className="mt-1 text-emerald-800/80">
-                      Section này đã được duyệt. Bạn có thể tiếp tục phần tiếp theo.
-                    </p>
-                  </div>
-                )}
-
-                {!isEmployee && (
-                  <SectionQuiz
-                    questions={sectionQuestions}
-                    answered={answerBySection.has(section.id)}
-                    isAdmin={isAdmin}
-                    onEditQuestion={(question) => openQuestionForm(section.id, question)}
-                    onDeleteQuestion={(questionId) => deleteQuestion(questionId)}
-                  />
-                )}
-              </div>
-            </section>
-          );
-        })}
-
-        <section className="rounded-3xl border bg-card p-5 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <FileText className="h-5 w-5 text-blue-600" />
-                <h2 className="text-xl font-bold">Văn bản & Tài liệu</h2>
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Văn bản công bố, quy định, cơ chế và link tham khảo.
-              </p>
+      <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+        <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+              <GraduationCap className="h-5 w-5" />
             </div>
-            {isAdmin && (
-              <Button onClick={() => openDocumentForm()}>
+            <div className="min-w-0">
+              <h1 className="text-xl font-black tracking-tight">
+                {canSwitchDepartments
+                  ? "Hướng dẫn tân thủ"
+                  : `Hướng dẫn tân thủ ${currentDepartmentLabel}`}
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Tài liệu, quy trình và onboarding nội bộ
+              </p>
+              {canSwitchDepartments ? (
+                <div className="mt-3 flex w-fit rounded-full bg-muted p-1">
+                  {departmentTabs.map((tab) => (
+                    <button
+                      key={tab.value}
+                      type="button"
+                      className={cn(
+                        "rounded-full px-4 py-1.5 text-sm font-bold transition",
+                        activeDepartment === tab.value
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                      onClick={() => setActiveDepartment(tab.value)}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            {isEmployee && currentDepartment === "marketing" ? (
+              <Badge
+                className={cn(
+                  "rounded-full px-3 py-2 text-xs shadow-sm",
+                  certificateReady
+                    ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100"
+                    : "bg-indigo-100 text-indigo-700 hover:bg-indigo-100",
+                )}
+              >
+                {certificateReady ? (
+                  <>
+                    <Award className="mr-1.5 h-3.5 w-3.5" /> Đã được chứng nhận
+                  </>
+                ) : (
+                  `${completedCards}/${totalCards}`
+                )}
+              </Badge>
+            ) : null}
+            <Select
+              value={documentTypeFilter}
+              onValueChange={(value) => setDocumentTypeFilter(value as InternalDocumentFilter)}
+            >
+              <SelectTrigger className="h-9 w-36 rounded-xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {documentTypeFilters.map((filter) => (
+                  <SelectItem key={filter.value} value={filter.value}>
+                    {filter.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {canManageDocuments && (
+              <Button className="h-9 rounded-xl" onClick={() => openDocumentForm()}>
                 <Plus className="mr-2 h-4 w-4" /> Thêm tài liệu
               </Button>
             )}
           </div>
+        </div>
+        {isEmployee && currentDepartment === "marketing" ? (
+          <div className="h-1.5 bg-muted">
+            <div
+              className={cn(
+                "h-full transition-all",
+                certificateReady ? "bg-emerald-500" : "bg-indigo-500",
+              )}
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+        ) : null}
+      </div>
 
-          {documents.length ? (
-            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {documents.map((document) => (
-                <DocumentCard
-                  key={document.id}
-                  document={document}
-                  canEdit={isAdmin}
-                  onEdit={() => openDocumentForm(document)}
-                  onDelete={() => deleteDocument(document.id)}
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-3">
+            <div className="rounded-2xl border bg-card p-3 shadow-sm">
+              <div className="relative max-w-md">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="h-10 rounded-xl pl-9"
+                  value={documentSearch}
+                  onChange={(event) => setDocumentSearch(event.target.value)}
+                  placeholder={`Tìm tài liệu ${currentDepartmentLabel}...`}
                 />
-              ))}
+              </div>
             </div>
-          ) : (
-            <EmptyState text="Chưa có tài nguyên." />
-          )}
+            {visibleDocuments.length ? (
+              <div className="grid gap-3">
+                {visibleDocuments.map((document) => (
+                  <DocumentCard
+                    key={document.id}
+                    document={document}
+                    canEdit={canManageDocuments}
+                    canDelete={isAdmin}
+                    onEdit={() => openDocumentForm(document)}
+                    onDelete={() => deleteDocument(document.id)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyState text="Chưa có tài liệu phù hợp bộ lọc." />
+            )}
+          </div>
+
+          <PinnedDocumentsPanel documents={pinnedDocuments} department={currentDepartment} />
         </section>
 
-        {canViewProgress && (
+        {currentDepartment === "marketing" &&
+          sections.map((section, index) => {
+            const sectionCards = learningCardsBySection.get(section.id) ?? [];
+            const sectionQuestions = questionsBySection.get(section.id) ?? [];
+            const sectionAnswer = answerBySection.get(section.id);
+            const answerStatus = getAnswerStatus(sectionAnswer);
+            const needsReview = isEmployee && isSectionReviewRequired(section);
+            const unlocked = visibility.sectionUnlocked.get(section.id) === true;
+            const sectionCompletedCount = sectionCards.filter(
+              (card) => progressByCard.get(card.id)?.completed_at,
+            ).length;
+            const sectionCardsComplete =
+              sectionCards.length > 0 && sectionCompletedCount === sectionCards.length;
+            const quizDone =
+              sectionQuestions.length === 0 || isSectionQuizApproved(section, sectionAnswer);
+            const sectionComplete = sectionCardsComplete && quizDone;
+            const sectionPercent =
+              sectionCards.length > 0
+                ? Math.round((sectionCompletedCount / sectionCards.length) * 100)
+                : 0;
+            return (
+              <section
+                key={section.id}
+                className={cn(
+                  "overflow-hidden rounded-3xl border bg-card shadow-sm",
+                  isEmployee && !unlocked && "bg-muted/30",
+                )}
+              >
+                <div className="border-b bg-gradient-to-br from-background via-background to-muted/35 p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-background shadow-sm ring-1 ring-border">
+                          <SectionIcon index={index} />
+                        </div>
+                        <div>
+                          <h2 className="text-xl font-bold">{section.title}</h2>
+                          <p className="mt-0.5 text-sm text-muted-foreground">
+                            {section.description ?? "Click vào từng thẻ để xem chi tiết"}
+                          </p>
+                        </div>
+                        <SectionStatusBadge
+                          locked={isEmployee && !unlocked}
+                          complete={sectionComplete}
+                          unlocked={unlocked}
+                          answerStatus={needsReview ? answerStatus : undefined}
+                        />
+                      </div>
+                      <div className="mt-4 flex max-w-xl items-center gap-3">
+                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className={cn(
+                              "h-full rounded-full transition-all",
+                              sectionComplete ? "bg-emerald-500" : "bg-indigo-500",
+                            )}
+                            style={{ width: `${sectionPercent}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-semibold text-muted-foreground">
+                          {sectionCompletedCount}/{sectionCards.length || 0}
+                        </span>
+                      </div>
+                    </div>
+                    {isAdmin && (
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openQuestionForm(section.id)}
+                        >
+                          <Plus className="mr-2 h-4 w-4" /> Câu hỏi
+                        </Button>
+                        <Button size="sm" onClick={() => openCardForm(section.id)}>
+                          <Plus className="mr-2 h-4 w-4" /> Thêm thẻ
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-5">
+                  {sectionCards.length ? (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      {sectionCards.map((card, cardIndex) => {
+                        const completed = !!progressByCard.get(card.id)?.completed_at;
+                        const cardUnlocked = visibility.cardUnlocked.get(card.id) === true;
+                        return (
+                          <OnboardingCardItem
+                            key={card.id}
+                            card={card}
+                            step={cardIndex + 1}
+                            locked={isEmployee && !cardUnlocked}
+                            completed={completed}
+                            canEdit={isAdmin}
+                            onOpen={() => {
+                              if (isEmployee && !cardUnlocked) {
+                                toast.warning("Bạn cần hoàn thành thẻ trước đó");
+                                return;
+                              }
+                              setSelectedCard(card);
+                            }}
+                            onEdit={() => openCardForm(section.id, card)}
+                            onDelete={() => deleteCard(card.id)}
+                          />
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <EmptyState text="Chưa có thẻ giới thiệu." />
+                  )}
+
+                  {isEmployee &&
+                    unlocked &&
+                    sectionQuestions.length > 0 &&
+                    sectionCardsComplete &&
+                    (!sectionAnswer || answerStatus === "rejected") && (
+                      <QuizCta
+                        section={section}
+                        reviewRequired={needsReview}
+                        rejectedNote={
+                          answerStatus === "rejected" ? sectionAnswer?.review_note : null
+                        }
+                        onClick={() => setQuizSection(section)}
+                      />
+                    )}
+
+                  {isEmployee && needsReview && answerStatus === "submitted" && (
+                    <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <ShieldCheck className="h-4 w-4" />
+                        Chờ Leader duyệt
+                      </div>
+                      <p className="mt-1 text-amber-800/80">
+                        Bạn đã gửi câu trả lời section này. Section tiếp theo sẽ mở sau khi Leader
+                        duyệt.
+                      </p>
+                    </div>
+                  )}
+
+                  {isEmployee && needsReview && answerStatus === "approved" && (
+                    <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-sm text-emerald-900">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <CheckCircle2 className="h-4 w-4" />
+                        Đã duyệt
+                      </div>
+                      <p className="mt-1 text-emerald-800/80">
+                        Section này đã được duyệt. Bạn có thể tiếp tục phần tiếp theo.
+                      </p>
+                    </div>
+                  )}
+
+                  {!isEmployee && (
+                    <SectionQuiz
+                      questions={sectionQuestions}
+                      answered={answerBySection.has(section.id)}
+                      isAdmin={isAdmin}
+                      onEditQuestion={(question) => openQuestionForm(section.id, question)}
+                      onDeleteQuestion={(questionId) => deleteQuestion(questionId)}
+                    />
+                  )}
+                </div>
+              </section>
+            );
+          })}
+
+        {currentDepartment === "marketing" && canViewProgress && (
           <section className="rounded-3xl border bg-card p-5 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -1252,7 +1424,7 @@ export function ResourcesWorkspace() {
           </section>
         )}
 
-        {canViewProgress && (
+        {currentDepartment === "marketing" && canViewProgress && (
           <section className="rounded-3xl border bg-card p-5 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -1382,6 +1554,8 @@ export function ResourcesWorkspace() {
         onOpenChange={setDocumentDialogOpen}
         form={documentForm}
         setForm={setDocumentForm}
+        canChooseDepartment={canSwitchDepartments}
+        lockedDepartment={currentDepartment}
         onSave={saveDocument}
       />
     </div>
@@ -1916,55 +2090,207 @@ function QuestionAnswer({
 function DocumentCard({
   document,
   canEdit,
+  canDelete,
   onEdit,
   onDelete,
 }: {
   document: OnboardingDocument;
   canEdit: boolean;
+  canDelete: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const Icon = getDocumentIcon(getDocumentFileType(document));
   return (
-    <div className="rounded-3xl border bg-background p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-100 text-blue-700">
-          <FileText className="h-5 w-5" />
+    <div className="group rounded-2xl border bg-background p-4 shadow-sm transition hover:border-primary/25 hover:shadow-md">
+      <div className="flex items-start gap-3">
+        <div
+          className={cn(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+            getDocumentTone(getDocumentFileType(document)),
+          )}
+        >
+          <Icon className="h-5 w-5" />
         </div>
-        <div className="flex items-center gap-1">
-          <Badge variant="secondary" className="rounded-full">
-            {document.document_type ?? "Tài liệu"}
-          </Badge>
-          {canEdit && (
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className="rounded-full px-2 py-0.5 text-[11px]">
+              {document.document_type ?? getDocumentTypeLabel(getDocumentFileType(document))}
+            </Badge>
+            {document.is_pinned ? (
+              <Badge className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700 hover:bg-amber-50">
+                <Pin className="mr-1 h-3 w-3" />
+                Ghim
+              </Badge>
+            ) : null}
+            {!document.is_active ? <Badge variant="secondary">Ẩn</Badge> : null}
+          </div>
+          <h3 className="mt-2 line-clamp-1 font-black">{document.title}</h3>
+          <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground">
+            {document.description ?? "Chưa có mô tả."}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span>Cập nhật {formatDateTime(document.updated_at)}</span>
+            <span>•</span>
+            <span>{getDepartmentLabel(getDocumentDepartment(document))}</span>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {document.link_url ? (
             <>
-              {!document.is_active && <Badge variant="secondary">Ẩn</Badge>}
-              <Button variant="ghost" size="icon" onClick={onEdit}>
-                <Pencil className="h-4 w-4" />
+              <Button variant="ghost" size="sm" className="h-8 rounded-lg px-2" asChild>
+                <a href={document.link_url} target="_blank" rel="noreferrer">
+                  <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                  Xem
+                </a>
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                onClick={onDelete}
-              >
-                <Trash2 className="h-4 w-4" />
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" asChild>
+                <a href={document.link_url} target="_blank" rel="noreferrer" title="Tải xuống">
+                  <Download className="h-3.5 w-3.5" />
+                </a>
               </Button>
             </>
-          )}
+          ) : null}
+          {canEdit ? (
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={onEdit}>
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          ) : null}
+          {canDelete ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-lg text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={onDelete}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          ) : null}
         </div>
       </div>
-      <h3 className="mt-5 line-clamp-2 text-lg font-bold">{document.title}</h3>
-      <p className="mt-2 line-clamp-3 min-h-14 text-sm leading-6 text-muted-foreground">
-        {document.description ?? "Chưa có mô tả."}
-      </p>
-      {document.link_url && (
-        <Button variant="outline" className="mt-4 w-full rounded-full bg-background" asChild>
-          <a href={document.link_url} target="_blank" rel="noreferrer">
-            Mở <ExternalLink className="ml-2 h-4 w-4" />
-          </a>
-        </Button>
-      )}
     </div>
   );
+}
+
+function PinnedDocumentsPanel({
+  documents,
+  department,
+}: {
+  documents: OnboardingDocument[];
+  department: InfoDepartment;
+}) {
+  return (
+    <aside className="h-fit rounded-2xl border bg-card p-4 shadow-sm xl:sticky xl:top-3">
+      <div className="flex items-center gap-2">
+        <Pin className="h-4 w-4 text-amber-600" />
+        <h2 className="font-black">Ghim quan trọng</h2>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Tài liệu bắt buộc đọc cho {getDepartmentLabel(department)}.
+      </p>
+      <div className="mt-4 space-y-2">
+        {documents.length ? (
+          documents.map((document) => {
+            const Icon = getDocumentIcon(getDocumentFileType(document));
+            return (
+              <a
+                key={document.id}
+                href={document.link_url ?? "#"}
+                target={document.link_url ? "_blank" : undefined}
+                rel={document.link_url ? "noreferrer" : undefined}
+                className="flex gap-3 rounded-xl border bg-background p-3 transition hover:border-primary/30 hover:bg-muted/30"
+                onClick={(event) => {
+                  if (!document.link_url) event.preventDefault();
+                }}
+              >
+                <div
+                  className={cn(
+                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                    getDocumentTone(getDocumentFileType(document)),
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="line-clamp-2 text-sm font-bold">{document.title}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {document.document_type ?? getDocumentTypeLabel(getDocumentFileType(document))}
+                  </p>
+                </div>
+              </a>
+            );
+          })
+        ) : (
+          <div className="rounded-xl border border-dashed bg-muted/20 p-4 text-sm text-muted-foreground">
+            Chưa có tài liệu ghim.
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function getDocumentDepartment(document: OnboardingDocument): InfoDepartment {
+  return document.department === "sale" ? "sale" : "marketing";
+}
+
+function isDocumentDepartmentSchemaError(error: { message?: string; details?: string | null }) {
+  const text = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+  return (
+    text.includes("department") &&
+    (text.includes("schema cache") ||
+      text.includes("could not find") ||
+      text.includes("does not exist") ||
+      text.includes("column"))
+  );
+}
+
+function getDocumentFileType(document: OnboardingDocument): InternalDocumentFileType {
+  const value = document.file_type || document.document_type?.toLowerCase();
+  if (value === "pdf" || value?.includes("pdf")) return "pdf";
+  if (value === "docx" || value?.includes("word")) return "docx";
+  if (value === "xlsx" || value?.includes("excel")) return "xlsx";
+  if (value === "announcement" || value?.includes("thông báo")) return "announcement";
+  return "link";
+}
+
+function getDocumentIcon(fileType: InternalDocumentFileType) {
+  if (fileType === "xlsx") return FileSpreadsheet;
+  if (fileType === "docx" || fileType === "pdf") return FileText;
+  if (fileType === "announcement") return Megaphone;
+  return Link2;
+}
+
+function getDocumentTone(fileType: InternalDocumentFileType) {
+  const tones: Record<InternalDocumentFileType, string> = {
+    pdf: "bg-rose-50 text-rose-700",
+    docx: "bg-blue-50 text-blue-700",
+    xlsx: "bg-emerald-50 text-emerald-700",
+    link: "bg-violet-50 text-violet-700",
+    announcement: "bg-amber-50 text-amber-700",
+  };
+  return tones[fileType];
+}
+
+function getDocumentTypeLabel(fileType: InternalDocumentFileType) {
+  const labels: Record<InternalDocumentFileType, string> = {
+    pdf: "PDF",
+    docx: "Word",
+    xlsx: "Excel",
+    link: "Link",
+    announcement: "Thông báo",
+  };
+  return labels[fileType];
+}
+
+function getDepartmentLabel(department: InfoDepartment) {
+  return department === "sale" ? "Sale" : "Marketing";
+}
+
+function isRecentlyUpdated(value: string) {
+  const updatedAt = new Date(value).getTime();
+  if (Number.isNaN(updatedAt)) return false;
+  return Date.now() - updatedAt <= 1000 * 60 * 60 * 24 * 14;
 }
 
 function CardFormDialog({
@@ -2183,12 +2509,16 @@ function DocumentFormDialog({
   onOpenChange,
   form,
   setForm,
+  canChooseDepartment,
+  lockedDepartment,
   onSave,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   form: DocumentFormState;
   setForm: (form: DocumentFormState) => void;
+  canChooseDepartment: boolean;
+  lockedDepartment: InfoDepartment;
   onSave: () => void;
 }) {
   return (
@@ -2198,18 +2528,50 @@ function DocumentFormDialog({
           <DialogTitle>{form.id ? "Sửa tài liệu" : "Thêm tài liệu"}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-3">
-          <Field label="Tiêu đề">
-            <Input
-              value={form.title}
-              onChange={(event) => setForm({ ...form, title: event.target.value })}
-            />
-          </Field>
-          <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Loại tài liệu">
-              <Input
-                value={form.document_type}
-                onChange={(event) => setForm({ ...form, document_type: event.target.value })}
-              />
+          <div className="grid gap-3 md:grid-cols-3">
+            <Field label="Tab">
+              {canChooseDepartment ? (
+                <Select
+                  value={form.department}
+                  onValueChange={(value) =>
+                    setForm({ ...form, department: value as InfoDepartment })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="marketing">Marketing</SelectItem>
+                    <SelectItem value="sale">Sale</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 text-sm font-semibold text-muted-foreground">
+                  {getDepartmentLabel(lockedDepartment)}
+                </div>
+              )}
+            </Field>
+            <Field label="File type">
+              <Select
+                value={form.file_type}
+                onValueChange={(value) =>
+                  setForm({
+                    ...form,
+                    file_type: value as InternalDocumentFileType,
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pdf">PDF</SelectItem>
+                  <SelectItem value="docx">Word</SelectItem>
+                  <SelectItem value="xlsx">Excel</SelectItem>
+                  <SelectItem value="link">Link</SelectItem>
+                  <SelectItem value="announcement">Thông báo</SelectItem>
+                </SelectContent>
+              </Select>
             </Field>
             <Field label="Thứ tự">
               <Input
@@ -2221,6 +2583,19 @@ function DocumentFormDialog({
               />
             </Field>
           </div>
+          <Field label="Tiêu đề">
+            <Input
+              value={form.title}
+              onChange={(event) => setForm({ ...form, title: event.target.value })}
+            />
+          </Field>
+          <Field label="Category">
+            <Input
+              value={form.document_type}
+              onChange={(event) => setForm({ ...form, document_type: event.target.value })}
+              placeholder="Quy trình, Script, Link hệ thống..."
+            />
+          </Field>
           <Field label="Link URL">
             <Input
               value={form.link_url}
@@ -2234,13 +2609,22 @@ function DocumentFormDialog({
               onChange={(event) => setForm({ ...form, description: event.target.value })}
             />
           </Field>
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={form.is_active}
-              onCheckedChange={(value) => setForm({ ...form, is_active: !!value })}
-            />
-            Đang hiển thị
-          </label>
+          <div className="flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={form.is_active}
+                onCheckedChange={(value) => setForm({ ...form, is_active: !!value })}
+              />
+              Đang hiển thị
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={form.is_pinned}
+                onCheckedChange={(value) => setForm({ ...form, is_pinned: !!value })}
+              />
+              Ghim quan trọng
+            </label>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

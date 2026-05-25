@@ -35,6 +35,10 @@ import {
   formatFacebookManagerSpend,
   syncFacebookManagerSpend,
 } from "@/lib/facebookAdSpend";
+import {
+  AdminMarketingSaleTabs,
+  AdminSaleReports,
+} from "@/components/workspace/AdminSaleWorkspace";
 
 export const Route = createFileRoute("/_authenticated/admin/reports")({ component: AdminReports });
 
@@ -44,6 +48,12 @@ type TeamRow = {
 };
 
 function AdminReports() {
+  return (
+    <AdminMarketingSaleTabs marketing={<AdminMarketingReports />} sale={<AdminSaleReports />} />
+  );
+}
+
+function AdminMarketingReports() {
   const [range, setRange] = useState<DateRangeValue>(() => initialDateRange("today"));
   const [teamId, setTeamId] = useState("all");
   const [screenshot, setScreenshot] = useState(false);
