@@ -22,6 +22,7 @@ import type { Tables } from "@/integrations/supabase/types";
 import { useAuth, type AppRole } from "@/lib/auth";
 import { getLeaderTeamIds, getManagerTeamIds } from "@/lib/dailyAggregates";
 import { canSeeInactiveProfiles, filterVisibleProfiles } from "@/lib/profileVisibility";
+import { isSaleRole } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -191,7 +192,7 @@ export function AssetsWorkspace() {
         return {
           assets: scopedAssets,
           teams: teamsResult.data ?? [],
-          profiles: allProfiles ?? [],
+          profiles: await excludeSaleProfiles(allProfiles ?? []),
           memberships,
           visibleTeamIds,
         };
@@ -213,7 +214,8 @@ export function AssetsWorkspace() {
             .order("full_name")
         : { data: [], error: null };
       if (error) throw error;
-      const visibleProfiles = filterVisibleProfiles(profiles ?? [], role);
+      const marketingProfiles = await excludeSaleProfiles(profiles ?? []);
+      const visibleProfiles = filterVisibleProfiles(marketingProfiles, role);
       const visibleProfileIds = new Set(visibleProfiles.map((row) => row.id));
       const visibleScopedAssets = scopedAssets.filter(
         (asset) =>
@@ -858,6 +860,22 @@ function buildProfileTeamMap(memberships: MembershipRow[]) {
   return map;
 }
 
+async function excludeSaleProfiles<T extends Pick<ProfileRow, "id">>(profiles: T[]) {
+  if (!profiles.length) return profiles;
+  const { data, error } = await supabase
+    .from("user_roles")
+    .select("user_id, role")
+    .in(
+      "user_id",
+      profiles.map((profile) => profile.id),
+    );
+  if (error) throw error;
+  const saleProfileIds = new Set(
+    (data ?? []).filter((row) => isSaleRole(row.role)).map((row) => row.user_id),
+  );
+  return profiles.filter((profile) => !saleProfileIds.has(profile.id));
+}
+
 function getTeamMemberNames(
   teamId: string,
   memberships: MembershipRow[],
@@ -899,7 +917,11 @@ function canViewAssetForRole(
 }
 
 async function getTeams(role: AppRole, teamIds: string[]) {
-  let query = supabase.from("teams").select("id, name").order("name");
+  let query = supabase
+    .from("teams")
+    .select("id, name")
+    .or("department.is.null,department.eq.marketing")
+    .order("name");
   if (role !== "admin")
     query = query.in("id", teamIds.length ? teamIds : ["00000000-0000-0000-0000-000000000000"]);
   return query;

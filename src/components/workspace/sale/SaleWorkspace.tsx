@@ -12,6 +12,7 @@ import {
   Target,
   Trophy,
   UserPlus,
+  UsersRound,
 } from "lucide-react";
 import {
   Bar,
@@ -39,10 +40,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/lib/auth";
+import { supabase } from "@/integrations/supabase/client";
+import type { Tables } from "@/integrations/supabase/types";
 import { cn } from "@/lib/utils";
 import { SaleReportForm } from "@/components/workspace/sale/SaleReportForm";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
-import { initialDateRange, type DateRangeValue } from "@/lib/dateRange";
+import { FloatingLeadLifecycleDashboard } from "@/components/FloatingLeadLifecycleDashboard";
+import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib/dateRange";
+import { formatKpiMetricValue, metricProgress, saleMetrics } from "@/lib/kpiMetrics";
+import { APP_ROLES } from "@/lib/roles";
 import {
   fetchSaleReportsInRange,
   groupSaleReportsByDate,
@@ -55,8 +61,10 @@ import {
   claimFloatingLead,
   fetchSaleFloatingLeads,
   getFloatingLeadCallField,
+  getFloatingLeadDisplayStatus,
   releaseExpiredFloatingLeadsForSale,
   updateFloatingLeadCare,
+  type FloatingLeadDisplayStatus,
   type FloatingLeadCareDraft,
   type FloatingLeadCallField,
   type FloatingLeadRow,
@@ -145,12 +153,68 @@ function useSaleReportsRange(profileId: string | undefined, range: DateRangeValu
   });
 }
 
+type LeaderSaleTeam = {
+  id: string;
+  name: string;
+  description: string | null;
+};
+
+type LeaderSaleTeamMember = {
+  id: string;
+  team_id: string;
+  teamName: string;
+  user_id: string;
+  role_in_team: "leader" | "employee";
+  profile: { full_name: string | null; username: string | null } | null;
+};
+
+type LeaderSaleTeamData = {
+  teams: LeaderSaleTeam[];
+  members: LeaderSaleTeamMember[];
+  leads: FloatingLeadRow[];
+};
+
 export function SaleKpiWorkspace() {
-  const { profile } = useAuth();
+  const { profile, role } = useAuth();
   const [range, setRange] = useState<DateRangeValue>(() => initialDateRange("month"));
-  const { data: reports = [], isLoading } = useSaleReportsRange(profile?.id, range);
+  const normalizedRange = normalizeDateRange(range);
+  const { data, isLoading } = useQuery({
+    queryKey: ["sale-kpi-workspace", profile?.id, role, normalizedRange.from, normalizedRange.to],
+    enabled: !!profile?.id,
+    queryFn: async () => {
+      if (role === APP_ROLES.SALE_LEADER) {
+        const teamData = await fetchLeaderSaleTeamData(profile!.id);
+        const memberIds = teamData.members.map((member) => member.user_id);
+        const reports = await fetchSaleReportsForUsers(
+          memberIds,
+          normalizedRange.from,
+          normalizedRange.to,
+        );
+        const targets = await fetchSaleKpiTargetsForScope({
+          from: normalizedRange.from,
+          to: normalizedRange.to,
+          teamIds: teamData.teams.map((team) => team.id),
+          userIds: memberIds,
+        });
+        return { reports, targets, teamData };
+      }
+      const reports = await fetchSaleReportsInRange(
+        profile!.id,
+        normalizedRange.from,
+        normalizedRange.to,
+      );
+      const targets = await fetchSaleKpiTargetsForScope({
+        from: normalizedRange.from,
+        to: normalizedRange.to,
+        userIds: [profile!.id],
+      });
+      return { reports, targets, teamData: null };
+    },
+  });
+  const reports = useMemo(() => data?.reports ?? [], [data?.reports]);
   const summary = useMemo(() => summarizeSaleReports(reports), [reports]);
   const trend = useMemo(() => groupSaleReportsByDate(reports), [reports]);
+  const target = useMemo(() => pickLatestSaleKpiTarget(data?.targets ?? []), [data?.targets]);
   return (
     <div className="space-y-4">
       <WorkspacePageHeader
@@ -169,7 +233,7 @@ export function SaleKpiWorkspace() {
           <KpiDetailCard
             title="Tỷ lệ chốt"
             value={formatNullablePercent(summary.closeRate)}
-            description={`${formatInteger(summary.totalDataClosed)} / ${formatInteger(summary.totalDataReceived)} data`}
+            description={`${formatInteger(summary.totalDataClosed)} / ${formatInteger(summary.totalDataReceived)} data · Target ${formatKpiMetricValue(target?.close_rate_target, "percent")}`}
             chartType="bar"
             chartData={trend.map((item) => ({
               label: shortDate(item.date),
@@ -179,10 +243,36 @@ export function SaleKpiWorkspace() {
           <KpiDetailCard
             title="Doanh số"
             value={formatMoney(summary.totalRevenue)}
-            description="Target chưa đặt mục tiêu"
+            description={`Target ${formatKpiMetricValue(target?.revenue_target, "money")}`}
             chartType="line"
             chartData={trend.map((item) => ({ label: shortDate(item.date), value: item.revenue }))}
           />
+          <Card className="rounded-2xl xl:col-span-2">
+            <CardHeader>
+              <CardTitle className="text-base">Tiến độ KPI Sale</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-4">
+              {saleMetrics.map((metric) => {
+                const actual = metric.actual(summary);
+                const targetValue = metric.target(target);
+                const progress = metricProgress({ actual, target: targetValue });
+                return (
+                  <div key={metric.key} className="rounded-2xl border bg-slate-50/70 p-4">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">
+                      {metric.label}
+                    </p>
+                    <p className="mt-2 text-xl font-black">
+                      {formatKpiMetricValue(actual, metric.kind)}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Target {formatKpiMetricValue(targetValue, metric.kind)}
+                    </p>
+                    <Progress value={progress ?? 0} className="mt-3 h-2" />
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>
@@ -772,6 +862,326 @@ export function SaleFloatingPoolWorkspace() {
   );
 }
 
+export function LeaderSaleFloatingPoolWorkspace() {
+  const { profile } = useAuth();
+  const [range, setRange] = useState<DateRangeValue>(() => initialDateRange("today"));
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const normalizedRange = range;
+  const { data, isLoading, isFetching, refetch } = useQuery({
+    queryKey: ["leader-sale-floating-leads", profile?.id, normalizedRange.from, normalizedRange.to],
+    enabled: !!profile?.id,
+    queryFn: () => fetchLeaderSaleTeamData(profile!.id, normalizedRange.from, normalizedRange.to),
+  });
+  const teamMemberIds = useMemo(
+    () => new Set((data?.members ?? []).map((member) => member.user_id)),
+    [data?.members],
+  );
+  const teamLeads = useMemo(
+    () =>
+      (data?.leads ?? []).filter(
+        (lead) =>
+          (lead.assigned_sale_id && teamMemberIds.has(lead.assigned_sale_id)) ||
+          (lead.closed_by && teamMemberIds.has(lead.closed_by)) ||
+          lead.blocked_sale_ids.some((saleId) => teamMemberIds.has(saleId)),
+      ),
+    [data?.leads, teamMemberIds],
+  );
+  const visibleLeads = useMemo(
+    () =>
+      teamLeads.filter((lead) => {
+        if (!matchesLeaderSaleLeadStatusFilter(lead, statusFilter)) return false;
+        if (search.trim() && !lead.phone.includes(search.trim())) return false;
+        return true;
+      }),
+    [search, statusFilter, teamLeads],
+  );
+  const stats = useMemo(
+    () => ({
+      total: visibleLeads.length,
+      active: visibleLeads.filter((lead) => lead.assigned_sale_id && !lead.is_closed).length,
+      released: visibleLeads.filter((lead) => !lead.assigned_sale_id && !lead.is_closed).length,
+      closed: visibleLeads.filter((lead) => lead.is_closed).length,
+    }),
+    [visibleLeads],
+  );
+
+  return (
+    <div className="space-y-4 pb-4">
+      <WorkspacePageHeader
+        icon={<Database className="h-5 w-5" />}
+        title="Kho thả nổi team"
+        subtitle="Theo dõi lead Sale team bạn đang xử lý, đã release và đã chốt"
+        rightContent={
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <FloatingLeadStatCard
+              label="Tổng lead"
+              value={stats.total}
+              className="from-slate-900 to-slate-700 text-white"
+            />
+            <FloatingLeadStatCard
+              label="Đang giữ"
+              value={stats.active}
+              className="from-blue-50 to-cyan-50 text-blue-800"
+            />
+            <FloatingLeadStatCard
+              label="Release"
+              value={stats.released}
+              className="from-amber-50 to-orange-50 text-amber-800"
+            />
+            <FloatingLeadStatCard
+              label="Đã chốt"
+              value={stats.closed}
+              className="from-emerald-50 to-teal-50 text-emerald-800"
+            />
+          </div>
+        }
+        actions={
+          <>
+            <DateRangeFilter value={range} onChange={setRange} hideLabel />
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="h-10 w-44 rounded-xl border-slate-200 bg-white text-sm font-semibold shadow-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tất cả trạng thái</SelectItem>
+                <SelectItem value="claimed">Đang giữ lead</SelectItem>
+                <SelectItem value="called_1">Đã gọi 1</SelectItem>
+                <SelectItem value="called_2">Đã gọi 2</SelectItem>
+                <SelectItem value="called_3">Đã gọi 3</SelectItem>
+                <SelectItem value="released">Đã release</SelectItem>
+                <SelectItem value="closed">Đã chốt</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-10 gap-2 rounded-xl"
+              disabled={isFetching}
+              onClick={() => refetch()}
+            >
+              <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+              Tải lại
+            </Button>
+          </>
+        }
+      />
+
+      <Card className="rounded-2xl border-slate-200 shadow-sm">
+        <CardContent className="space-y-3 p-4">
+          <div className="relative max-w-sm">
+            <PhoneCall className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <input
+              className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm font-medium outline-none focus:border-blue-300"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Tìm số điện thoại"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <FloatingLeadLifecycleDashboard
+        leads={teamLeads}
+        people={(data?.members ?? []).map((member) => ({
+          id: member.user_id,
+          name:
+            member.profile?.full_name ||
+            member.profile?.username ||
+            (member.role_in_team === "leader" ? "Leader Sale" : "Nhân viên Sale"),
+        }))}
+        personRole="sale"
+        title="Analytics lifecycle team Sale"
+        subtitle="Hiệu suất giữ lead, gọi 1/2/3, release và chốt của team Sale bạn phụ trách."
+      />
+
+      {isLoading ? (
+        <div className="flex min-h-64 items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        <Card className="overflow-hidden rounded-2xl border-slate-200 shadow-sm">
+          <CardContent className="max-h-[68vh] overflow-auto p-0">
+            <table className="w-full min-w-[1080px] text-sm">
+              <thead className="sticky top-0 z-10 border-b bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 shadow-sm">
+                <tr>
+                  {[
+                    "STT",
+                    "Ngày",
+                    "Số điện thoại",
+                    "Sale",
+                    "Cuộc gọi lần 1",
+                    "Cuộc gọi lần 2",
+                    "Cuộc gọi lần 3",
+                    "Tình trạng",
+                  ].map((header) => (
+                    <th key={header} className="px-3 py-2.5">
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {visibleLeads.map((lead, index) => (
+                  <tr key={lead.id} className="border-t border-slate-100 hover:bg-slate-50">
+                    <td className="px-3 py-2.5 text-center font-semibold text-slate-500">
+                      {index + 1}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">
+                      {formatVietnameseDate(lead.lead_date)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5">
+                      <span className="inline-flex h-7 items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 text-xs font-black text-slate-900">
+                        {lead.phone}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 font-medium text-slate-700">
+                      {lead.assigned_sale_name || "Đã release"}
+                    </td>
+                    <td className="max-w-48 truncate px-3 py-2.5 text-slate-700">
+                      {lead.call_1 || "—"}
+                    </td>
+                    <td className="max-w-48 truncate px-3 py-2.5 text-slate-700">
+                      {lead.call_2 || "—"}
+                    </td>
+                    <td className="max-w-48 truncate px-3 py-2.5 text-slate-700">
+                      {lead.call_3 || "—"}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <LeaderSaleLeadStatusBadge status={getFloatingLeadDisplayStatus(lead)} />
+                    </td>
+                  </tr>
+                ))}
+                {!visibleLeads.length && (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-10 text-center text-muted-foreground">
+                      Không có lead team phù hợp bộ lọc.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+export function LeaderSaleTeamWorkspace() {
+  const { profile } = useAuth();
+  const { data, isLoading, isFetching, refetch } = useQuery({
+    queryKey: ["leader-sale-team", profile?.id],
+    enabled: !!profile?.id,
+    queryFn: () => fetchLeaderSaleTeamData(profile!.id),
+  });
+  const members = data?.members ?? [];
+  const leaderTeams = data?.teams ?? [];
+
+  return (
+    <div className="space-y-4 pb-4">
+      <WorkspacePageHeader
+        icon={<UsersRound className="h-5 w-5" />}
+        title="Thành viên team"
+        subtitle="Danh sách nhân viên Sale trong team bạn quản lý"
+        actions={
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 gap-2 rounded-xl"
+            disabled={isFetching}
+            onClick={() => refetch()}
+          >
+            <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+            Tải lại
+          </Button>
+        }
+      />
+
+      {isLoading ? (
+        <div className="flex min-h-64 items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+          <Card className="rounded-2xl border-slate-200 shadow-sm">
+            <CardContent className="space-y-3 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Team Sale đang lead
+              </p>
+              {leaderTeams.map((team) => (
+                <div key={team.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="font-black text-slate-950">{team.name}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {team.description || "Team Sale"}
+                  </p>
+                </div>
+              ))}
+              {!leaderTeams.length && (
+                <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                  Bạn chưa được gán làm Leader Sale của team nào.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="overflow-hidden rounded-2xl border-slate-200 shadow-sm">
+            <CardContent className="p-0">
+              <table className="w-full min-w-[720px] text-sm">
+                <thead className="border-b bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Nhân viên Sale</th>
+                    <th className="px-4 py-3">Team</th>
+                    <th className="px-4 py-3">Vai trò</th>
+                    <th className="px-4 py-3">Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {members.map((member) => (
+                    <tr key={member.id} className="border-t border-slate-100 hover:bg-slate-50">
+                      <td className="px-4 py-3">
+                        <p className="font-bold text-slate-900">
+                          {member.profile?.full_name || "Không rõ"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          @{member.profile?.username || "unknown"}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">{member.teamName}</td>
+                      <td className="px-4 py-3">
+                        <Badge
+                          className={cn(
+                            member.role_in_team === "leader"
+                              ? "bg-amber-50 text-amber-700 hover:bg-amber-50"
+                              : "bg-blue-50 text-blue-700 hover:bg-blue-50",
+                          )}
+                        >
+                          {member.role_in_team === "leader" ? "Leader Sale" : "Nhân viên Sale"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant="secondary">Active</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                  {!members.length && (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-10 text-center text-muted-foreground">
+                        Chưa có thành viên team.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FloatingLeadStatCard({
   label,
   value,
@@ -1098,6 +1508,156 @@ function formatLeadUpdatedAt(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   })}`;
+}
+
+async function fetchSaleReportsForUsers(userIds: string[], from: string, to: string) {
+  if (!userIds.length) return [] as SaleReportRow[];
+  const { data, error } = await supabase
+    .from("sale_reports")
+    .select("*")
+    .in("user_id", userIds)
+    .gte("report_date", from)
+    .lte("report_date", to)
+    .order("report_date", { ascending: true })
+    .order("slot_time", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as SaleReportRow[];
+}
+
+async function fetchSaleKpiTargetsForScope({
+  from,
+  to,
+  teamIds = [],
+  userIds = [],
+}: {
+  from: string;
+  to: string;
+  teamIds?: string[];
+  userIds?: string[];
+}) {
+  let query = supabase
+    .from("sale_kpi_targets")
+    .select("*")
+    .lte("period_start", to)
+    .gte("period_end", from)
+    .order("updated_at", { ascending: false });
+
+  const filters = [
+    ...teamIds.map((id) => `team_id.eq.${id}`),
+    ...userIds.map((id) => `user_id.eq.${id}`),
+  ];
+  if (filters.length) query = query.or(filters.join(","));
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as Tables<"sale_kpi_targets">[];
+}
+
+function pickLatestSaleKpiTarget(targets: Tables<"sale_kpi_targets">[]) {
+  return [...targets].sort((a, b) => {
+    const aTime = new Date(a.updated_at ?? a.created_at ?? 0).getTime();
+    const bTime = new Date(b.updated_at ?? b.created_at ?? 0).getTime();
+    return bTime - aTime;
+  })[0];
+}
+
+async function fetchLeaderSaleTeamData(
+  profileId: string,
+  from?: string,
+  to?: string,
+): Promise<LeaderSaleTeamData> {
+  const { data: memberships, error: membershipError } = await supabase
+    .from("team_memberships")
+    .select("team_id")
+    .eq("user_id", profileId)
+    .eq("role_in_team", "leader")
+    .eq("is_active", true);
+  if (membershipError) throw membershipError;
+
+  const leaderTeamIds = (memberships ?? []).map((membership) => membership.team_id);
+  if (!leaderTeamIds.length) {
+    return { teams: [], members: [], leads: [] };
+  }
+
+  const [{ data: teams, error: teamsError }, { data: teamMembers, error: teamMembersError }] =
+    await Promise.all([
+      supabase
+        .from("teams")
+        .select("id, name, description")
+        .in("id", leaderTeamIds)
+        .eq("department", "sale"),
+      supabase
+        .from("team_memberships")
+        .select("id, team_id, user_id, role_in_team, profiles(full_name, username)")
+        .in("team_id", leaderTeamIds)
+        .eq("is_active", true),
+    ]);
+  if (teamsError) throw teamsError;
+  if (teamMembersError) throw teamMembersError;
+
+  const typedTeams = (teams ?? []) as LeaderSaleTeam[];
+  const saleTeamIds = new Set(typedTeams.map((team: LeaderSaleTeam) => team.id));
+  const teamNameById = new Map(typedTeams.map((team: LeaderSaleTeam) => [team.id, team.name]));
+  const members: LeaderSaleTeamMember[] = (teamMembers ?? [])
+    .filter((member) => saleTeamIds.has(member.team_id))
+    .map((member) => ({
+      id: member.id,
+      team_id: member.team_id,
+      teamName: teamNameById.get(member.team_id) ?? "Team Sale",
+      user_id: member.user_id,
+      role_in_team: member.role_in_team as "leader" | "employee",
+      profile: member.profiles as { full_name: string | null; username: string | null } | null,
+    }));
+  const memberIds = Array.from(new Set(members.map((member) => member.user_id)));
+  if (!memberIds.length) return { teams: typedTeams, members, leads: [] };
+
+  let leadsQuery = supabase
+    .from("floating_leads")
+    .select("*")
+    .order("lead_date", { ascending: false })
+    .order("updated_at", { ascending: false });
+  if (from) leadsQuery = leadsQuery.gte("lead_date", from);
+  if (to) leadsQuery = leadsQuery.lte("lead_date", to);
+  const { data: leads, error: leadsError } = await leadsQuery;
+  if (leadsError) throw leadsError;
+
+  return {
+    teams: typedTeams,
+    members,
+    leads: (leads ?? []) as FloatingLeadRow[],
+  };
+}
+
+function matchesLeaderSaleLeadStatusFilter(lead: FloatingLeadRow, status: string) {
+  if (status === "all") return true;
+  const displayStatus = getFloatingLeadDisplayStatus(lead);
+  if (status === "claimed") return !!lead.assigned_sale_id && !lead.is_closed;
+  if (status === "released") return !lead.assigned_sale_id && !lead.is_closed;
+  if (status === "closed") return lead.is_closed;
+  if (status === "called_1") return displayStatus === "Đã gọi 1";
+  if (status === "called_2") return displayStatus === "Đã gọi 2";
+  if (status === "called_3") return displayStatus === "Đã gọi 3";
+  return true;
+}
+
+function LeaderSaleLeadStatusBadge({ status }: { status: FloatingLeadDisplayStatus }) {
+  const styles: Record<FloatingLeadDisplayStatus, string> = {
+    "Đã bị chốt": "border-emerald-100 bg-emerald-50 text-emerald-700",
+    "Đã gọi 1": "border-blue-100 bg-blue-50 text-blue-700",
+    "Đã gọi 2": "border-amber-100 bg-amber-50 text-amber-700",
+    "Đã gọi 3": "border-rose-100 bg-rose-50 text-rose-700",
+    "Chưa gọi": "border-slate-200 bg-slate-50 text-slate-700",
+  };
+  return (
+    <span
+      className={cn(
+        "inline-flex rounded-full border px-2.5 py-1 text-xs font-bold",
+        styles[status],
+      )}
+    >
+      {status}
+    </span>
+  );
 }
 
 function HeroKpiCard({

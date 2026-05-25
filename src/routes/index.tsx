@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useAuth } from "@/lib/auth";
+import { getRoleHomePath } from "@/lib/roles";
 import { Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/")({ component: Index });
@@ -15,11 +16,7 @@ function Index() {
       navigate({ to: "/login" });
       return;
     }
-    if (role === "admin") navigate({ to: "/admin/dashboard" });
-    else if (role === "manager") navigate({ to: "/manager/dashboard" });
-    else if (role === "leader") navigate({ to: "/leader/dashboard" });
-    else if (role === "employee") navigate({ to: "/employee/dashboard" });
-    else if (role === "sale") navigate({ to: "/sale/dashboard" });
+    if (role) navigate({ to: getRoleHomePath(role) });
     else navigate({ to: "/login" });
   }, [loading, session, role, navigate]);
 

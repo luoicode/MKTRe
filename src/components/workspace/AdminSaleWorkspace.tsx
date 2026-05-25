@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
+import { FloatingLeadLifecycleDashboard } from "@/components/FloatingLeadLifecycleDashboard";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,9 +38,12 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
-import type { TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
+import type { Enums, Tables, TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
 import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib/dateRange";
+import { formatKpiMetricValue, metricProgress, saleMetrics } from "@/lib/kpiMetrics";
+import { MARKETING_ROLES, SALE_ROLES, type AppRole } from "@/lib/roles";
 import {
+  deriveFloatingLeadLifecycle,
   floatingLeadStatuses,
   getFloatingLeadDisplayStatus,
   todayYmd,
@@ -60,6 +64,25 @@ type SaleProfile = {
   id: string;
   full_name: string | null;
   username: string | null;
+};
+
+type SaleTeam = Pick<Tables<"teams">, "id" | "name">;
+type SaleKpiTarget = Tables<"sale_kpi_targets">;
+type SaleKpiPeriod = Enums<"kpi_period">;
+
+type SaleKpiForm = {
+  id?: string;
+  scope: "team" | "user";
+  teamId: string;
+  userId: string;
+  periodType: SaleKpiPeriod;
+  periodStart: string;
+  periodEnd: string;
+  revenueTarget: string;
+  ordersTarget: string;
+  closeRateTarget: string;
+  averageOrderTarget: string;
+  note: string;
 };
 
 type AdminFloatingLeadStatus =
@@ -91,7 +114,30 @@ type AdminLeadEditForm = {
   note: string;
   status: FloatingLeadStatus;
   isClosed: boolean;
+  claimCount: number;
 };
+
+function createSaleKpiForm(target?: SaleKpiTarget): SaleKpiForm {
+  const range = initialDateRange("month");
+  return {
+    id: target?.id,
+    scope: target?.user_id ? "user" : "team",
+    teamId: target?.team_id ?? "",
+    userId: target?.user_id ?? "",
+    periodType: target?.period_type ?? "month",
+    periodStart: target?.period_start ?? range.from,
+    periodEnd: target?.period_end ?? range.to,
+    revenueTarget: String(target?.revenue_target ?? ""),
+    ordersTarget: String(target?.orders_target ?? ""),
+    closeRateTarget: String(target?.close_rate_target ?? ""),
+    averageOrderTarget: String(target?.average_order_target ?? ""),
+    note: target?.note ?? "",
+  };
+}
+
+function isSaleKpiPeriod(value: string): value is SaleKpiPeriod {
+  return value === "day" || value === "week" || value === "month";
+}
 
 export function AdminMarketingSaleTabs({
   marketing,
@@ -231,6 +277,17 @@ export function AdminSaleOverview() {
               </table>
             </CardContent>
           </Card>
+
+          <FloatingLeadLifecycleDashboard
+            leads={data?.leads ?? []}
+            people={(data?.sales ?? []).map((sale) => ({
+              id: sale.id,
+              name: displayProfileName(sale),
+            }))}
+            personRole="sale"
+            title="Analytics lifecycle lead Sale"
+            subtitle="Funnel lead theo lifecycle, conversion và drop rate toàn hệ Sale trong khoảng lọc."
+          />
         </>
       )}
     </div>
@@ -401,17 +458,40 @@ export function AdminSaleReports() {
 }
 
 export function AdminSaleKpi() {
+  const queryClient = useQueryClient();
   const [range, setRange] = useState<DateRangeValue>(() => initialDateRange("month"));
+  const [formOpen, setFormOpen] = useState(false);
+  const [form, setForm] = useState<SaleKpiForm>(() => createSaleKpiForm());
   const normalizedRange = normalizeDateRange(range);
   const { data, isLoading } = useQuery({
     queryKey: ["admin-sale-kpi", normalizedRange.from, normalizedRange.to],
     queryFn: async () => {
-      const [reports, sales] = await Promise.all([
+      const [reports, sales, teams, targets] = await Promise.all([
         fetchAdminSaleReports(normalizedRange.from, normalizedRange.to),
         fetchSaleProfiles(),
+        fetchSaleTeams(),
+        fetchSaleKpiTargets(normalizedRange.from, normalizedRange.to),
       ]);
-      return { reports, sales };
+      return { reports, sales, teams, targets };
     },
+  });
+  const saveTarget = useMutation({
+    mutationFn: async () => upsertSaleKpiTarget(form),
+    onSuccess: () => {
+      toast.success(form.id ? "Đã cập nhật KPI Sale" : "Đã tạo KPI Sale");
+      setFormOpen(false);
+      setForm(createSaleKpiForm());
+      queryClient.invalidateQueries({ queryKey: ["admin-sale-kpi"] });
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const deleteTarget = useMutation({
+    mutationFn: deleteSaleKpiTarget,
+    onSuccess: () => {
+      toast.success("Đã xóa KPI Sale");
+      queryClient.invalidateQueries({ queryKey: ["admin-sale-kpi"] });
+    },
+    onError: (error) => toast.error(error.message),
   });
   const rows = useMemo(
     () =>
@@ -422,57 +502,366 @@ export function AdminSaleKpi() {
       ),
     [data?.reports, data?.sales],
   ).sort((a, b) => b.summary.totalRevenue - a.summary.totalRevenue);
+  const targetBySaleId = useMemo(() => {
+    const map = new Map<string, SaleKpiTarget>();
+    for (const target of data?.targets ?? []) {
+      if (!target.user_id) continue;
+      const current = map.get(target.user_id);
+      if (!current || target.updated_at > current.updated_at) map.set(target.user_id, target);
+    }
+    return map;
+  }, [data?.targets]);
+  const teamTargets = useMemo(
+    () => (data?.targets ?? []).filter((target) => target.team_id && !target.user_id),
+    [data?.targets],
+  );
+
+  const openCreate = () => {
+    setForm(createSaleKpiForm());
+    setFormOpen(true);
+  };
+
+  const openEdit = (target: SaleKpiTarget) => {
+    setForm(createSaleKpiForm(target));
+    setFormOpen(true);
+  };
 
   return (
     <div className="space-y-4">
       <WorkspacePageHeader
         icon={<Target className="h-5 w-5" />}
         title="KPI Sale"
-        subtitle="2 KPI chính: Tỷ lệ chốt và Doanh số"
-        actions={<DateRangeFilter value={range} onChange={setRange} hideLabel />}
+        subtitle="Doanh thu, tổng đơn, tỉ lệ chốt và trung bình đơn"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <DateRangeFilter value={range} onChange={setRange} hideLabel />
+            <Button onClick={openCreate}>
+              <Plus className="mr-2 h-4 w-4" />
+              Tạo KPI Sale
+            </Button>
+          </div>
+        }
       />
       {isLoading ? (
         <LoadingState />
       ) : (
-        <Card className="rounded-2xl">
-          <CardHeader>
-            <CardTitle className="text-base">Xếp hạng KPI Sale</CardTitle>
-            <p className="text-sm text-muted-foreground">Target: Chưa đặt mục tiêu</p>
-          </CardHeader>
-          <CardContent className="overflow-auto p-0">
-            <table className="w-full min-w-[820px] text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-3">#</th>
-                  <th className="px-3 py-3">Sale</th>
-                  <th className="px-3 py-3">Doanh số</th>
-                  <th className="px-3 py-3">Tỷ lệ chốt</th>
-                  <th className="px-3 py-3">Data chốt</th>
-                  <th className="px-3 py-3">Data nhận</th>
-                  <th className="px-3 py-3">Target</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, index) => (
-                  <tr key={row.saleId} className="border-t">
-                    <td className="px-4 py-3 font-black">{index + 1}</td>
-                    <td className="px-3 py-3 font-semibold">{row.name}</td>
-                    <td className="px-3 py-3">{formatSaleVnd(row.summary.totalRevenue)}</td>
-                    <td className="px-3 py-3">{formatSalePercent(row.summary.closeRate)}</td>
-                    <td className="px-3 py-3">{formatSaleInteger(row.summary.totalDataClosed)}</td>
-                    <td className="px-3 py-3">
-                      {formatSaleInteger(row.summary.totalDataReceived)}
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">Chưa đặt mục tiêu</td>
+        <>
+          <Card className="rounded-2xl">
+            <CardHeader>
+              <CardTitle className="text-base">KPI Team Sale</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Mục tiêu theo team, kỳ ngày/tuần/tháng.
+              </p>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {teamTargets.map((target) => (
+                <div key={target.id} className="rounded-2xl border bg-slate-50/70 p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-black">
+                        {data?.teams.find((team) => team.id === target.team_id)?.name ??
+                          "Team Sale"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatDateShort(target.period_start)} -{" "}
+                        {formatDateShort(target.period_end)}
+                      </p>
+                    </div>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => openEdit(target)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => deleteTarget.mutate(target.id)}
+                      >
+                        <Trash2 className="h-4 w-4 text-rose-500" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                    {saleMetrics.map((metric) => (
+                      <KpiMiniStat key={metric.key} metric={metric} target={target} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {!teamTargets.length && (
+                <div className="rounded-2xl border border-dashed p-5 text-sm text-muted-foreground">
+                  Chưa có KPI team Sale trong kỳ này.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          <Card className="rounded-2xl">
+            <CardHeader>
+              <CardTitle className="text-base">KPI cá nhân Sale</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Xếp hạng theo doanh số, tỉ lệ chốt và số data chốt.
+              </p>
+            </CardHeader>
+            <CardContent className="overflow-auto p-0">
+              <table className="w-full min-w-[1020px] text-sm">
+                <thead className="bg-slate-50 text-left text-xs uppercase text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3">#</th>
+                    <th className="px-3 py-3">Sale</th>
+                    <th className="px-3 py-3">Doanh số</th>
+                    <th className="px-3 py-3">Tổng đơn</th>
+                    <th className="px-3 py-3">Tỷ lệ chốt</th>
+                    <th className="px-3 py-3">TB đơn</th>
+                    <th className="px-3 py-3">Progress</th>
+                    <th className="px-3 py-3 text-right">Thao tác</th>
                   </tr>
-                ))}
-                {!rows.length && <EmptyTableRow colSpan={7} />}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
+                </thead>
+                <tbody>
+                  {rows.map((row, index) => {
+                    const target = targetBySaleId.get(row.saleId);
+                    const revenueProgress = metricProgress({
+                      actual: row.summary.totalRevenue,
+                      target: target?.revenue_target,
+                    });
+                    return (
+                      <tr key={row.saleId} className="border-t">
+                        <td className="px-4 py-3 font-black">{index + 1}</td>
+                        <td className="px-3 py-3 font-semibold">{row.name}</td>
+                        <td className="px-3 py-3">{formatSaleVnd(row.summary.totalRevenue)}</td>
+                        <td className="px-3 py-3">
+                          {formatSaleInteger(row.summary.totalDataClosed)}
+                        </td>
+                        <td className="px-3 py-3">{formatSalePercent(row.summary.closeRate)}</td>
+                        <td className="px-3 py-3">
+                          {row.summary.averageOrder === null
+                            ? "—"
+                            : formatSaleVnd(row.summary.averageOrder)}
+                        </td>
+                        <td className="px-3 py-3">
+                          {revenueProgress == null ? "Chưa đặt mục tiêu" : `${revenueProgress}%`}
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex justify-end gap-1">
+                            {target ? (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => openEdit(target)}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => deleteTarget.mutate(target.id)}
+                                >
+                                  <Trash2 className="h-4 w-4 text-rose-500" />
+                                </Button>
+                              </>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setForm({
+                                    ...createSaleKpiForm(),
+                                    scope: "user",
+                                    userId: row.saleId,
+                                  });
+                                  setFormOpen(true);
+                                }}
+                              >
+                                Tạo target
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {!rows.length && <EmptyTableRow colSpan={8} />}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        </>
       )}
+      <SaleKpiTargetDialog
+        open={formOpen}
+        form={form}
+        teams={data?.teams ?? []}
+        sales={data?.sales ?? []}
+        isSaving={saveTarget.isPending}
+        onOpenChange={setFormOpen}
+        onChange={setForm}
+        onSave={() => saveTarget.mutate()}
+      />
     </div>
+  );
+}
+
+function KpiMiniStat({
+  metric,
+  target,
+}: {
+  metric: (typeof saleMetrics)[number];
+  target: SaleKpiTarget;
+}) {
+  const targetValue = metric.target(target);
+  return (
+    <div className="rounded-xl border bg-white p-3">
+      <p className="text-[11px] font-semibold uppercase text-muted-foreground">{metric.label}</p>
+      <p className="mt-1 text-base font-black">{formatKpiMetricValue(targetValue, metric.kind)}</p>
+    </div>
+  );
+}
+
+function SaleKpiTargetDialog({
+  open,
+  form,
+  teams,
+  sales,
+  isSaving,
+  onOpenChange,
+  onChange,
+  onSave,
+}: {
+  open: boolean;
+  form: SaleKpiForm;
+  teams: SaleTeam[];
+  sales: SaleProfile[];
+  isSaving: boolean;
+  onOpenChange: (open: boolean) => void;
+  onChange: (form: SaleKpiForm) => void;
+  onSave: () => void;
+}) {
+  const setNumber = (field: keyof SaleKpiForm, value: string, allowDecimal = false) => {
+    onChange({ ...form, [field]: value.replace(allowDecimal ? /[^\d.]/g : /[^\d]/g, "") });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{form.id ? "Sửa KPI Sale" : "Tạo KPI Sale"}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Phạm vi">
+            <Select
+              value={form.scope}
+              onValueChange={(value) =>
+                onChange({ ...form, scope: value as "team" | "user", userId: "" })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="team">KPI Team Sale</SelectItem>
+                <SelectItem value="user">KPI Cá nhân Sale</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Team Sale">
+            <Select value={form.teamId} onValueChange={(teamId) => onChange({ ...form, teamId })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Chọn team Sale" />
+              </SelectTrigger>
+              <SelectContent>
+                {teams.map((team) => (
+                  <SelectItem key={team.id} value={team.id}>
+                    {team.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          {form.scope === "user" && (
+            <Field label="Nhân viên Sale">
+              <Select value={form.userId} onValueChange={(userId) => onChange({ ...form, userId })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Chọn nhân viên Sale" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sales.map((sale) => (
+                    <SelectItem key={sale.id} value={sale.id}>
+                      {displayProfileName(sale)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
+          <Field label="Kỳ">
+            <Select
+              value={form.periodType}
+              onValueChange={(value) => {
+                if (isSaleKpiPeriod(value)) onChange({ ...form, periodType: value });
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="day">Ngày</SelectItem>
+                <SelectItem value="week">Tuần</SelectItem>
+                <SelectItem value="month">Tháng</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Từ ngày">
+            <Input
+              type="date"
+              value={form.periodStart}
+              onChange={(event) => onChange({ ...form, periodStart: event.target.value })}
+            />
+          </Field>
+          <Field label="Đến ngày">
+            <Input
+              type="date"
+              value={form.periodEnd}
+              onChange={(event) => onChange({ ...form, periodEnd: event.target.value })}
+            />
+          </Field>
+          <Field label="Target doanh thu">
+            <Input
+              value={form.revenueTarget}
+              onChange={(event) => setNumber("revenueTarget", event.target.value)}
+            />
+          </Field>
+          <Field label="Target số đơn">
+            <Input
+              value={form.ordersTarget}
+              onChange={(event) => setNumber("ordersTarget", event.target.value)}
+            />
+          </Field>
+          <Field label="Target tỉ lệ chốt (%)">
+            <Input
+              value={form.closeRateTarget}
+              onChange={(event) => setNumber("closeRateTarget", event.target.value, true)}
+            />
+          </Field>
+          <Field label="Target trung bình đơn">
+            <Input
+              value={form.averageOrderTarget}
+              onChange={(event) => setNumber("averageOrderTarget", event.target.value)}
+            />
+          </Field>
+          <Field label="Ghi chú">
+            <Input
+              value={form.note}
+              onChange={(event) => onChange({ ...form, note: event.target.value })}
+            />
+          </Field>
+        </div>
+        <DialogFooter>
+          <Button onClick={onSave} disabled={isSaving}>
+            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {form.id ? "Lưu KPI" : "Tạo KPI"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -592,6 +981,7 @@ export function AdminFloatingLeadsWorkspace() {
       note: lead.note ?? "",
       status: isFloatingLeadStatusValue(lead.status) ? lead.status : "Chưa gọi",
       isClosed: lead.is_closed,
+      claimCount: lead.claim_count,
     });
   };
   const saveEdit = () => {
@@ -1166,6 +1556,7 @@ async function createAdminFloatingLeads(form: AdminLeadCreateForm, marketers: Sa
     created_by: form.marketingId,
     created_by_name: displayProfileName(marketer),
     status: "Chưa gọi",
+    lifecycle_status: "new",
   }));
 
   const { data, error } = await supabase.from("floating_leads").insert(rows).select("*");
@@ -1187,7 +1578,17 @@ async function updateAdminFloatingLead(
   const marketer = marketers.find((profile) => profile.id === form.marketingId);
   const sale = sales.find((profile) => profile.id === form.assignedSaleId);
   const assignedSaleId = form.assignedSaleId === "none" ? null : form.assignedSaleId;
+  const assignedAt = assignedSaleId ? new Date().toISOString() : null;
   const status = form.isClosed ? "Đã bị chốt" : form.status;
+  const lifecycleStatus = deriveFloatingLeadLifecycle({
+    assigned_sale_id: assignedSaleId,
+    assigned_at: assignedAt,
+    is_closed: form.isClosed,
+    call_1: form.call1.trim() || null,
+    call_2: form.call2.trim() || null,
+    call_3: form.call3.trim() || null,
+    claim_count: form.claimCount,
+  });
   const payload: TablesUpdate<"floating_leads"> = {
     phone,
     lead_date: form.leadDate,
@@ -1196,12 +1597,13 @@ async function updateAdminFloatingLead(
     created_by_name: displayProfileName(marketer),
     assigned_sale_id: assignedSaleId,
     assigned_sale_name: assignedSaleId ? displayProfileName(sale) : null,
-    assigned_at: assignedSaleId ? new Date().toISOString() : null,
+    assigned_at: assignedAt,
     call_1: form.call1.trim() || null,
     call_2: form.call2.trim() || null,
     call_3: form.call3.trim() || null,
     note: form.note.trim() || null,
     status,
+    lifecycle_status: lifecycleStatus,
     is_closed: form.isClosed,
     closed_by: form.isClosed ? assignedSaleId : null,
     closed_at: form.isClosed ? new Date().toISOString() : null,
@@ -1234,6 +1636,59 @@ async function fetchAdminSaleReports(from: string, to: string) {
   return (data ?? []) as SaleReportRow[];
 }
 
+async function fetchSaleTeams() {
+  const { data, error } = await supabase
+    .from("teams")
+    .select("id, name")
+    .eq("department", "sale")
+    .order("name");
+  if (error) throw error;
+  return (data ?? []) as SaleTeam[];
+}
+
+async function fetchSaleKpiTargets(from: string, to: string) {
+  const { data, error } = await supabase
+    .from("sale_kpi_targets")
+    .select("*")
+    .lte("period_start", to)
+    .gte("period_end", from)
+    .order("updated_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as SaleKpiTarget[];
+}
+
+async function upsertSaleKpiTarget(form: SaleKpiForm) {
+  if (form.scope === "team" && !form.teamId) throw new Error("Chọn Team Sale");
+  if (form.scope === "user" && !form.userId) throw new Error("Chọn nhân viên Sale");
+  if (!form.periodStart || !form.periodEnd) throw new Error("Chọn kỳ KPI");
+
+  const payload: TablesInsert<"sale_kpi_targets"> = {
+    team_id: form.teamId || null,
+    user_id: form.scope === "user" ? form.userId : null,
+    period_type: form.periodType,
+    period_start: form.periodStart,
+    period_end: form.periodEnd,
+    revenue_target: Number(form.revenueTarget || 0),
+    orders_target: Number(form.ordersTarget || 0),
+    close_rate_target: Number(form.closeRateTarget || 0),
+    average_order_target: Number(form.averageOrderTarget || 0),
+    note: form.note.trim() || null,
+  };
+
+  if (form.id) {
+    const { error } = await supabase.from("sale_kpi_targets").update(payload).eq("id", form.id);
+    if (error) throw error;
+    return;
+  }
+  const { error } = await supabase.from("sale_kpi_targets").insert(payload);
+  if (error) throw error;
+}
+
+async function deleteSaleKpiTarget(targetId: string) {
+  const { error } = await supabase.from("sale_kpi_targets").delete().eq("id", targetId);
+  if (error) throw error;
+}
+
 async function fetchAdminFloatingLeads(from: string, to: string) {
   const { data, error } = await supabase
     .from("floating_leads")
@@ -1247,20 +1702,25 @@ async function fetchAdminFloatingLeads(from: string, to: string) {
 }
 
 async function fetchSaleProfiles() {
-  return fetchProfilesByRole("sale");
+  const { data: roles, error: rolesError } = await supabase
+    .from("user_roles")
+    .select("user_id")
+    .in("role", [...SALE_ROLES]);
+  if (rolesError) throw rolesError;
+  return fetchProfilesByIds((roles ?? []).map((item) => item.user_id));
 }
 
 async function fetchMarketingProfiles() {
   const { data: roles, error: rolesError } = await supabase
     .from("user_roles")
     .select("user_id, role")
-    .in("role", ["employee", "leader"]);
+    .in("role", [...MARKETING_ROLES]);
   if (rolesError) throw rolesError;
   const ids = Array.from(new Set((roles ?? []).map((role) => role.user_id)));
   return fetchProfilesByIds(ids);
 }
 
-async function fetchProfilesByRole(role: "admin" | "manager" | "leader" | "employee" | "sale") {
+async function fetchProfilesByRole(role: AppRole) {
   const { data: roles, error: rolesError } = await supabase
     .from("user_roles")
     .select("user_id")
@@ -1431,6 +1891,14 @@ function EmptyTableRow({ colSpan }: { colSpan: number }) {
 
 function displayProfileName(profile?: SaleProfile | null) {
   return profile?.full_name || profile?.username || "Không rõ";
+}
+
+function formatDateShort(date: string) {
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(`${date}T00:00:00`));
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {

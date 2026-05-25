@@ -34,6 +34,7 @@ import {
   filterVisibleProfileIds,
   filterVisibleProfiles,
 } from "@/lib/profileVisibility";
+import { isSaleRole } from "@/lib/roles";
 import { getTaskDeadlineState, type TaskDeadlineState } from "@/lib/taskDeadline";
 import {
   dispatchTelegramNotificationsForEntity,
@@ -301,7 +302,11 @@ export function TasksWorkspace() {
       if (teamIds && teamIds.length === 0) {
         teams = [];
       } else {
-        let teamsQuery = supabase.from("teams").select("id, name").order("name");
+        let teamsQuery = supabase
+          .from("teams")
+          .select("id, name")
+          .or("department.is.null,department.eq.marketing")
+          .order("name");
         if (teamIds?.length) teamsQuery = teamsQuery.in("id", teamIds);
         const { data: teamRows } = await teamsQuery;
         teams = teamRows ?? [];
@@ -325,7 +330,15 @@ export function TasksWorkspace() {
             .in("id", userIds)
             .order("full_name")
         : { data: [] };
-      const visibleUsers = filterVisibleProfiles(users ?? [], role);
+      const { data: assignableRoles, error: assignableRolesError } = userIds.length
+        ? await supabase.from("user_roles").select("user_id, role").in("user_id", userIds)
+        : { data: [], error: null };
+      if (assignableRolesError) throw assignableRolesError;
+      const saleUserIds = new Set(
+        (assignableRoles ?? []).filter((row) => isSaleRole(row.role)).map((row) => row.user_id),
+      );
+      const marketingTaskUsers = (users ?? []).filter((user) => !saleUserIds.has(user.id));
+      const visibleUsers = filterVisibleProfiles(marketingTaskUsers, role);
       const visibleUserIds = filterVisibleProfileIds(visibleUsers, role);
 
       let tasksQuery = supabase
@@ -368,6 +381,7 @@ export function TasksWorkspace() {
       }));
       const tasks: TaskRow[] = normalizedTaskRows
         .filter((row) => shouldShowTaskOnBoard(row, date))
+        .filter((row) => !saleUserIds.has(row.assigned_to))
         .filter(
           (row) =>
             canSeeInactiveProfiles(role) ||

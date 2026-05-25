@@ -6,18 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Loader2, BarChart3 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth, type AppRole } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
+import { getRoleHomePath, type AppRole } from "@/lib/roles";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/login")({ component: LoginPage });
 
-const ROLE_HOME: Record<AppRole, string> = {
-  admin: "/admin/dashboard",
-  manager: "/manager/dashboard",
-  leader: "/leader/dashboard",
-  employee: "/employee/dashboard",
-  sale: "/sale/dashboard",
-};
 const MARKETING_AUTH_DOMAIN = "mkt.local";
 const ADMIN_AUTH_DOMAIN = "admin.local";
 const SALE_AUTH_DOMAIN = "sale.local";
@@ -71,7 +65,7 @@ function LoginPage() {
 
   useEffect(() => {
     if (loading || !session) return;
-    if (role) navigate({ to: ROLE_HOME[role] });
+    if (role) navigate({ to: getRoleHomePath(role) });
   }, [loading, session, role, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -149,7 +143,7 @@ function LoginPage() {
     await refresh();
     setSubmitting(false);
     toast.success("Đăng nhập thành công");
-    await navigate({ to: ROLE_HOME[nextRole] });
+    await navigate({ to: getRoleHomePath(nextRole) });
   };
 
   return (

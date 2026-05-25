@@ -15,6 +15,10 @@ const notificationTypeLabelMap: Record<string, string> = {
   daily_checklist_incomplete: "Checklist chưa hoàn thành",
   kpi_personal_low: "KPI cá nhân",
   kpi_team_low: "KPI team",
+  kpi_warning: "Cảnh báo KPI",
+  lead_assigned: "Lead đã giao",
+  lead_closed: "Lead đã chốt",
+  lead_released: "Lead đã release",
   leave_request_approved: "Nghỉ phép đã duyệt",
   leave_request_created: "Đơn xin nghỉ mới",
   leave_request_rejected: "Nghỉ phép không duyệt",
@@ -28,7 +32,9 @@ const notificationTypeLabelMap: Record<string, string> = {
   onboarding_review_pending: "Chờ duyệt onboarding",
   report_missing: "Chưa báo cáo",
   report_missing_summary: "Tổng hợp chưa báo cáo",
+  report_overdue: "Báo cáo quá hạn",
   report_reminder: "Nhắc báo cáo",
+  report_submitted: "Đã gửi báo cáo",
   report_slot_due: "Sắp đến giờ báo cáo",
   report_slot_missing_summary: "Tổng hợp chưa báo cáo",
   report_slot_overdue: "Quá giờ báo cáo",
@@ -44,6 +50,8 @@ const notificationTypeLabelMap: Record<string, string> = {
   task_pending_review: "Task chờ duyệt",
   task_rejected: "Task cần làm lại",
   task_review: "Chờ duyệt task",
+  training_new: "Tài liệu mới",
+  onboarding_unlocked: "Mở khóa onboarding",
 };
 
 export function notificationTypeKey(notification: NotificationLike) {

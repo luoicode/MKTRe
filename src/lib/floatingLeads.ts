@@ -18,6 +18,15 @@ export type FloatingLeadCareDraft = Pick<
 > & { is_closed: boolean };
 
 export type FloatingLeadCallField = "call_1" | "call_2" | "call_3";
+export type FloatingLeadLifecycleStatus =
+  | "new"
+  | "claimed"
+  | "called_1"
+  | "called_2"
+  | "called_3"
+  | "closed"
+  | "released"
+  | "expired";
 
 export type FloatingLeadDisplayStatus =
   | "Đã bị chốt"
@@ -49,13 +58,71 @@ export function getFloatingLeadCallField(lead: Pick<FloatingLeadRow, "claim_coun
   return `call_${slot}` as FloatingLeadCallField;
 }
 
+export function deriveFloatingLeadLifecycle(
+  lead: Pick<
+    FloatingLeadRow,
+    | "assigned_sale_id"
+    | "is_closed"
+    | "call_1"
+    | "call_2"
+    | "call_3"
+    | "claim_count"
+    | "assigned_at"
+  >,
+): FloatingLeadLifecycleStatus {
+  if (lead.is_closed) return "closed";
+  if (lead.call_3?.trim()) return "called_3";
+  if (lead.call_2?.trim()) return "called_2";
+  if (lead.call_1?.trim()) return "called_1";
+  if (lead.assigned_sale_id) return "claimed";
+  if ((lead.claim_count ?? 0) > 0) return "released";
+  if (lead.assigned_at && new Date(lead.assigned_at).getTime() < startOfTodayVN().getTime()) {
+    return "expired";
+  }
+  return "new";
+}
+
+export function getFloatingLeadLifecycle(lead: FloatingLeadRow): FloatingLeadLifecycleStatus {
+  return isFloatingLeadLifecycleStatus(lead.lifecycle_status)
+    ? lead.lifecycle_status
+    : deriveFloatingLeadLifecycle(lead);
+}
+
+export function isFloatingLeadLifecycleStatus(
+  value: string | null | undefined,
+): value is FloatingLeadLifecycleStatus {
+  return (
+    value === "new" ||
+    value === "claimed" ||
+    value === "called_1" ||
+    value === "called_2" ||
+    value === "called_3" ||
+    value === "closed" ||
+    value === "released" ||
+    value === "expired"
+  );
+}
+
 export function getFloatingLeadDisplayStatus(
-  lead: Pick<FloatingLeadRow, "is_closed" | "call_1" | "call_2" | "call_3">,
+  lead: Pick<
+    FloatingLeadRow,
+    | "assigned_sale_id"
+    | "assigned_at"
+    | "is_closed"
+    | "call_1"
+    | "call_2"
+    | "call_3"
+    | "claim_count"
+    | "lifecycle_status"
+  >,
 ): FloatingLeadDisplayStatus {
-  if (lead.is_closed) return "Đã bị chốt";
-  if (lead.call_3?.trim()) return "Đã gọi 3";
-  if (lead.call_2?.trim()) return "Đã gọi 2";
-  if (lead.call_1?.trim()) return "Đã gọi 1";
+  const lifecycle = isFloatingLeadLifecycleStatus(lead.lifecycle_status)
+    ? lead.lifecycle_status
+    : deriveFloatingLeadLifecycle(lead);
+  if (lifecycle === "closed") return "Đã bị chốt";
+  if (lifecycle === "called_3") return "Đã gọi 3";
+  if (lifecycle === "called_2") return "Đã gọi 2";
+  if (lifecycle === "called_1") return "Đã gọi 1";
   return "Chưa gọi";
 }
 
@@ -105,6 +172,7 @@ export async function createMarketingFloatingLeads({
     created_by_name: profileName,
     lead_date: leadDate,
     status: "Chưa gọi",
+    lifecycle_status: "new",
   }));
 
   const { data, error } = await supabase.from("floating_leads").insert(rows).select("*");
@@ -126,6 +194,7 @@ export async function claimFloatingLead({
     assigned_sale_name: profileName,
     assigned_at: new Date().toISOString(),
     last_claimed_at: new Date().toISOString(),
+    lifecycle_status: "claimed",
   };
 
   const { data, error } = await supabase
@@ -163,6 +232,13 @@ export async function updateFloatingLeadCare({
     payload.closed_by = profileId;
     payload.closed_at = new Date().toISOString();
     payload.status = "Đã bị chốt";
+    payload.lifecycle_status = "closed";
+  } else if (callField === "call_1" && draft.call_1?.trim()) {
+    payload.lifecycle_status = "called_1";
+  } else if (callField === "call_2" && draft.call_2?.trim()) {
+    payload.lifecycle_status = "called_2";
+  } else if (callField === "call_3" && draft.call_3?.trim()) {
+    payload.lifecycle_status = "called_3";
   }
 
   const { data, error } = await supabase
@@ -177,6 +253,11 @@ export async function updateFloatingLeadCare({
   if (error) throw error;
   if (!data) throw new Error("Lead đã được khóa hoặc không thuộc bạn");
   return data;
+}
+
+function startOfTodayVN() {
+  const today = todayYmd();
+  return new Date(`${today}T00:00:00+07:00`);
 }
 
 export async function releaseExpiredFloatingLeadsForSale(profileId: string) {

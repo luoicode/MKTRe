@@ -1,6 +1,7 @@
 import { createFileRoute, Outlet, useNavigate, useLocation } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { useAuth, type AppRole } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
+import { getRoleBasePath, getRoleHomePath } from "@/lib/roles";
 import { AppLayout } from "@/components/AppLayout";
 import { Loader2 } from "lucide-react";
 
@@ -22,24 +23,10 @@ function AuthGuard() {
     if (!role) return;
     // Role-based path guarding
     const path = location.pathname;
-    const allowed: Record<AppRole, string> = {
-      admin: "/admin",
-      manager: "/manager",
-      leader: "/leader",
-      employee: "/employee",
-      sale: "/sale",
-    };
-    const home: Record<AppRole, string> = {
-      admin: "/admin/dashboard",
-      manager: "/manager/dashboard",
-      leader: "/leader/dashboard",
-      employee: "/employee/dashboard",
-      sale: "/sale/dashboard",
-    };
     const sharedAuthenticatedPaths = ["/notifications"];
     if (sharedAuthenticatedPaths.some((sharedPath) => path === sharedPath)) return;
-    if (!path.startsWith(allowed[role])) {
-      navigate({ to: home[role] });
+    if (!path.startsWith(getRoleBasePath(role))) {
+      navigate({ to: getRoleHomePath(role) });
     }
   }, [loading, session, role, location.pathname, navigate]);
 

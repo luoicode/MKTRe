@@ -1,10 +1,10 @@
 import type { Tables } from "@/integrations/supabase/types";
+import { isAdminRole, type AppRole } from "@/lib/roles";
 
-export type AppRole = "admin" | "manager" | "leader" | "employee" | "sale" | null | undefined;
 export type ProfileVisibilityStatus = Pick<Tables<"profiles">, "status">;
 
-export function canSeeInactiveProfiles(role: AppRole) {
-  return role === "admin";
+export function canSeeInactiveProfiles(role: AppRole | null | undefined) {
+  return isAdminRole(role);
 }
 
 export function isActiveProfile(profile: ProfileVisibilityStatus | null | undefined) {
@@ -13,14 +13,14 @@ export function isActiveProfile(profile: ProfileVisibilityStatus | null | undefi
 
 export function filterVisibleProfiles<T extends ProfileVisibilityStatus>(
   profiles: T[],
-  role: AppRole,
+  role: AppRole | null | undefined,
 ) {
   return canSeeInactiveProfiles(role) ? profiles : profiles.filter(isActiveProfile);
 }
 
 export function filterVisibleProfileIds<T extends ProfileVisibilityStatus & { id: string }>(
   profiles: T[],
-  role: AppRole,
+  role: AppRole | null | undefined,
 ) {
   return new Set(filterVisibleProfiles(profiles, role).map((profile) => profile.id));
 }

@@ -13,6 +13,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
+import { Route as AuthenticatedSaleTeamRouteImport } from './routes/_authenticated/sale/team'
 import { Route as AuthenticatedSaleReportRouteImport } from './routes/_authenticated/sale/report'
 import { Route as AuthenticatedSaleProfileRouteImport } from './routes/_authenticated/sale/profile'
 import { Route as AuthenticatedSaleKpiRouteImport } from './routes/_authenticated/sale/kpi'
@@ -95,6 +96,11 @@ const AuthenticatedNotificationsRoute =
     path: '/notifications',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedSaleTeamRoute = AuthenticatedSaleTeamRouteImport.update({
+  id: '/sale/team',
+  path: '/sale/team',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedSaleReportRoute = AuthenticatedSaleReportRouteImport.update({
   id: '/sale/report',
   path: '/sale/report',
@@ -519,6 +525,7 @@ export interface FileRoutesByFullPath {
   '/sale/kpi': typeof AuthenticatedSaleKpiRoute
   '/sale/profile': typeof AuthenticatedSaleProfileRoute
   '/sale/report': typeof AuthenticatedSaleReportRoute
+  '/sale/team': typeof AuthenticatedSaleTeamRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -585,6 +592,7 @@ export interface FileRoutesByTo {
   '/sale/kpi': typeof AuthenticatedSaleKpiRoute
   '/sale/profile': typeof AuthenticatedSaleProfileRoute
   '/sale/report': typeof AuthenticatedSaleReportRoute
+  '/sale/team': typeof AuthenticatedSaleTeamRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -653,6 +661,7 @@ export interface FileRoutesById {
   '/_authenticated/sale/kpi': typeof AuthenticatedSaleKpiRoute
   '/_authenticated/sale/profile': typeof AuthenticatedSaleProfileRoute
   '/_authenticated/sale/report': typeof AuthenticatedSaleReportRoute
+  '/_authenticated/sale/team': typeof AuthenticatedSaleTeamRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -721,6 +730,7 @@ export interface FileRouteTypes {
     | '/sale/kpi'
     | '/sale/profile'
     | '/sale/report'
+    | '/sale/team'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -787,6 +797,7 @@ export interface FileRouteTypes {
     | '/sale/kpi'
     | '/sale/profile'
     | '/sale/report'
+    | '/sale/team'
   id:
     | '__root__'
     | '/'
@@ -854,6 +865,7 @@ export interface FileRouteTypes {
     | '/_authenticated/sale/kpi'
     | '/_authenticated/sale/profile'
     | '/_authenticated/sale/report'
+    | '/_authenticated/sale/team'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -890,6 +902,13 @@ declare module '@tanstack/react-router' {
       path: '/notifications'
       fullPath: '/notifications'
       preLoaderRoute: typeof AuthenticatedNotificationsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/sale/team': {
+      id: '/_authenticated/sale/team'
+      path: '/sale/team'
+      fullPath: '/sale/team'
+      preLoaderRoute: typeof AuthenticatedSaleTeamRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/sale/report': {
@@ -1385,6 +1404,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSaleKpiRoute: typeof AuthenticatedSaleKpiRoute
   AuthenticatedSaleProfileRoute: typeof AuthenticatedSaleProfileRoute
   AuthenticatedSaleReportRoute: typeof AuthenticatedSaleReportRoute
+  AuthenticatedSaleTeamRoute: typeof AuthenticatedSaleTeamRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -1453,6 +1473,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSaleKpiRoute: AuthenticatedSaleKpiRoute,
   AuthenticatedSaleProfileRoute: AuthenticatedSaleProfileRoute,
   AuthenticatedSaleReportRoute: AuthenticatedSaleReportRoute,
+  AuthenticatedSaleTeamRoute: AuthenticatedSaleTeamRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

@@ -15,8 +15,15 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Enums, Tables, TablesInsert } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
 import { getLeaderTeamIds, getManagerTeamIds } from "@/lib/dailyAggregates";
-import { getVisibleReports, monthRange, sumReportMetrics } from "@/lib/analytics";
+import {
+  emptyMetricTotals,
+  getVisibleReports,
+  monthRange,
+  sumReportMetrics,
+  type ReportMetricTotals,
+} from "@/lib/analytics";
 import { kpiPercent, kpiStatus } from "@/lib/kpi";
+import { formatKpiMetricValue, marketingMetrics, metricProgress } from "@/lib/kpiMetrics";
 import { filterVisibleProfiles } from "@/lib/profileVisibility";
 import { fmtVndDong, formatDateVN } from "@/lib/reports";
 import { Button } from "@/components/ui/button";
@@ -64,6 +71,10 @@ type KpiFormState = {
   period_end: string;
   revenue_target: string;
   ads_target: string;
+  mess_target: string;
+  data_target: string;
+  orders_target: string;
+  roas_target: string;
   note: string;
 };
 
@@ -73,6 +84,8 @@ type MemberKpiRow = {
   role?: OperationalRole;
   target: number;
   actual: number;
+  dataCount: number;
+  costPerData: number | null;
   percent: number | null;
   status: "none" | "done" | "near" | "low";
 };
@@ -91,6 +104,10 @@ function createDefaultForm(teamId = ""): KpiFormState {
     period_end: range.to,
     revenue_target: "",
     ads_target: "",
+    mess_target: "",
+    data_target: "",
+    orders_target: "",
+    roas_target: "",
     note: "",
   };
 }
@@ -212,7 +229,11 @@ export function KpiWorkspace() {
       if (role === "leader") teamIds = await getLeaderTeamIds(profile!.id);
       if (role === "manager") teamIds = await getManagerTeamIds(profile!.id);
 
-      let teamsQuery = supabase.from("teams").select("id, name").order("name");
+      let teamsQuery = supabase
+        .from("teams")
+        .select("id, name")
+        .or("department.is.null,department.eq.marketing")
+        .order("name");
       if (teamIds?.length) teamsQuery = teamsQuery.in("id", teamIds);
       const { data: teams, error: teamsError } = await teamsQuery;
       if (teamsError) throw teamsError;
@@ -370,12 +391,10 @@ export function KpiWorkspace() {
       : data?.teams.find((team) => team.id === teamFilter)?.name || "Team";
 
   const memberRows = useMemo<MemberKpiRow[]>(() => {
-    const actualByUser = new Map<string, number>();
+    const actualByUser = new Map<string, ReportMetricTotals>();
     for (const report of data?.teamReports ?? []) {
-      actualByUser.set(
-        report.user_id,
-        (actualByUser.get(report.user_id) ?? 0) + report.total_revenue,
-      );
+      const current = actualByUser.get(report.user_id) ?? emptyMetricTotals();
+      actualByUser.set(report.user_id, sumReportMetrics([current, report]));
     }
     const teamById = new Map((data?.teams ?? []).map((team) => [team.id, team]));
     const teamByUserId = new Map(
@@ -394,7 +413,8 @@ export function KpiWorkspace() {
       .map((user) => {
         const kpi = pickLatestKpi((data?.kpis ?? []).filter((row) => row.user_id === user.id));
         const target = Number(kpi?.revenue_target ?? 0);
-        const actual = actualByUser.get(user.id) ?? 0;
+        const actualTotals = actualByUser.get(user.id) ?? emptyMetricTotals();
+        const actual = actualTotals.total_revenue;
         const percent = kpiPercent(actual, target);
         return {
           user,
@@ -402,6 +422,9 @@ export function KpiWorkspace() {
           role: data?.operationalRoleByUserId.get(user.id),
           target,
           actual,
+          dataCount: actualTotals.data_count,
+          costPerData:
+            actualTotals.data_count > 0 ? actualTotals.ads_cost / actualTotals.data_count : null,
           percent,
           status: kpiStatus(percent),
         };
@@ -453,6 +476,10 @@ export function KpiWorkspace() {
       period_end: form.period_end,
       revenue_target: Number(form.revenue_target || 0),
       ads_target: Number(form.ads_target || 0),
+      mess_target: Number(form.mess_target || 0),
+      data_target: Number(form.data_target || 0),
+      orders_target: Number(form.orders_target || 0),
+      roas_target: Number(form.roas_target || 0),
       created_by: profile?.id,
       note: form.note || null,
     };
@@ -538,7 +565,7 @@ export function KpiWorkspace() {
               <>
                 <PersonalKpiPanel
                   kpi={personalKpi}
-                  actualRevenue={data?.personalActual.total_revenue ?? 0}
+                  actual={data?.personalActual}
                   percent={personalPercent}
                   status={personalStatus}
                   canEdit={canEdit}
@@ -555,11 +582,7 @@ export function KpiWorkspace() {
                 <TeamKpiPanel
                   teamName={teamSummaryName}
                   target={teamTarget}
-                  actual={
-                    role === "leader"
-                      ? (data?.teamActual.total_revenue ?? 0)
-                      : filteredTeamActual.total_revenue
-                  }
+                  actual={role === "leader" ? data?.teamActual : filteredTeamActual}
                   adsTarget={teamAdsTarget}
                 />
               </>
@@ -783,6 +806,38 @@ function KpiCreateDialog({
             }
           />
         </Field>
+        <Field label="MESS target">
+          <Input
+            value={form.mess_target}
+            onChange={(event) =>
+              setForm({ ...form, mess_target: event.target.value.replace(/[^\d]/g, "") })
+            }
+          />
+        </Field>
+        <Field label="DATA target">
+          <Input
+            value={form.data_target}
+            onChange={(event) =>
+              setForm({ ...form, data_target: event.target.value.replace(/[^\d]/g, "") })
+            }
+          />
+        </Field>
+        <Field label="Đơn target">
+          <Input
+            value={form.orders_target}
+            onChange={(event) =>
+              setForm({ ...form, orders_target: event.target.value.replace(/[^\d]/g, "") })
+            }
+          />
+        </Field>
+        <Field label="ROI target">
+          <Input
+            value={form.roas_target}
+            onChange={(event) =>
+              setForm({ ...form, roas_target: event.target.value.replace(/[^\d.]/g, "") })
+            }
+          />
+        </Field>
         <Field label="Ghi chú">
           <Input
             value={form.note}
@@ -801,7 +856,7 @@ function KpiCreateDialog({
 
 function PersonalKpiPanel({
   kpi,
-  actualRevenue,
+  actual,
   percent,
   status,
   canEdit,
@@ -810,7 +865,7 @@ function PersonalKpiPanel({
   monthTo,
 }: {
   kpi?: KpiTargetRow;
-  actualRevenue: number;
+  actual?: ReportMetricTotals;
   percent: number | null;
   status: ReturnType<typeof kpiStatus>;
   canEdit: boolean;
@@ -818,6 +873,7 @@ function PersonalKpiPanel({
   monthFrom: string;
   monthTo: string;
 }) {
+  const actualTotals = actual ?? emptyMetricTotals();
   if (!kpi) {
     return (
       <div className="rounded-[28px] border border-dashed bg-card p-8 text-center shadow-sm">
@@ -842,11 +898,25 @@ function PersonalKpiPanel({
           <ProgressRing percent={percent} />
         </div>
         <div className="grid gap-5">
-          <div className="grid gap-5 sm:grid-cols-2">
-            <DarkMetric label="Doanh thu mục tiêu" value={fmtVndDong(kpi.revenue_target)} />
-            <DarkMetric label="Doanh thu thực tế" value={fmtVndDong(actualRevenue)} highlight />
-            <DarkMetric label="% hoàn thành" value={percent == null ? "0%" : `${percent}%`} />
-            <DarkMetric label="Chi phí mục tiêu" value={fmtVndDong(kpi.ads_target)} />
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {marketingMetrics.map((metric) => {
+              const actualValue = metric.actual(actualTotals);
+              const targetValue = metric.target(kpi);
+              const progress = metricProgress({
+                actual: actualValue,
+                target: targetValue,
+                lowerIsBetter: metric.lowerIsBetter,
+              });
+              return (
+                <DarkMetric
+                  key={metric.key}
+                  label={`${metric.label}${targetValue ? ` / ${formatKpiMetricValue(targetValue, metric.kind)}` : ""}`}
+                  value={formatKpiMetricValue(actualValue, metric.kind)}
+                  helper={progress == null ? "Chưa có target" : `${progress}% KPI`}
+                  highlight={metric.key === "revenue" || metric.key === "data"}
+                />
+              );
+            })}
           </div>
           <div className="flex flex-col gap-4 border-t pt-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
@@ -876,10 +946,11 @@ function TeamKpiPanel({
 }: {
   teamName: string;
   target: number;
-  actual: number;
+  actual?: ReportMetricTotals;
   adsTarget: number;
 }) {
-  const percent = kpiPercent(actual, target);
+  const actualTotals = actual ?? emptyMetricTotals();
+  const percent = kpiPercent(actualTotals.total_revenue, target);
   const status = kpiStatus(percent);
   return (
     <section className="rounded-[24px] border bg-card p-5 shadow-sm">
@@ -892,11 +963,25 @@ function TeamKpiPanel({
         </div>
         <Badge className={statusClass(status)}>{statusLabel(status)}</Badge>
       </div>
-      <div className="mt-5 grid gap-3 md:grid-cols-4">
+      <div className="mt-5 grid gap-3 md:grid-cols-4 xl:grid-cols-8">
         <LightMetric label="Tổng KPI doanh thu team" value={fmtVndDong(target)} />
-        <LightMetric label="Tổng doanh thu thực tế team" value={fmtVndDong(actual)} />
+        <LightMetric
+          label="Tổng doanh thu thực tế team"
+          value={fmtVndDong(actualTotals.total_revenue)}
+        />
         <LightMetric label="% hoàn thành team" value={percent == null ? "0%" : `${percent}%`} />
         <LightMetric label="Tổng chi phí mục tiêu" value={fmtVndDong(adsTarget)} />
+        {marketingMetrics
+          .filter((metric) =>
+            ["mess", "data", "cost_per_data", "cpl", "cps", "roi"].includes(metric.key),
+          )
+          .map((metric) => (
+            <LightMetric
+              key={metric.key}
+              label={metric.label}
+              value={formatKpiMetricValue(metric.actual(actualTotals), metric.kind)}
+            />
+          ))}
       </div>
     </section>
   );
@@ -992,6 +1077,8 @@ function MemberKpiTable({
               <th className="px-4 py-3">Team</th>
               <th className="px-4 py-3 text-right">Mục tiêu</th>
               <th className="px-4 py-3 text-right">Thực tế</th>
+              <th className="px-4 py-3 text-right">DATA</th>
+              <th className="px-4 py-3 text-right">Giá số</th>
               <th className="px-4 py-3 text-right">% hoàn thành</th>
               <th className="px-4 py-3 text-right">Trạng thái</th>
             </tr>
@@ -1007,6 +1094,12 @@ function MemberKpiTable({
                   <td className="px-4 py-3 text-muted-foreground">{row.team?.name ?? "—"}</td>
                   <td className="px-4 py-3 text-right font-medium">{fmtVndDong(row.target)}</td>
                   <td className="px-4 py-3 text-right font-medium">{fmtVndDong(row.actual)}</td>
+                  <td className="px-4 py-3 text-right font-medium">
+                    {formatKpiMetricValue(row.dataCount, "number")}
+                  </td>
+                  <td className="px-4 py-3 text-right font-medium">
+                    {formatKpiMetricValue(row.costPerData, "money")}
+                  </td>
                   <td className="px-4 py-3 text-right font-semibold">
                     {row.percent == null ? "0%" : `${row.percent}%`}
                   </td>
@@ -1017,7 +1110,7 @@ function MemberKpiTable({
               ))
             ) : (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
+                <td colSpan={8} className="px-4 py-10 text-center text-muted-foreground">
                   Chưa có KPI trong kỳ này
                 </td>
               </tr>
@@ -1063,10 +1156,12 @@ function DarkMetric({
   label,
   value,
   highlight,
+  helper,
 }: {
   label: string;
   value: string;
   highlight?: boolean;
+  helper?: string;
 }) {
   return (
     <div>
@@ -1076,6 +1171,7 @@ function DarkMetric({
       >
         {value}
       </p>
+      {helper && <p className="mt-1 text-xs text-muted-foreground">{helper}</p>}
     </div>
   );
 }

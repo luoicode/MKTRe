@@ -30,6 +30,7 @@ import { SearchableSelect, SearchableMultiSelect } from "@/components/Searchable
 import { RefreshButton } from "@/components/RefreshButton";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { APP_ROLES, isSaleRole } from "@/lib/roles";
 
 export const Route = createFileRoute("/_authenticated/admin/teams")({ component: AdminTeams });
 
@@ -152,10 +153,10 @@ function AdminTeams() {
 
   const visibleTeams = (teams ?? []).filter((team) => team.department === department);
   const leaders = (profiles ?? []).filter((p) =>
-    department === "marketing" ? p.role === "leader" : p.role === "sale",
+    department === "marketing" ? p.role === APP_ROLES.MARKETING_LEADER : isSaleRole(p.role),
   );
   const employees = (profiles ?? []).filter((p) =>
-    department === "marketing" ? p.role === "employee" : p.role === "sale",
+    department === "marketing" ? p.role === APP_ROLES.MARKETING_EMPLOYEE : isSaleRole(p.role),
   );
   const refreshData = async () => {
     await Promise.all([refetchTeams(), refetchProfiles()]);
@@ -372,6 +373,32 @@ function CreateTeamDialog({
         toast.error(membershipError.message);
         return;
       }
+      if (department === "sale") {
+        const saleMemberIds = selectedIds.filter((userId) => userId !== leaderId);
+        if (saleMemberIds.length) {
+          const { error: memberRoleError } = await supabase
+            .from("user_roles")
+            .update({ role: APP_ROLES.SALE })
+            .in("user_id", saleMemberIds)
+            .eq("role", APP_ROLES.SALE_LEADER);
+          if (memberRoleError) {
+            setLoading(false);
+            toast.error(memberRoleError.message);
+            return;
+          }
+        }
+        if (leaderId) {
+          const { error: roleError } = await supabase
+            .from("user_roles")
+            .update({ role: APP_ROLES.SALE_LEADER })
+            .eq("user_id", leaderId);
+          if (roleError) {
+            setLoading(false);
+            toast.error(roleError.message);
+            return;
+          }
+        }
+      }
     }
 
     setLoading(false);
@@ -518,6 +545,17 @@ function MembersDialog({
       );
       return;
     }
+    if (department === "sale") {
+      const { error: roleError } = await supabase
+        .from("user_roles")
+        .update({ role: APP_ROLES.SALE })
+        .in("user_id", userIds)
+        .eq("role", APP_ROLES.SALE_LEADER);
+      if (roleError) {
+        toast.error(roleError.message);
+        return;
+      }
+    }
     toast.success(`Đã thêm ${userIds.length} thành viên`);
     setUserIds([]);
     await refetch();
@@ -544,6 +582,17 @@ function MembersDialog({
         toast.error(leaderError.message);
         return;
       }
+      if (department === "sale") {
+        const { error: roleError } = await supabase
+          .from("user_roles")
+          .update({ role: APP_ROLES.SALE })
+          .eq("user_id", member.user_id)
+          .eq("role", APP_ROLES.SALE_LEADER);
+        if (roleError) {
+          toast.error(roleError.message);
+          return;
+        }
+      }
     }
     await refetch();
     onChanged();
@@ -551,6 +600,9 @@ function MembersDialog({
 
   const setTeamLeader = async (membershipId: string, userId: string) => {
     setBusy(true);
+    const previousLeaderIds = (members ?? [])
+      .filter((member) => member.role_in_team === "leader" && member.user_id !== userId)
+      .map((member) => member.user_id);
     const demote = await supabase
       .from("team_memberships")
       .update({ role_in_team: "employee" })
@@ -573,11 +625,38 @@ function MembersDialog({
     }
 
     const updateTeam = await supabase.from("teams").update({ leader_id: userId }).eq("id", teamId);
-    setBusy(false);
     if (updateTeam.error) {
+      setBusy(false);
       toast.error(updateTeam.error.message);
       return;
     }
+
+    if (department === "sale") {
+      if (previousLeaderIds.length) {
+        const demoteRoles = await supabase
+          .from("user_roles")
+          .update({ role: APP_ROLES.SALE })
+          .in("user_id", previousLeaderIds)
+          .eq("role", APP_ROLES.SALE_LEADER);
+        if (demoteRoles.error) {
+          setBusy(false);
+          toast.error(demoteRoles.error.message);
+          return;
+        }
+      }
+
+      const promoteRole = await supabase
+        .from("user_roles")
+        .update({ role: APP_ROLES.SALE_LEADER })
+        .eq("user_id", userId);
+      if (promoteRole.error) {
+        setBusy(false);
+        toast.error(promoteRole.error.message);
+        return;
+      }
+    }
+
+    setBusy(false);
 
     toast.success(department === "sale" ? "Đã đặt Leader Sale" : "Đã đặt Leader Marketing");
     await refetch();
@@ -595,6 +674,27 @@ function MembersDialog({
     if (closeExisting.error) {
       setBusy(false);
       toast.error(closeExisting.error.message);
+      return;
+    }
+    if (department === "sale") {
+      const demoteRole = await supabase
+        .from("user_roles")
+        .update({ role: APP_ROLES.SALE })
+        .eq("user_id", userId)
+        .eq("role", APP_ROLES.SALE_LEADER);
+      if (demoteRole.error) {
+        setBusy(false);
+        toast.error(demoteRole.error.message);
+        return;
+      }
+    }
+    const clearOldLeader = await supabase
+      .from("teams")
+      .update({ leader_id: null })
+      .eq("leader_id", userId);
+    if (clearOldLeader.error) {
+      setBusy(false);
+      toast.error(clearOldLeader.error.message);
       return;
     }
     const addNew = await supabase.from("team_memberships").insert({

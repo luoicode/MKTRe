@@ -225,6 +225,7 @@ export type Database = {
           is_closed: boolean;
           last_claimed_at: string | null;
           lead_date: string;
+          lifecycle_status: string;
           note: string | null;
           phone: string;
           source: string | null;
@@ -249,6 +250,7 @@ export type Database = {
           is_closed?: boolean;
           last_claimed_at?: string | null;
           lead_date?: string;
+          lifecycle_status?: string;
           note?: string | null;
           phone: string;
           source?: string | null;
@@ -273,6 +275,7 @@ export type Database = {
           is_closed?: boolean;
           last_claimed_at?: string | null;
           lead_date?: string;
+          lifecycle_status?: string;
           note?: string | null;
           phone?: string;
           source?: string | null;
@@ -694,11 +697,15 @@ export type Database = {
           description: string | null;
           department: string;
           document_type: string | null;
+          file_name: string | null;
+          file_size: number | null;
           file_type: string;
+          file_url: string | null;
           id: string;
           is_active: boolean;
           is_pinned: boolean;
           link_url: string | null;
+          mime_type: string | null;
           sort_order: number;
           title: string;
           updated_at: string;
@@ -710,11 +717,15 @@ export type Database = {
           description?: string | null;
           department?: string;
           document_type?: string | null;
+          file_name?: string | null;
+          file_size?: number | null;
           file_type?: string;
+          file_url?: string | null;
           id?: string;
           is_active?: boolean;
           is_pinned?: boolean;
           link_url?: string | null;
+          mime_type?: string | null;
           sort_order?: number;
           title: string;
           updated_at?: string;
@@ -726,11 +737,15 @@ export type Database = {
           description?: string | null;
           department?: string;
           document_type?: string | null;
+          file_name?: string | null;
+          file_size?: number | null;
           file_type?: string;
+          file_url?: string | null;
           id?: string;
           is_active?: boolean;
           is_pinned?: boolean;
           link_url?: string | null;
+          mime_type?: string | null;
           sort_order?: number;
           title?: string;
           updated_at?: string;
@@ -1150,6 +1165,7 @@ export type Database = {
           created_by: string | null;
           entity_id: string | null;
           entity_type: string | null;
+          event_key: string | null;
           id: string;
           is_read: boolean;
           kind: string;
@@ -1171,6 +1187,7 @@ export type Database = {
           created_by?: string | null;
           entity_id?: string | null;
           entity_type?: string | null;
+          event_key?: string | null;
           id?: string;
           is_read?: boolean;
           kind?: string;
@@ -1192,6 +1209,7 @@ export type Database = {
           created_by?: string | null;
           entity_id?: string | null;
           entity_type?: string | null;
+          event_key?: string | null;
           id?: string;
           is_read?: boolean;
           kind?: string;
@@ -1727,6 +1745,79 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "sale_reports_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      sale_kpi_targets: {
+        Row: {
+          average_order_target: number;
+          close_rate_target: number;
+          created_at: string;
+          created_by: string | null;
+          id: string;
+          note: string | null;
+          orders_target: number;
+          period_end: string;
+          period_start: string;
+          period_type: Database["public"]["Enums"]["kpi_period"];
+          revenue_target: number;
+          team_id: string | null;
+          updated_at: string;
+          user_id: string | null;
+        };
+        Insert: {
+          average_order_target?: number;
+          close_rate_target?: number;
+          created_at?: string;
+          created_by?: string | null;
+          id?: string;
+          note?: string | null;
+          orders_target?: number;
+          period_end: string;
+          period_start: string;
+          period_type?: Database["public"]["Enums"]["kpi_period"];
+          revenue_target?: number;
+          team_id?: string | null;
+          updated_at?: string;
+          user_id?: string | null;
+        };
+        Update: {
+          average_order_target?: number;
+          close_rate_target?: number;
+          created_at?: string;
+          created_by?: string | null;
+          id?: string;
+          note?: string | null;
+          orders_target?: number;
+          period_end?: string;
+          period_start?: string;
+          period_type?: Database["public"]["Enums"]["kpi_period"];
+          revenue_target?: number;
+          team_id?: string | null;
+          updated_at?: string;
+          user_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "sale_kpi_targets_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_kpi_targets_team_id_fkey";
+            columns: ["team_id"];
+            isOneToOne: false;
+            referencedRelation: "teams";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "sale_kpi_targets_user_id_fkey";
             columns: ["user_id"];
             isOneToOne: false;
             referencedRelation: "profiles";
@@ -2356,6 +2447,19 @@ export type Database = {
         Args: { p_team_id?: string | null; p_user_id: string };
         Returns: number;
       };
+      create_in_app_notification: {
+        Args: {
+          p_description?: string | null;
+          p_entity_id?: string | null;
+          p_entity_type?: string | null;
+          p_event_key?: string | null;
+          p_metadata?: Json;
+          p_title: string;
+          p_type: string;
+          p_user_id: string;
+        };
+        Returns: string;
+      };
       get_current_profile_id: { Args: never; Returns: string };
       get_ranking_entries: {
         Args: { p_from?: string; p_to?: string };
@@ -2437,7 +2541,7 @@ export type Database = {
       user_in_my_team: { Args: { _user_id: string }; Returns: boolean };
     };
     Enums: {
-      app_role: "admin" | "leader" | "employee" | "manager" | "sale";
+      app_role: "admin" | "leader" | "employee" | "manager" | "sale" | "leader_sale";
       kpi_period: "day" | "week" | "month";
       report_status: "draft" | "submitted" | "approved" | "rejected" | "locked";
       task_status: "todo" | "in_progress" | "rejected" | "pending_review" | "done";
@@ -2569,7 +2673,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "leader", "employee", "manager", "sale"],
+      app_role: ["admin", "leader", "employee", "manager", "sale", "leader_sale"],
       kpi_period: ["day", "week", "month"],
       report_status: ["draft", "submitted", "approved", "rejected", "locked"],
       task_status: ["todo", "in_progress", "rejected", "pending_review", "done"],

@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Database, Loader2, Search } from "lucide-react";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
+import { FloatingLeadLifecycleDashboard } from "@/components/FloatingLeadLifecycleDashboard";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { RefreshButton } from "@/components/RefreshButton";
 import { Card, CardContent } from "@/components/ui/card";
@@ -173,6 +174,14 @@ export function LeaderFloatingPoolWorkspace() {
           </div>
         </CardContent>
       </Card>
+
+      <FloatingLeadLifecycleDashboard
+        leads={visibleLeads}
+        people={marketers}
+        personRole="marketing"
+        title="Analytics lifecycle lead Marketing"
+        subtitle="Lead do team Marketing upload và trạng thái Sale xử lý trong khoảng lọc."
+      />
 
       {isLoading ? (
         <LoadingState />

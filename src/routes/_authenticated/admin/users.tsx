@@ -36,10 +36,10 @@ import { toast } from "sonner";
 import { RefreshButton } from "@/components/RefreshButton";
 import { UserAvatar } from "@/components/UserAvatar";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
+import { APP_ROLES, ROLE_LABELS, isSaleRole, type AppRole } from "@/lib/roles";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({ component: AdminUsers });
 
-type AppRole = "admin" | "manager" | "leader" | "employee" | "sale";
 type Department = "marketing" | "sale" | "admin";
 type UserStatus = "active" | "inactive";
 type FixedAssetType = "hotline" | "odoo";
@@ -62,14 +62,6 @@ interface TeamOption {
   id: string;
   name: string;
 }
-
-const ROLE_LABELS: Record<AppRole, string> = {
-  admin: "Admin",
-  manager: "Trưởng phòng Marketing",
-  leader: "Leader Marketing",
-  employee: "Nhân viên Marketing",
-  sale: "Nhân viên Sale",
-};
 
 const DEPARTMENT_OPTIONS: Array<{
   value: Department;
@@ -99,12 +91,15 @@ const DEPARTMENT_OPTIONS: Array<{
 
 const ROLE_OPTIONS_BY_DEPARTMENT: Record<Department, Array<{ value: AppRole; label: string }>> = {
   marketing: [
-    { value: "manager", label: "Trưởng phòng Marketing" },
-    { value: "leader", label: "Leader Marketing" },
-    { value: "employee", label: "Nhân viên Marketing" },
+    { value: APP_ROLES.MANAGER, label: "Trưởng phòng Marketing" },
+    { value: APP_ROLES.MARKETING_LEADER, label: "Leader Marketing" },
+    { value: APP_ROLES.MARKETING_EMPLOYEE, label: "Nhân viên Marketing" },
   ],
-  sale: [{ value: "sale", label: "Nhân viên Sale" }],
-  admin: [{ value: "admin", label: "Admin" }],
+  sale: [
+    { value: APP_ROLES.SALE, label: "Nhân viên Sale" },
+    { value: APP_ROLES.SALE_LEADER, label: "Leader Sale" },
+  ],
+  admin: [{ value: APP_ROLES.ADMIN, label: "Admin" }],
 };
 
 const NONE_TEAM = "__none__";
@@ -150,7 +145,7 @@ function normalizeInternalLoginPreview(value: string) {
 }
 
 function departmentForRole(role: AppRole | null | undefined): Department {
-  if (role === "sale") return "sale";
+  if (isSaleRole(role)) return "sale";
   if (role === "admin") return "admin";
   return "marketing";
 }
@@ -672,6 +667,45 @@ function EditUserDialog({
           .from("user_roles")
           .insert({ user_id: user.id, role: form.role });
         if (insertRoleError) throw insertRoleError;
+      }
+
+      if (form.role === APP_ROLES.SALE_LEADER && user.activeTeamId) {
+        const { error: demoteTeamLeadersError } = await supabase
+          .from("team_memberships")
+          .update({ role_in_team: "employee" })
+          .eq("team_id", user.activeTeamId)
+          .eq("is_active", true);
+        if (demoteTeamLeadersError) throw demoteTeamLeadersError;
+
+        const { error: promoteMembershipError } = await supabase
+          .from("team_memberships")
+          .update({ role_in_team: "leader" })
+          .eq("user_id", user.id)
+          .eq("team_id", user.activeTeamId)
+          .eq("is_active", true);
+        if (promoteMembershipError) throw promoteMembershipError;
+
+        const { error: setSaleLeaderError } = await supabase
+          .from("teams")
+          .update({ leader_id: user.id })
+          .eq("id", user.activeTeamId);
+        if (setSaleLeaderError) throw setSaleLeaderError;
+      }
+
+      if (user.role === APP_ROLES.SALE_LEADER && form.role !== APP_ROLES.SALE_LEADER) {
+        const { error: demoteMembershipError } = await supabase
+          .from("team_memberships")
+          .update({ role_in_team: "employee" })
+          .eq("user_id", user.id)
+          .eq("is_active", true);
+        if (demoteMembershipError) throw demoteMembershipError;
+
+        const { error: clearSaleLeaderError } = await supabase
+          .from("teams")
+          .update({ leader_id: null })
+          .eq("leader_id", user.id)
+          .eq("department", "sale");
+        if (clearSaleLeaderError) throw clearSaleLeaderError;
       }
 
       const nextTeamId = canAssignTeam ? form.team_id : "";

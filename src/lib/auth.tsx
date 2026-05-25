@@ -1,16 +1,9 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { ROLE_LABELS, type AppRole } from "@/lib/roles";
 import type { Session, User } from "@supabase/supabase-js";
 
-export type AppRole = "admin" | "manager" | "leader" | "employee" | "sale";
-
-export const ROLE_LABELS: Record<AppRole, string> = {
-  admin: "Admin",
-  manager: "Trưởng phòng Marketing",
-  leader: "Leader Marketing",
-  employee: "Nhân viên Marketing",
-  sale: "Nhân viên Sale",
-};
+export { ROLE_LABELS, type AppRole } from "@/lib/roles";
 
 export interface Profile {
   id: string;

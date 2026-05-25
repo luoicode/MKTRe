@@ -66,7 +66,7 @@ Deno.serve(async (req: Request) => {
       full_name: string;
       username: string;
       password: string;
-      role: "admin" | "manager" | "leader" | "employee" | "sale";
+      role: "admin" | "manager" | "leader" | "employee" | "sale" | "leader_sale";
       status?: "active" | "inactive";
     };
 
@@ -91,7 +91,7 @@ Deno.serve(async (req: Request) => {
       );
     }
     const emailDomain =
-      role === "sale"
+      role === "sale" || role === "leader_sale"
         ? SALE_AUTH_DOMAIN
         : role === "admin"
           ? ADMIN_AUTH_DOMAIN

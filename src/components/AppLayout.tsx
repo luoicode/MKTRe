@@ -1,5 +1,6 @@
 import { Link, useNavigate, useLocation } from "@tanstack/react-router";
-import { useAuth, ROLE_LABELS, type AppRole } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
+import { APP_ROLES, getRoleProfilePath, ROLE_LABELS, SALE_ROLES, type AppRole } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import {
   BarChart3,
@@ -20,7 +21,6 @@ import {
   Menu,
   ClipboardList,
   Warehouse,
-  Info,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -124,11 +124,38 @@ const NAV: NavItem[] = [
   { to: "/employee/resources", label: "Đào tạo", icon: BookOpen, roles: ["employee"] },
 
   // Sale
-  { to: "/sale/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["sale"] },
-  { to: "/sale/report", label: "Nhập báo cáo", icon: ClipboardList, roles: ["sale"] },
-  { to: "/sale/kpi", label: "KPI", icon: Target, roles: ["sale"] },
-  { to: "/sale/floating-pool", label: "Kho thả nổi", icon: Warehouse, roles: ["sale"] },
-  { to: "/sale/profile", label: "Đào tạo", icon: BookOpen, roles: ["sale"] },
+  {
+    to: "/sale/dashboard",
+    label: "Tổng quan",
+    icon: LayoutDashboard,
+    roles: [...SALE_ROLES],
+  },
+  {
+    to: "/sale/report",
+    label: "Báo cáo sale",
+    icon: ClipboardList,
+    roles: [...SALE_ROLES],
+  },
+  { to: "/sale/kpi", label: "KPI sale", icon: Target, roles: [...SALE_ROLES] },
+  {
+    to: "/sale/floating-pool",
+    label: "Kho thả nổi",
+    icon: Warehouse,
+    roles: [APP_ROLES.SALE],
+  },
+  {
+    to: "/sale/floating-pool",
+    label: "Kho thả nổi team",
+    icon: Warehouse,
+    roles: [APP_ROLES.SALE_LEADER],
+  },
+  {
+    to: "/sale/team",
+    label: "Thành viên team",
+    icon: UsersRound,
+    roles: [APP_ROLES.SALE_LEADER],
+  },
+  { to: "/sale/profile", label: "Đào tạo sale", icon: BookOpen, roles: [...SALE_ROLES] },
 ];
 
 export function AppLayout({ children }: { children: ReactNode }) {
@@ -149,7 +176,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     navigate({ to: "/login" });
   };
 
-  const profilePath = role ? `/${role}/profile` : "/login";
+  const profilePath = role ? getRoleProfilePath(role) : "/login";
   const initials =
     profile?.full_name
       ?.split(" ")

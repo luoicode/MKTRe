@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Download,
   ExternalLink,
+  FileImage,
   FileSpreadsheet,
   FileText,
   GraduationCap,
@@ -25,6 +26,7 @@ import {
   Send,
   ShieldCheck,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -52,6 +54,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json, Tables, TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
+import { createInAppNotification, notificationEventKey } from "@/lib/inAppNotifications";
+import {
+  isLeaderRole,
+  isManagementRole,
+  isSaleRole,
+  MARKETING_ROLES,
+  SALE_ROLES,
+} from "@/lib/roles";
 import { insertNotificationsWithTelegram } from "@/lib/telegram";
 import { cn } from "@/lib/utils";
 
@@ -68,8 +78,9 @@ type QuestionType = "text" | "multiple_choice" | "checkbox";
 type AnswerDraft = Record<string, string | string[]>;
 type OnboardingAnswerStatus = "locked" | "open" | "submitted" | "approved" | "rejected";
 type InfoDepartment = "marketing" | "sale";
-type InternalDocumentFileType = "pdf" | "docx" | "xlsx" | "link" | "announcement";
+type InternalDocumentFileType = "pdf" | "docx" | "xlsx" | "image" | "link" | "announcement";
 type InternalDocumentFilter = "all" | InternalDocumentFileType | "pinned" | "recent";
+type ResourceMode = "training" | "onboarding";
 
 type CardFormState = {
   id: string;
@@ -101,6 +112,10 @@ type DocumentFormState = {
   title: string;
   description: string;
   link_url: string;
+  file_url: string;
+  file_name: string;
+  mime_type: string;
+  file_size: number | null;
   document_type: string;
   file_type: InternalDocumentFileType;
   sort_order: number;
@@ -145,6 +160,10 @@ const emptyDocumentForm: DocumentFormState = {
   title: "",
   description: "",
   link_url: "",
+  file_url: "",
+  file_name: "",
+  mime_type: "",
+  file_size: null,
   document_type: "Tài liệu",
   file_type: "link",
   sort_order: 0,
@@ -170,6 +189,7 @@ const documentTypeFilters: Array<{ value: InternalDocumentFilter; label: string 
   { value: "pdf", label: "PDF" },
   { value: "docx", label: "Word" },
   { value: "xlsx", label: "Excel" },
+  { value: "image", label: "Ảnh" },
   { value: "link", label: "Link" },
   { value: "announcement", label: "Thông báo" },
   { value: "pinned", label: "Ghim" },
@@ -181,18 +201,20 @@ export function ResourcesWorkspace() {
   const qc = useQueryClient();
   const isAdmin = role === "admin";
   const isEmployee = role === "employee";
-  const canViewProgress = role === "admin" || role === "manager" || role === "leader";
-  const canManageDocuments = role === "admin" || role === "leader";
+  const canViewProgress = isManagementRole(role) || role === "leader";
+  const canManageDocuments = role === "admin" || isLeaderRole(role);
   const canSwitchDepartments = isAdmin;
-  const canQueryAllDepartments = role === "admin" || role === "manager";
-  const allowedDepartment: InfoDepartment = role === "sale" ? "sale" : "marketing";
+  const canQueryAllDepartments = isManagementRole(role);
+  const allowedDepartment: InfoDepartment = isSaleRole(role) ? "sale" : "marketing";
 
   const [activeDepartment, setActiveDepartment] = useState<InfoDepartment>(
-    role === "sale" ? "sale" : "marketing",
+    isSaleRole(role) ? "sale" : "marketing",
   );
+  const [resourceMode, setResourceMode] = useState<ResourceMode>("training");
   const [documentTypeFilter, setDocumentTypeFilter] = useState<InternalDocumentFilter>("all");
   const [documentSearch, setDocumentSearch] = useState("");
   const [selectedCard, setSelectedCard] = useState<OnboardingCard | null>(null);
+  const [selectedDocument, setSelectedDocument] = useState<OnboardingDocument | null>(null);
   const [cardDialogOpen, setCardDialogOpen] = useState(false);
   const [questionDialogOpen, setQuestionDialogOpen] = useState(false);
   const [documentDialogOpen, setDocumentDialogOpen] = useState(false);
@@ -200,6 +222,7 @@ export function ResourcesWorkspace() {
   const [cardForm, setCardForm] = useState<CardFormState>(emptyCardForm);
   const [questionForm, setQuestionForm] = useState<QuestionFormState>(emptyQuestionForm);
   const [documentForm, setDocumentForm] = useState<DocumentFormState>(emptyDocumentForm);
+  const [documentUploadFile, setDocumentUploadFile] = useState<File | null>(null);
   const [answerDrafts, setAnswerDrafts] = useState<Record<string, AnswerDraft>>({});
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
   const [progressSearch, setProgressSearch] = useState("");
@@ -646,6 +669,10 @@ export function ResourcesWorkspace() {
             title: document.title,
             description: document.description ?? "",
             link_url: document.link_url ?? "",
+            file_url: document.file_url ?? "",
+            file_name: document.file_name ?? "",
+            mime_type: document.mime_type ?? "",
+            file_size: document.file_size ?? null,
             document_type: document.document_type ?? "Tài liệu",
             file_type: getDocumentFileType(document),
             sort_order: document.sort_order ?? 0,
@@ -654,6 +681,7 @@ export function ResourcesWorkspace() {
           }
         : { ...emptyDocumentForm, department: currentDepartment },
     );
+    setDocumentUploadFile(null);
     setDocumentDialogOpen(true);
   };
 
@@ -675,11 +703,13 @@ export function ResourcesWorkspace() {
       content: cardForm.content.trim() || null,
       image_url: cardForm.image_url.trim() || null,
       link_url: cardForm.link_url.trim() || null,
-      youtube_url: youtubeUrl || null,
       sort_order: Number(cardForm.sort_order) || 0,
       is_active: cardForm.is_active,
       updated_by: profile?.id,
     };
+    if (youtubeUrl || cardForm.id) {
+      payload.youtube_url = youtubeUrl || null;
+    }
 
     const result = cardForm.id
       ? await supabase.from("onboarding_cards").update(payload).eq("id", cardForm.id)
@@ -688,6 +718,10 @@ export function ResourcesWorkspace() {
           created_by: profile?.id,
         } as TablesInsert<"onboarding_cards">);
     if (result.error) {
+      if (isOnboardingCardYoutubeSchemaError(result.error)) {
+        toast.error("Database chưa cập nhật cột YouTube. Vui lòng apply migration.");
+        return;
+      }
       toast.error(result.error.message);
       return;
     }
@@ -760,13 +794,37 @@ export function ResourcesWorkspace() {
       toast.error("Nhập tiêu đề tài liệu");
       return;
     }
+    let uploadedFile: {
+      file_url: string;
+      file_name: string;
+      file_type: InternalDocumentFileType;
+      mime_type: string;
+      file_size: number;
+    } | null = null;
+    if (documentUploadFile) {
+      try {
+        uploadedFile = await uploadTrainingDocumentFile({
+          file: documentUploadFile,
+          department: canSwitchDepartments ? documentForm.department : currentDepartment,
+        });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Không thể upload file tài liệu");
+        return;
+      }
+    }
+    const documentId = documentForm.id || crypto.randomUUID();
+    const department = canSwitchDepartments ? documentForm.department : currentDepartment;
     const payload: TablesUpdate<"onboarding_documents"> = {
-      department: canSwitchDepartments ? documentForm.department : currentDepartment,
+      department,
       title: documentForm.title.trim(),
       description: documentForm.description.trim() || null,
       link_url: documentForm.link_url.trim() || null,
+      file_url: uploadedFile?.file_url ?? (documentForm.file_url.trim() || null),
+      file_name: uploadedFile?.file_name ?? (documentForm.file_name.trim() || null),
+      mime_type: uploadedFile?.mime_type ?? (documentForm.mime_type.trim() || null),
+      file_size: uploadedFile?.file_size ?? documentForm.file_size,
       document_type: documentForm.document_type.trim() || null,
-      file_type: documentForm.file_type,
+      file_type: uploadedFile?.file_type ?? documentForm.file_type,
       sort_order: Number(documentForm.sort_order) || 0,
       is_active: documentForm.is_active,
       is_pinned: documentForm.is_pinned,
@@ -777,11 +835,19 @@ export function ResourcesWorkspace() {
       ? await supabase.from("onboarding_documents").update(payload).eq("id", documentForm.id)
       : await supabase.from("onboarding_documents").insert({
           ...payload,
+          id: documentId,
           created_by: profile?.id,
         } as TablesInsert<"onboarding_documents">);
     if (result.error) {
       toast.error(result.error.message);
       return;
+    }
+    if (!documentForm.id) {
+      void notifyTrainingDocumentCreated({
+        documentId,
+        department,
+        title: documentForm.title.trim(),
+      });
     }
     toast.success("Đã lưu tài liệu");
     setDocumentDialogOpen(false);
@@ -952,6 +1018,48 @@ export function ResourcesWorkspace() {
     }
   };
 
+  const notifyTrainingDocumentCreated = async ({
+    documentId,
+    department,
+    title,
+  }: {
+    documentId: string;
+    department: InfoDepartment;
+    title: string;
+  }) => {
+    const roles = department === "sale" ? SALE_ROLES : MARKETING_ROLES;
+    const { data: targetRoles, error: rolesError } = await supabase
+      .from("user_roles")
+      .select("user_id")
+      .in("role", [...roles]);
+    if (rolesError) {
+      console.debug("[in-app-notification] training_new role lookup failed", rolesError.message);
+      return;
+    }
+
+    const targetIds = [...new Set((targetRoles ?? []).map((item) => item.user_id))].filter(
+      (id) => id !== profile?.id,
+    );
+    await Promise.allSettled(
+      targetIds.map((targetId) =>
+        createInAppNotification({
+          userId: targetId,
+          type: "training_new",
+          title: "Tài liệu đào tạo mới",
+          description: `${title} đã được thêm vào Đào tạo ${getDepartmentLabel(department)}.`,
+          entityType: "onboarding_document",
+          entityId: documentId,
+          eventKey: notificationEventKey(["training_new", documentId, targetId]),
+          metadata: {
+            department,
+            document_id: documentId,
+            document_title: title,
+          } as Json,
+        }),
+      ),
+    );
+  };
+
   const submitSectionAnswers = async (section: OnboardingSection) => {
     if (!profile?.id) return false;
     const sectionQuestions = questionsBySection.get(section.id) ?? [];
@@ -1103,6 +1211,32 @@ export function ResourcesWorkspace() {
                   ))}
                 </div>
               ) : null}
+              <div className="mt-3 flex w-fit rounded-full bg-muted p-1">
+                <button
+                  type="button"
+                  className={cn(
+                    "rounded-full px-4 py-1.5 text-sm font-bold transition",
+                    resourceMode === "training"
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                  onClick={() => setResourceMode("training")}
+                >
+                  Đào tạo
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    "rounded-full px-4 py-1.5 text-sm font-bold transition",
+                    resourceMode === "onboarding"
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                  onClick={() => setResourceMode("onboarding")}
+                >
+                  Onboarding
+                </button>
+              </div>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
@@ -1124,22 +1258,24 @@ export function ResourcesWorkspace() {
                 )}
               </Badge>
             ) : null}
-            <Select
-              value={documentTypeFilter}
-              onValueChange={(value) => setDocumentTypeFilter(value as InternalDocumentFilter)}
-            >
-              <SelectTrigger className="h-9 w-36 rounded-xl">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {documentTypeFilters.map((filter) => (
-                  <SelectItem key={filter.value} value={filter.value}>
-                    {filter.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {canManageDocuments && (
+            {resourceMode === "training" ? (
+              <Select
+                value={documentTypeFilter}
+                onValueChange={(value) => setDocumentTypeFilter(value as InternalDocumentFilter)}
+              >
+                <SelectTrigger className="h-9 w-36 rounded-xl">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {documentTypeFilters.map((filter) => (
+                    <SelectItem key={filter.value} value={filter.value}>
+                      {filter.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
+            {resourceMode === "training" && canManageDocuments && (
               <Button className="h-9 rounded-xl" onClick={() => openDocumentForm()}>
                 <Plus className="mr-2 h-4 w-4" /> Thêm tài liệu
               </Button>
@@ -1160,41 +1296,49 @@ export function ResourcesWorkspace() {
       </div>
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="space-y-3">
-            <div className="rounded-2xl border bg-card p-3 shadow-sm">
-              <div className="relative max-w-md">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  className="h-10 rounded-xl pl-9"
-                  value={documentSearch}
-                  onChange={(event) => setDocumentSearch(event.target.value)}
-                  placeholder={`Tìm tài liệu ${currentDepartmentLabel}...`}
-                />
-              </div>
-            </div>
-            {visibleDocuments.length ? (
-              <div className="grid gap-3">
-                {visibleDocuments.map((document) => (
-                  <DocumentCard
-                    key={document.id}
-                    document={document}
-                    canEdit={canManageDocuments}
-                    canDelete={isAdmin}
-                    onEdit={() => openDocumentForm(document)}
-                    onDelete={() => deleteDocument(document.id)}
+        {resourceMode === "training" && (
+          <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="space-y-3">
+              <div className="rounded-2xl border bg-card p-3 shadow-sm">
+                <div className="relative max-w-md">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    className="h-10 rounded-xl pl-9"
+                    value={documentSearch}
+                    onChange={(event) => setDocumentSearch(event.target.value)}
+                    placeholder={`Tìm tài liệu ${currentDepartmentLabel}...`}
                   />
-                ))}
+                </div>
               </div>
-            ) : (
-              <EmptyState text="Chưa có tài liệu phù hợp bộ lọc." />
-            )}
-          </div>
+              {visibleDocuments.length ? (
+                <div className="grid gap-3">
+                  {visibleDocuments.map((document) => (
+                    <DocumentCard
+                      key={document.id}
+                      document={document}
+                      canEdit={canManageDocuments}
+                      canDelete={isAdmin}
+                      onOpen={() => setSelectedDocument(document)}
+                      onEdit={() => openDocumentForm(document)}
+                      onDelete={() => deleteDocument(document.id)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState text="Chưa có tài liệu phù hợp bộ lọc." />
+              )}
+            </div>
 
-          <PinnedDocumentsPanel documents={pinnedDocuments} department={currentDepartment} />
-        </section>
+            <PinnedDocumentsPanel
+              documents={pinnedDocuments}
+              department={currentDepartment}
+              onOpen={setSelectedDocument}
+            />
+          </section>
+        )}
 
-        {currentDepartment === "marketing" &&
+        {resourceMode === "onboarding" &&
+          currentDepartment === "marketing" &&
           sections.map((section, index) => {
             const sectionCards = learningCardsBySection.get(section.id) ?? [];
             const sectionQuestions = questionsBySection.get(section.id) ?? [];
@@ -1359,7 +1503,11 @@ export function ResourcesWorkspace() {
             );
           })}
 
-        {currentDepartment === "marketing" && canViewProgress && (
+        {resourceMode === "onboarding" && currentDepartment === "sale" && (
+          <EmptyState text="Onboarding Sale sẽ được quản lý ở lộ trình riêng. Tài liệu Sale hiện nằm trong tab Đào tạo." />
+        )}
+
+        {resourceMode === "onboarding" && currentDepartment === "marketing" && canViewProgress && (
           <section className="rounded-3xl border bg-card p-5 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -1432,7 +1580,7 @@ export function ResourcesWorkspace() {
           </section>
         )}
 
-        {currentDepartment === "marketing" && canViewProgress && (
+        {resourceMode === "onboarding" && currentDepartment === "marketing" && canViewProgress && (
           <section className="rounded-3xl border bg-card p-5 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -1562,9 +1710,17 @@ export function ResourcesWorkspace() {
         onOpenChange={setDocumentDialogOpen}
         form={documentForm}
         setForm={setDocumentForm}
+        uploadFile={documentUploadFile}
+        setUploadFile={setDocumentUploadFile}
         canChooseDepartment={canSwitchDepartments}
         lockedDepartment={currentDepartment}
         onSave={saveDocument}
+      />
+      <DocumentViewerDialog
+        document={selectedDocument}
+        onOpenChange={(open) => {
+          if (!open) setSelectedDocument(null);
+        }}
       />
     </div>
   );
@@ -2123,12 +2279,14 @@ function DocumentCard({
   document,
   canEdit,
   canDelete,
+  onOpen,
   onEdit,
   onDelete,
 }: {
   document: OnboardingDocument;
   canEdit: boolean;
   canDelete: boolean;
+  onOpen: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -2168,20 +2326,21 @@ function DocumentCard({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {document.link_url ? (
-            <>
-              <Button variant="ghost" size="sm" className="h-8 rounded-lg px-2" asChild>
-                <a href={document.link_url} target="_blank" rel="noreferrer">
-                  <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                  Xem
-                </a>
-              </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" asChild>
-                <a href={document.link_url} target="_blank" rel="noreferrer" title="Tải xuống">
-                  <Download className="h-3.5 w-3.5" />
-                </a>
-              </Button>
-            </>
+          <Button variant="ghost" size="sm" className="h-8 rounded-lg px-2" onClick={onOpen}>
+            <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+            Xem
+          </Button>
+          {getDocumentDownloadUrl(document) ? (
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" asChild>
+              <a
+                href={getDocumentDownloadUrl(document)!}
+                target="_blank"
+                rel="noreferrer"
+                title="Tải xuống"
+              >
+                <Download className="h-3.5 w-3.5" />
+              </a>
+            </Button>
           ) : null}
           {canEdit ? (
             <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={onEdit}>
@@ -2207,9 +2366,11 @@ function DocumentCard({
 function PinnedDocumentsPanel({
   documents,
   department,
+  onOpen,
 }: {
   documents: OnboardingDocument[];
   department: InfoDepartment;
+  onOpen: (document: OnboardingDocument) => void;
 }) {
   return (
     <aside className="h-fit rounded-2xl border bg-card p-4 shadow-sm xl:sticky xl:top-3">
@@ -2225,15 +2386,11 @@ function PinnedDocumentsPanel({
           documents.map((document) => {
             const Icon = getDocumentIcon(getDocumentFileType(document));
             return (
-              <a
+              <button
+                type="button"
                 key={document.id}
-                href={document.link_url ?? "#"}
-                target={document.link_url ? "_blank" : undefined}
-                rel={document.link_url ? "noreferrer" : undefined}
-                className="flex gap-3 rounded-xl border bg-background p-3 transition hover:border-primary/30 hover:bg-muted/30"
-                onClick={(event) => {
-                  if (!document.link_url) event.preventDefault();
-                }}
+                className="flex w-full gap-3 rounded-xl border bg-background p-3 text-left transition hover:border-primary/30 hover:bg-muted/30"
+                onClick={() => onOpen(document)}
               >
                 <div
                   className={cn(
@@ -2249,7 +2406,7 @@ function PinnedDocumentsPanel({
                     {document.document_type ?? getDocumentTypeLabel(getDocumentFileType(document))}
                   </p>
                 </div>
-              </a>
+              </button>
             );
           })
         ) : (
@@ -2266,6 +2423,57 @@ function getDocumentDepartment(document: OnboardingDocument): InfoDepartment {
   return document.department === "sale" ? "sale" : "marketing";
 }
 
+async function uploadTrainingDocumentFile({
+  file,
+  department,
+}: {
+  file: File;
+  department: InfoDepartment;
+}) {
+  const fileType = inferDocumentFileType(file);
+  const safeName = file.name.replace(/[^\w.-]+/g, "-").replace(/-+/g, "-");
+  const path = `${department}/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}-${safeName}`;
+  const { error } = await supabase.storage
+    .from("training-documents")
+    .upload(path, file, { upsert: false, contentType: file.type || undefined });
+  if (error) throw new Error(error.message);
+  const { data } = supabase.storage.from("training-documents").getPublicUrl(path);
+  return {
+    file_url: data.publicUrl,
+    file_name: file.name,
+    file_type: fileType,
+    mime_type: file.type || "application/octet-stream",
+    file_size: file.size,
+  };
+}
+
+function inferDocumentFileType(file: File): InternalDocumentFileType {
+  const name = file.name.toLowerCase();
+  if (file.type === "application/pdf" || name.endsWith(".pdf")) return "pdf";
+  if (file.type.startsWith("image/")) return "image";
+  if (name.endsWith(".doc") || name.endsWith(".docx")) return "docx";
+  if (name.endsWith(".xls") || name.endsWith(".xlsx")) return "xlsx";
+  return "link";
+}
+
+function getDocumentDownloadUrl(document: OnboardingDocument) {
+  return document.file_url || document.link_url || null;
+}
+
+function getDocumentPreviewUrl(document: OnboardingDocument) {
+  return document.file_url || document.link_url || "";
+}
+
+function isPdfDocument(document: OnboardingDocument) {
+  return (
+    getDocumentFileType(document) === "pdf" || getDocumentPreviewUrl(document).includes(".pdf")
+  );
+}
+
+function isImageDocument(document: OnboardingDocument) {
+  return getDocumentFileType(document) === "image";
+}
+
 function isDocumentDepartmentSchemaError(error: { message?: string; details?: string | null }) {
   const text = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
   return (
@@ -2277,16 +2485,35 @@ function isDocumentDepartmentSchemaError(error: { message?: string; details?: st
   );
 }
 
+function isOnboardingCardYoutubeSchemaError(error: { message?: string; details?: string | null }) {
+  const text = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+  return (
+    text.includes("youtube_url") &&
+    text.includes("onboarding_cards") &&
+    (text.includes("schema cache") ||
+      text.includes("could not find") ||
+      text.includes("does not exist") ||
+      text.includes("column"))
+  );
+}
+
 function getDocumentFileType(document: OnboardingDocument): InternalDocumentFileType {
-  const value = document.file_type || document.document_type?.toLowerCase();
+  const value = (
+    document.file_type ||
+    document.mime_type ||
+    document.file_name ||
+    document.document_type?.toLowerCase()
+  )?.toLowerCase();
   if (value === "pdf" || value?.includes("pdf")) return "pdf";
   if (value === "docx" || value?.includes("word")) return "docx";
   if (value === "xlsx" || value?.includes("excel")) return "xlsx";
+  if (value?.startsWith("image/") || value?.match(/\.(png|jpe?g|gif|webp|svg)$/)) return "image";
   if (value === "announcement" || value?.includes("thông báo")) return "announcement";
   return "link";
 }
 
 function getDocumentIcon(fileType: InternalDocumentFileType) {
+  if (fileType === "image") return FileImage;
   if (fileType === "xlsx") return FileSpreadsheet;
   if (fileType === "docx" || fileType === "pdf") return FileText;
   if (fileType === "announcement") return Megaphone;
@@ -2298,6 +2525,7 @@ function getDocumentTone(fileType: InternalDocumentFileType) {
     pdf: "bg-rose-50 text-rose-700",
     docx: "bg-blue-50 text-blue-700",
     xlsx: "bg-emerald-50 text-emerald-700",
+    image: "bg-cyan-50 text-cyan-700",
     link: "bg-violet-50 text-violet-700",
     announcement: "bg-amber-50 text-amber-700",
   };
@@ -2309,6 +2537,7 @@ function getDocumentTypeLabel(fileType: InternalDocumentFileType) {
     pdf: "PDF",
     docx: "Word",
     xlsx: "Excel",
+    image: "Ảnh",
     link: "Link",
     announcement: "Thông báo",
   };
@@ -2585,11 +2814,95 @@ function QuestionFormDialog({
   );
 }
 
+function DocumentViewerDialog({
+  document,
+  onOpenChange,
+}: {
+  document: OnboardingDocument | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const open = !!document;
+  const url = document ? getDocumentPreviewUrl(document) : "";
+  const embedUrl = document?.link_url ? getYouTubeEmbedUrl(document.link_url) : null;
+  const fileType = document ? getDocumentFileType(document) : "link";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[92vh] max-w-5xl overflow-hidden p-0">
+        {document ? (
+          <>
+            <DialogHeader className="border-b px-5 py-4">
+              <DialogTitle className="flex flex-wrap items-center gap-2">
+                {document.title}
+                <Badge variant="outline">
+                  {document.document_type ?? getDocumentTypeLabel(fileType)}
+                </Badge>
+              </DialogTitle>
+              {document.description ? (
+                <p className="text-sm text-muted-foreground">{document.description}</p>
+              ) : null}
+            </DialogHeader>
+            <div className="max-h-[72vh] overflow-auto bg-slate-50 p-4">
+              {embedUrl ? (
+                <div className="overflow-hidden rounded-2xl border bg-black">
+                  <iframe
+                    src={embedUrl}
+                    title={document.title}
+                    className="aspect-video w-full"
+                    allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                  />
+                </div>
+              ) : isPdfDocument(document) && url ? (
+                <iframe
+                  title={document.title}
+                  src={url}
+                  className="h-[68vh] w-full rounded-2xl border bg-white"
+                />
+              ) : isImageDocument(document) && url ? (
+                <div className="flex justify-center rounded-2xl border bg-white p-3">
+                  <img
+                    src={url}
+                    alt={document.title}
+                    className="max-h-[68vh] max-w-full rounded-xl object-contain"
+                  />
+                </div>
+              ) : url ? (
+                <div className="flex min-h-72 flex-col items-center justify-center rounded-2xl border bg-white p-8 text-center">
+                  <FileText className="h-12 w-12 text-muted-foreground" />
+                  <p className="mt-4 font-bold">
+                    File này không preview trực tiếp trong trình duyệt.
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Dùng nút bên dưới để tải xuống hoặc mở bằng ứng dụng phù hợp.
+                  </p>
+                  <Button className="mt-5 rounded-xl" asChild>
+                    <a href={url} target="_blank" rel="noreferrer">
+                      <ExternalLink className="mr-2 h-4 w-4" />
+                      Mở / tải xuống
+                    </a>
+                  </Button>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed bg-white p-8 text-center text-muted-foreground">
+                  Tài liệu này chưa có file hoặc link đính kèm.
+                </div>
+              )}
+            </div>
+          </>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function DocumentFormDialog({
   open,
   onOpenChange,
   form,
   setForm,
+  uploadFile,
+  setUploadFile,
   canChooseDepartment,
   lockedDepartment,
   onSave,
@@ -2598,6 +2911,8 @@ function DocumentFormDialog({
   onOpenChange: (open: boolean) => void;
   form: DocumentFormState;
   setForm: (form: DocumentFormState) => void;
+  uploadFile: File | null;
+  setUploadFile: (file: File | null) => void;
   canChooseDepartment: boolean;
   lockedDepartment: InfoDepartment;
   onSave: () => void;
@@ -2649,6 +2964,7 @@ function DocumentFormDialog({
                   <SelectItem value="pdf">PDF</SelectItem>
                   <SelectItem value="docx">Word</SelectItem>
                   <SelectItem value="xlsx">Excel</SelectItem>
+                  <SelectItem value="image">Ảnh</SelectItem>
                   <SelectItem value="link">Link</SelectItem>
                   <SelectItem value="announcement">Thông báo</SelectItem>
                 </SelectContent>
@@ -2681,7 +2997,52 @@ function DocumentFormDialog({
             <Input
               value={form.link_url}
               onChange={(event) => setForm({ ...form, link_url: event.target.value })}
+              placeholder="https://... hoặc YouTube/PDF/Image"
             />
+          </Field>
+          <Field label="Upload file">
+            <div className="rounded-xl border border-dashed bg-muted/20 p-3">
+              <label className="flex cursor-pointer items-center gap-3 text-sm">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-background shadow-sm">
+                  <Upload className="h-4 w-4 text-primary" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-semibold">
+                    {uploadFile?.name || form.file_name || "Chọn PDF, ảnh, Word hoặc Excel"}
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    File cũ vẫn được giữ nếu không chọn file mới.
+                  </span>
+                </span>
+                <Input
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,image/*"
+                  onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
+                />
+              </label>
+              {uploadFile || form.file_url ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2 h-8 rounded-lg"
+                  onClick={() => {
+                    setUploadFile(null);
+                    setForm({
+                      ...form,
+                      file_url: "",
+                      file_name: "",
+                      mime_type: "",
+                      file_size: null,
+                    });
+                  }}
+                >
+                  <X className="mr-1.5 h-3.5 w-3.5" />
+                  Bỏ file
+                </Button>
+              ) : null}
+            </div>
           </Field>
           <Field label="Mô tả ngắn">
             <Textarea
