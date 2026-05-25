@@ -1,9 +1,29 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Database, FileText, Loader2, Search, Target, TrendingUp } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Database,
+  FileText,
+  Loader2,
+  Pencil,
+  Plus,
+  Search,
+  Target,
+  Trash2,
+  TrendingUp,
+} from "lucide-react";
+import { toast } from "sonner";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -14,12 +34,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
+import type { TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
 import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib/dateRange";
 import {
+  floatingLeadStatuses,
   getFloatingLeadDisplayStatus,
+  todayYmd,
   type FloatingLeadDisplayStatus,
   type FloatingLeadRow,
+  type FloatingLeadStatus,
 } from "@/lib/floatingLeads";
 import {
   saleReportSlots,
@@ -44,6 +69,28 @@ type AdminFloatingLeadStatus =
   | "called_3"
   | "closed"
   | "not_closed";
+
+type AdminLeadCreateForm = {
+  phonesText: string;
+  leadDate: string;
+  marketingId: string;
+  source: string;
+};
+
+type AdminLeadEditForm = {
+  id: string;
+  phone: string;
+  leadDate: string;
+  marketingId: string;
+  source: string;
+  assignedSaleId: string;
+  call1: string;
+  call2: string;
+  call3: string;
+  note: string;
+  status: FloatingLeadStatus;
+  isClosed: boolean;
+};
 
 export function AdminMarketingSaleTabs({
   marketing,
@@ -429,11 +476,22 @@ export function AdminSaleKpi() {
 }
 
 export function AdminFloatingLeadsWorkspace() {
+  const queryClient = useQueryClient();
   const [range, setRange] = useState<DateRangeValue>(() => initialDateRange("today"));
   const [status, setStatus] = useState<AdminFloatingLeadStatus>("all");
   const [marketingId, setMarketingId] = useState("all");
   const [saleId, setSaleId] = useState("all");
   const [search, setSearch] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editLead, setEditLead] = useState<FloatingLeadRow | null>(null);
+  const [deleteLead, setDeleteLead] = useState<FloatingLeadRow | null>(null);
+  const [createForm, setCreateForm] = useState<AdminLeadCreateForm>({
+    phonesText: "",
+    leadDate: todayYmd(),
+    marketingId: "",
+    source: "",
+  });
+  const [editForm, setEditForm] = useState<AdminLeadEditForm | null>(null);
   const normalizedRange = normalizeDateRange(range);
   const { data, isLoading } = useQuery({
     queryKey: ["admin-floating-leads", normalizedRange.from, normalizedRange.to],
@@ -444,6 +502,49 @@ export function AdminFloatingLeadsWorkspace() {
         fetchMarketingProfiles(),
       ]);
       return { leads, sales, marketers };
+    },
+  });
+  const invalidateAdminLeads = () =>
+    queryClient.invalidateQueries({ queryKey: ["admin-floating-leads"] });
+
+  const createMutation = useMutation({
+    mutationFn: () => createAdminFloatingLeads(createForm, data?.marketers ?? []),
+    onSuccess: async (rows) => {
+      await invalidateAdminLeads();
+      setCreateOpen(false);
+      setCreateForm({
+        phonesText: "",
+        leadDate: todayYmd(),
+        marketingId: createForm.marketingId,
+        source: "",
+      });
+      toast.success(`Đã thêm ${rows.length} số vào kho thả nổi`);
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Không thể thêm số");
+    },
+  });
+  const updateMutation = useMutation({
+    mutationFn: () => updateAdminFloatingLead(editForm, data?.marketers ?? [], data?.sales ?? []),
+    onSuccess: async () => {
+      await invalidateAdminLeads();
+      setEditLead(null);
+      setEditForm(null);
+      toast.success("Đã cập nhật lead");
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Không thể cập nhật lead");
+    },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (leadId: string) => deleteAdminFloatingLead(leadId),
+    onSuccess: async () => {
+      await invalidateAdminLeads();
+      setDeleteLead(null);
+      toast.success("Đã xóa lead");
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Không thể xóa lead");
     },
   });
   const visibleLeads = useMemo(
@@ -458,6 +559,41 @@ export function AdminFloatingLeadsWorkspace() {
       }),
     [data?.leads, marketingId, saleId, search, status],
   );
+  const openCreateDialog = () => {
+    setCreateForm((current) => ({
+      ...current,
+      leadDate: todayYmd(),
+      marketingId: current.marketingId || data?.marketers[0]?.id || "",
+    }));
+    setCreateOpen(true);
+  };
+  const openEditDialog = (lead: FloatingLeadRow) => {
+    setEditLead(lead);
+    setEditForm({
+      id: lead.id,
+      phone: lead.phone,
+      leadDate: lead.lead_date,
+      marketingId: lead.created_by,
+      source: lead.source ?? "",
+      assignedSaleId: lead.assigned_sale_id ?? "none",
+      call1: lead.call_1 ?? "",
+      call2: lead.call_2 ?? "",
+      call3: lead.call_3 ?? "",
+      note: lead.note ?? "",
+      status: isFloatingLeadStatusValue(lead.status) ? lead.status : "Chưa gọi",
+      isClosed: lead.is_closed,
+    });
+  };
+  const saveEdit = () => {
+    if (
+      editLead &&
+      hasLeadHistory(editLead) &&
+      !window.confirm("Lead này đã có lịch sử xử lý. Bạn chắc chắn muốn sửa?")
+    ) {
+      return;
+    }
+    updateMutation.mutate();
+  };
 
   return (
     <div className="space-y-4">
@@ -477,6 +613,10 @@ export function AdminFloatingLeadsWorkspace() {
             </div>
 
             <div className="flex flex-wrap items-end gap-2 xl:justify-end">
+              <Button className="h-9 rounded-xl gap-2" onClick={openCreateDialog}>
+                <Plus className="h-4 w-4" />
+                Thêm số
+              </Button>
               <DateRangeFilter
                 value={range}
                 onChange={setRange}
@@ -551,6 +691,7 @@ export function AdminFloatingLeadsWorkspace() {
                     "Cuộc gọi lần 2",
                     "Cuộc gọi lần 3",
                     "Tình trạng",
+                    "",
                   ].map((header) => (
                     <th key={header} className="px-3 py-2.5">
                       {header}
@@ -599,17 +740,439 @@ export function AdminFloatingLeadsWorkspace() {
                       <td className="px-3 py-2.5">
                         <FloatingLeadStatusBadge status={statusLabel} />
                       </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right">
+                        <div className="inline-flex items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 rounded-lg p-0"
+                            title="Sửa lead"
+                            aria-label="Sửa lead"
+                            onClick={() => openEditDialog(lead)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 rounded-lg p-0 text-destructive hover:bg-red-50 hover:text-destructive"
+                            title="Xóa lead"
+                            aria-label="Xóa lead"
+                            onClick={() => setDeleteLead(lead)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
-                {!visibleLeads.length && <EmptyTableRow colSpan={9} />}
+                {!visibleLeads.length && <EmptyTableRow colSpan={10} />}
               </tbody>
             </table>
           </CardContent>
         </Card>
       )}
+
+      <AdminLeadCreateDialog
+        open={createOpen}
+        form={createForm}
+        marketers={data?.marketers ?? []}
+        isSaving={createMutation.isPending}
+        onOpenChange={setCreateOpen}
+        onFormChange={setCreateForm}
+        onSave={() => createMutation.mutate()}
+      />
+      <AdminLeadEditDialog
+        open={!!editLead && !!editForm}
+        form={editForm}
+        marketers={data?.marketers ?? []}
+        sales={data?.sales ?? []}
+        isSaving={updateMutation.isPending}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditLead(null);
+            setEditForm(null);
+          }
+        }}
+        onFormChange={setEditForm}
+        onSave={saveEdit}
+      />
+      <AdminLeadDeleteDialog
+        lead={deleteLead}
+        isDeleting={deleteMutation.isPending}
+        onOpenChange={(open) => !open && setDeleteLead(null)}
+        onConfirm={() => deleteLead && deleteMutation.mutate(deleteLead.id)}
+      />
     </div>
   );
+}
+
+function AdminLeadCreateDialog({
+  open,
+  form,
+  marketers,
+  isSaving,
+  onOpenChange,
+  onFormChange,
+  onSave,
+}: {
+  open: boolean;
+  form: AdminLeadCreateForm;
+  marketers: SaleProfile[];
+  isSaving: boolean;
+  onOpenChange: (open: boolean) => void;
+  onFormChange: (form: AdminLeadCreateForm) => void;
+  onSave: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Thêm số vào kho thả nổi</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Ngày">
+              <Input
+                type="date"
+                value={form.leadDate}
+                onChange={(event) => onFormChange({ ...form, leadDate: event.target.value })}
+              />
+            </Field>
+            <Field label="Marketing tạo / phụ trách">
+              <Select
+                value={form.marketingId}
+                onValueChange={(value) => onFormChange({ ...form, marketingId: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Chọn Marketing" />
+                </SelectTrigger>
+                <SelectContent>
+                  {marketers.map((profile) => (
+                    <SelectItem key={profile.id} value={profile.id}>
+                      {displayProfileName(profile)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+          <Field label="Nguồn">
+            <Input
+              value={form.source}
+              onChange={(event) => onFormChange({ ...form, source: event.target.value })}
+              placeholder="Facebook, Odoo, Ads..."
+            />
+          </Field>
+          <Field label="Số điện thoại">
+            <Textarea
+              className="min-h-32"
+              value={form.phonesText}
+              onChange={(event) => onFormChange({ ...form, phonesText: event.target.value })}
+              placeholder="Nhập tối đa 5 số điện thoại, mỗi dòng 1 số"
+            />
+          </Field>
+          <p className="text-xs text-muted-foreground">
+            Admin có thể thêm tối đa 5 số/lần. Số sẽ thuộc về Marketing được chọn.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Hủy
+          </Button>
+          <Button disabled={isSaving} onClick={onSave}>
+            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Lưu số
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AdminLeadEditDialog({
+  open,
+  form,
+  marketers,
+  sales,
+  isSaving,
+  onOpenChange,
+  onFormChange,
+  onSave,
+}: {
+  open: boolean;
+  form: AdminLeadEditForm | null;
+  marketers: SaleProfile[];
+  sales: SaleProfile[];
+  isSaving: boolean;
+  onOpenChange: (open: boolean) => void;
+  onFormChange: (form: AdminLeadEditForm | null) => void;
+  onSave: () => void;
+}) {
+  if (!form) return null;
+
+  const setForm = (next: Partial<AdminLeadEditForm>) => onFormChange({ ...form, ...next });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Sửa lead thả nổi</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <div className="grid gap-3 md:grid-cols-3">
+            <Field label="Số điện thoại">
+              <Input
+                value={form.phone}
+                onChange={(event) => setForm({ phone: event.target.value })}
+              />
+            </Field>
+            <Field label="Ngày">
+              <Input
+                type="date"
+                value={form.leadDate}
+                onChange={(event) => setForm({ leadDate: event.target.value })}
+              />
+            </Field>
+            <Field label="Nguồn">
+              <Input
+                value={form.source}
+                onChange={(event) => setForm({ source: event.target.value })}
+              />
+            </Field>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <Field label="Marketing owner">
+              <Select
+                value={form.marketingId}
+                onValueChange={(value) => setForm({ marketingId: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {marketers.map((profile) => (
+                    <SelectItem key={profile.id} value={profile.id}>
+                      {displayProfileName(profile)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Sale nhận">
+              <Select
+                value={form.assignedSaleId}
+                onValueChange={(value) => setForm({ assignedSaleId: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Chưa có</SelectItem>
+                  {sales.map((profile) => (
+                    <SelectItem key={profile.id} value={profile.id}>
+                      {displayProfileName(profile)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Trạng thái">
+              <Select
+                value={form.status}
+                onValueChange={(value) => {
+                  const nextStatus = value as FloatingLeadStatus;
+                  setForm({ status: nextStatus, isClosed: nextStatus === "Đã bị chốt" });
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {floatingLeadStatuses.map((statusItem) => (
+                    <SelectItem key={statusItem} value={statusItem}>
+                      {statusItem}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <Field label="Cuộc gọi lần 1">
+              <Textarea
+                className="min-h-24"
+                value={form.call1}
+                onChange={(event) => setForm({ call1: event.target.value })}
+              />
+            </Field>
+            <Field label="Cuộc gọi lần 2">
+              <Textarea
+                className="min-h-24"
+                value={form.call2}
+                onChange={(event) => setForm({ call2: event.target.value })}
+              />
+            </Field>
+            <Field label="Cuộc gọi lần 3">
+              <Textarea
+                className="min-h-24"
+                value={form.call3}
+                onChange={(event) => setForm({ call3: event.target.value })}
+              />
+            </Field>
+          </div>
+          <Field label="Ghi chú Sale">
+            <Textarea
+              className="min-h-24"
+              value={form.note}
+              onChange={(event) => setForm({ note: event.target.value })}
+            />
+          </Field>
+          <label className="flex items-center gap-2 rounded-xl border bg-slate-50 px-3 py-2 text-sm font-semibold">
+            <Checkbox
+              checked={form.isClosed}
+              onCheckedChange={(value) => {
+                const checked = value === true;
+                setForm({
+                  isClosed: checked,
+                  status: checked
+                    ? "Đã bị chốt"
+                    : form.status === "Đã bị chốt"
+                      ? "Chưa gọi"
+                      : form.status,
+                });
+              }}
+            />
+            Đánh dấu đã chốt
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Hủy
+          </Button>
+          <Button disabled={isSaving} onClick={onSave}>
+            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Lưu thay đổi
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AdminLeadDeleteDialog({
+  lead,
+  isDeleting,
+  onOpenChange,
+  onConfirm,
+}: {
+  lead: FloatingLeadRow | null;
+  isDeleting: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}) {
+  const hasHistory = !!lead && hasLeadHistory(lead);
+
+  return (
+    <Dialog open={!!lead} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Xóa lead thả nổi?</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-2 text-sm text-muted-foreground">
+          <p>Bạn có chắc muốn xóa lead này? Hành động này không thể hoàn tác.</p>
+          {hasHistory ? (
+            <p className="rounded-xl border border-red-200 bg-red-50 p-3 font-semibold text-red-700">
+              Lead này đã có lịch sử xử lý Sale. Xóa sẽ mất toàn bộ lịch sử.
+            </p>
+          ) : null}
+          {lead ? <p className="font-bold text-foreground">{lead.phone}</p> : null}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Hủy
+          </Button>
+          <Button variant="destructive" disabled={isDeleting} onClick={onConfirm}>
+            {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Xóa lead
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+async function createAdminFloatingLeads(form: AdminLeadCreateForm, marketers: SaleProfile[]) {
+  const phones = parseAdminLeadPhones(form.phonesText);
+  if (!phones.length) throw new Error("Nhập ít nhất 1 số điện thoại.");
+  if (!form.marketingId) throw new Error("Chọn Marketing phụ trách.");
+  if (!form.leadDate) throw new Error("Chọn ngày.");
+
+  const marketer = marketers.find((profile) => profile.id === form.marketingId);
+  const rows: TablesInsert<"floating_leads">[] = phones.map((phone) => ({
+    phone,
+    source: form.source.trim() || null,
+    lead_date: form.leadDate,
+    created_by: form.marketingId,
+    created_by_name: displayProfileName(marketer),
+    status: "Chưa gọi",
+  }));
+
+  const { data, error } = await supabase.from("floating_leads").insert(rows).select("*");
+  if (error) throw error;
+  return (data ?? []) as FloatingLeadRow[];
+}
+
+async function updateAdminFloatingLead(
+  form: AdminLeadEditForm | null,
+  marketers: SaleProfile[],
+  sales: SaleProfile[],
+) {
+  if (!form) throw new Error("Không có dữ liệu lead để cập nhật.");
+  const phone = normalizeAdminLeadPhone(form.phone);
+  validateSingleAdminLeadPhone(phone);
+  if (!form.marketingId) throw new Error("Chọn Marketing owner.");
+  if (!form.leadDate) throw new Error("Chọn ngày.");
+
+  const marketer = marketers.find((profile) => profile.id === form.marketingId);
+  const sale = sales.find((profile) => profile.id === form.assignedSaleId);
+  const assignedSaleId = form.assignedSaleId === "none" ? null : form.assignedSaleId;
+  const status = form.isClosed ? "Đã bị chốt" : form.status;
+  const payload: TablesUpdate<"floating_leads"> = {
+    phone,
+    lead_date: form.leadDate,
+    source: form.source.trim() || null,
+    created_by: form.marketingId,
+    created_by_name: displayProfileName(marketer),
+    assigned_sale_id: assignedSaleId,
+    assigned_sale_name: assignedSaleId ? displayProfileName(sale) : null,
+    assigned_at: assignedSaleId ? new Date().toISOString() : null,
+    call_1: form.call1.trim() || null,
+    call_2: form.call2.trim() || null,
+    call_3: form.call3.trim() || null,
+    note: form.note.trim() || null,
+    status,
+    is_closed: form.isClosed,
+    closed_by: form.isClosed ? assignedSaleId : null,
+    closed_at: form.isClosed ? new Date().toISOString() : null,
+  };
+
+  const { data, error } = await supabase
+    .from("floating_leads")
+    .update(payload)
+    .eq("id", form.id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as FloatingLeadRow;
+}
+
+async function deleteAdminFloatingLead(leadId: string) {
+  const { error } = await supabase.from("floating_leads").delete().eq("id", leadId);
+  if (error) throw error;
 }
 
 async function fetchAdminSaleReports(from: string, to: string) {
@@ -795,6 +1358,58 @@ function EmptyTableRow({ colSpan }: { colSpan: number }) {
 
 function displayProfileName(profile?: SaleProfile | null) {
   return profile?.full_name || profile?.username || "Không rõ";
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="grid gap-1.5 text-sm font-medium">
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function parseAdminLeadPhones(value: string) {
+  const lines = value.split(/\r?\n/).map(normalizeAdminLeadPhone).filter(Boolean);
+  if (lines.length > 5) throw new Error("Chỉ được nhập tối đa 5 số/lần.");
+
+  const seen = new Set<string>();
+  const phones: string[] = [];
+  lines.forEach((phone) => {
+    validateSingleAdminLeadPhone(phone);
+    const digits = phone.replace(/\D/g, "");
+    if (seen.has(digits)) return;
+    seen.add(digits);
+    phones.push(phone);
+  });
+  return phones;
+}
+
+function normalizeAdminLeadPhone(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function validateSingleAdminLeadPhone(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 8 || digits.length > 15) {
+    throw new Error(`Số điện thoại không hợp lệ: ${phone || "(trống)"}`);
+  }
+}
+
+function hasLeadHistory(lead: FloatingLeadRow) {
+  return Boolean(
+    lead.assigned_sale_id ||
+    lead.closed_by ||
+    lead.is_closed ||
+    lead.call_1 ||
+    lead.call_2 ||
+    lead.call_3 ||
+    lead.claim_count > 0,
+  );
+}
+
+function isFloatingLeadStatusValue(value: string): value is FloatingLeadStatus {
+  return floatingLeadStatuses.includes(value as FloatingLeadStatus);
 }
 
 function formatDate(value: string) {

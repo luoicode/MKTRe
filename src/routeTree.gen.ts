@@ -43,6 +43,7 @@ import { Route as AuthenticatedLeaderRankingRouteImport } from './routes/_authen
 import { Route as AuthenticatedLeaderProfileRouteImport } from './routes/_authenticated/leader/profile'
 import { Route as AuthenticatedLeaderNotificationsRouteImport } from './routes/_authenticated/leader/notifications'
 import { Route as AuthenticatedLeaderKpiRouteImport } from './routes/_authenticated/leader/kpi'
+import { Route as AuthenticatedLeaderFloatingPoolRouteImport } from './routes/_authenticated/leader/floating-pool'
 import { Route as AuthenticatedLeaderDashboardRouteImport } from './routes/_authenticated/leader/dashboard'
 import { Route as AuthenticatedLeaderDailyReportRouteImport } from './routes/_authenticated/leader/daily-report'
 import { Route as AuthenticatedLeaderAttendanceRouteImport } from './routes/_authenticated/leader/attendance'
@@ -270,6 +271,12 @@ const AuthenticatedLeaderKpiRoute = AuthenticatedLeaderKpiRouteImport.update({
   path: '/leader/kpi',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedLeaderFloatingPoolRoute =
+  AuthenticatedLeaderFloatingPoolRouteImport.update({
+    id: '/leader/floating-pool',
+    path: '/leader/floating-pool',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedLeaderDashboardRoute =
   AuthenticatedLeaderDashboardRouteImport.update({
     id: '/leader/dashboard',
@@ -481,6 +488,7 @@ export interface FileRoutesByFullPath {
   '/leader/attendance': typeof AuthenticatedLeaderAttendanceRoute
   '/leader/daily-report': typeof AuthenticatedLeaderDailyReportRoute
   '/leader/dashboard': typeof AuthenticatedLeaderDashboardRoute
+  '/leader/floating-pool': typeof AuthenticatedLeaderFloatingPoolRoute
   '/leader/kpi': typeof AuthenticatedLeaderKpiRoute
   '/leader/notifications': typeof AuthenticatedLeaderNotificationsRoute
   '/leader/profile': typeof AuthenticatedLeaderProfileRoute
@@ -546,6 +554,7 @@ export interface FileRoutesByTo {
   '/leader/attendance': typeof AuthenticatedLeaderAttendanceRoute
   '/leader/daily-report': typeof AuthenticatedLeaderDailyReportRoute
   '/leader/dashboard': typeof AuthenticatedLeaderDashboardRoute
+  '/leader/floating-pool': typeof AuthenticatedLeaderFloatingPoolRoute
   '/leader/kpi': typeof AuthenticatedLeaderKpiRoute
   '/leader/notifications': typeof AuthenticatedLeaderNotificationsRoute
   '/leader/profile': typeof AuthenticatedLeaderProfileRoute
@@ -613,6 +622,7 @@ export interface FileRoutesById {
   '/_authenticated/leader/attendance': typeof AuthenticatedLeaderAttendanceRoute
   '/_authenticated/leader/daily-report': typeof AuthenticatedLeaderDailyReportRoute
   '/_authenticated/leader/dashboard': typeof AuthenticatedLeaderDashboardRoute
+  '/_authenticated/leader/floating-pool': typeof AuthenticatedLeaderFloatingPoolRoute
   '/_authenticated/leader/kpi': typeof AuthenticatedLeaderKpiRoute
   '/_authenticated/leader/notifications': typeof AuthenticatedLeaderNotificationsRoute
   '/_authenticated/leader/profile': typeof AuthenticatedLeaderProfileRoute
@@ -680,6 +690,7 @@ export interface FileRouteTypes {
     | '/leader/attendance'
     | '/leader/daily-report'
     | '/leader/dashboard'
+    | '/leader/floating-pool'
     | '/leader/kpi'
     | '/leader/notifications'
     | '/leader/profile'
@@ -745,6 +756,7 @@ export interface FileRouteTypes {
     | '/leader/attendance'
     | '/leader/daily-report'
     | '/leader/dashboard'
+    | '/leader/floating-pool'
     | '/leader/kpi'
     | '/leader/notifications'
     | '/leader/profile'
@@ -811,6 +823,7 @@ export interface FileRouteTypes {
     | '/_authenticated/leader/attendance'
     | '/_authenticated/leader/daily-report'
     | '/_authenticated/leader/dashboard'
+    | '/_authenticated/leader/floating-pool'
     | '/_authenticated/leader/kpi'
     | '/_authenticated/leader/notifications'
     | '/_authenticated/leader/profile'
@@ -1089,6 +1102,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedLeaderKpiRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/leader/floating-pool': {
+      id: '/_authenticated/leader/floating-pool'
+      path: '/leader/floating-pool'
+      fullPath: '/leader/floating-pool'
+      preLoaderRoute: typeof AuthenticatedLeaderFloatingPoolRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/leader/dashboard': {
       id: '/_authenticated/leader/dashboard'
       path: '/leader/dashboard'
@@ -1334,6 +1354,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedLeaderAttendanceRoute: typeof AuthenticatedLeaderAttendanceRoute
   AuthenticatedLeaderDailyReportRoute: typeof AuthenticatedLeaderDailyReportRoute
   AuthenticatedLeaderDashboardRoute: typeof AuthenticatedLeaderDashboardRoute
+  AuthenticatedLeaderFloatingPoolRoute: typeof AuthenticatedLeaderFloatingPoolRoute
   AuthenticatedLeaderKpiRoute: typeof AuthenticatedLeaderKpiRoute
   AuthenticatedLeaderNotificationsRoute: typeof AuthenticatedLeaderNotificationsRoute
   AuthenticatedLeaderProfileRoute: typeof AuthenticatedLeaderProfileRoute
@@ -1400,6 +1421,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedLeaderAttendanceRoute: AuthenticatedLeaderAttendanceRoute,
   AuthenticatedLeaderDailyReportRoute: AuthenticatedLeaderDailyReportRoute,
   AuthenticatedLeaderDashboardRoute: AuthenticatedLeaderDashboardRoute,
+  AuthenticatedLeaderFloatingPoolRoute: AuthenticatedLeaderFloatingPoolRoute,
   AuthenticatedLeaderKpiRoute: AuthenticatedLeaderKpiRoute,
   AuthenticatedLeaderNotificationsRoute: AuthenticatedLeaderNotificationsRoute,
   AuthenticatedLeaderProfileRoute: AuthenticatedLeaderProfileRoute,

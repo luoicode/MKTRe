@@ -99,6 +99,7 @@ const NAV: NavItem[] = [
   },
   { to: "/leader/report-slots", label: "Nhập báo cáo", icon: FileText, roles: ["leader"] },
   { to: "/leader/daily-report", label: "Báo cáo Marketing", icon: FileText, roles: ["leader"] },
+  { to: "/leader/floating-pool", label: "Kho thả nổi", icon: Warehouse, roles: ["leader"] },
   { to: "/leader/kpi", label: "KPI Marketing", icon: Target, roles: ["leader"] },
   { to: "/leader/tasks", label: "Công việc", icon: CheckSquare, roles: ["leader"] },
   { to: "/leader/attendance", label: "Điểm danh", icon: CalendarCheck, roles: ["leader"] },
