@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, UserPlus, AlertTriangle, ArrowRightLeft } from "lucide-react";
+import { Loader2, Plus, UserPlus, AlertTriangle, ArrowRightLeft, Crown } from "lucide-react";
 import { toast } from "sonner";
 import { SearchableSelect, SearchableMultiSelect } from "@/components/SearchableSelect";
 import { RefreshButton } from "@/components/RefreshButton";
@@ -52,6 +52,7 @@ interface TeamWithMembershipLeader {
   created_at: string;
   profiles: { full_name: string; username: string } | null;
   membershipLeader: { full_name: string; username: string } | null;
+  memberCount: number;
 }
 
 function AdminTeams() {
@@ -74,24 +75,18 @@ function AdminTeams() {
       const { data: memberships } = teamIds.length
         ? await supabase
             .from("team_memberships")
-            .select("team_id, user_id, profiles(full_name, username)")
+            .select("team_id, user_id, role_in_team, profiles(full_name, username)")
             .in("team_id", teamIds)
             .eq("is_active", true)
         : { data: [] };
-      const leaderUserIds = Array.from(
-        new Set((memberships ?? []).map((membership) => membership.user_id)),
-      );
-      const { data: roles } = leaderUserIds.length
-        ? await supabase
-            .from("user_roles")
-            .select("user_id, role")
-            .in("user_id", leaderUserIds)
-            .eq("role", "leader")
-        : { data: [] };
-      const leaderRoleIds = new Set((roles ?? []).map((row) => row.user_id));
       const leaderByTeam = new Map<string, { full_name: string; username: string }>();
+      const memberCountByTeam = new Map<string, number>();
       for (const membership of memberships ?? []) {
-        if (!leaderRoleIds.has(membership.user_id)) continue;
+        memberCountByTeam.set(
+          membership.team_id,
+          (memberCountByTeam.get(membership.team_id) ?? 0) + 1,
+        );
+        if (membership.role_in_team !== "leader") continue;
         const profile = membership.profiles as { full_name: string; username: string } | null;
         if (profile && !leaderByTeam.has(membership.team_id)) {
           leaderByTeam.set(membership.team_id, profile);
@@ -100,6 +95,7 @@ function AdminTeams() {
       return (data ?? []).map((team) => ({
         ...team,
         membershipLeader: leaderByTeam.get(team.id) ?? null,
+        memberCount: memberCountByTeam.get(team.id) ?? 0,
       })) as TeamWithMembershipLeader[];
     },
   });
@@ -121,7 +117,7 @@ function AdminTeams() {
             supabase.from("user_roles").select("user_id, role").in("user_id", ids),
             supabase
               .from("team_memberships")
-              .select("user_id, team_id, teams(name)")
+              .select("user_id, team_id, teams(name, department)")
               .in("user_id", ids)
               .eq("is_active", true),
           ])
@@ -156,7 +152,7 @@ function AdminTeams() {
 
   const visibleTeams = (teams ?? []).filter((team) => team.department === department);
   const leaders = (profiles ?? []).filter((p) =>
-    department === "marketing" ? p.role === "leader" : false,
+    department === "marketing" ? p.role === "leader" : p.role === "sale",
   );
   const employees = (profiles ?? []).filter((p) =>
     department === "marketing" ? p.role === "employee" : p.role === "sale",
@@ -186,9 +182,11 @@ function AdminTeams() {
               <CreateTeamDialog
                 department={department}
                 leaders={leaders}
+                members={employees}
                 onClose={() => {
                   setOpen(false);
                   qc.invalidateQueries({ queryKey: ["teams-full"] });
+                  qc.invalidateQueries({ queryKey: ["all-profiles-with-role"] });
                 }}
               />
             </Dialog>
@@ -266,6 +264,7 @@ function TeamsTable({
               <TableRow>
                 <TableHead>Tên</TableHead>
                 <TableHead>Leader</TableHead>
+                <TableHead>Thành viên</TableHead>
                 <TableHead>Trạng thái</TableHead>
                 <TableHead className="w-32" />
               </TableRow>
@@ -281,6 +280,7 @@ function TeamsTable({
                     <TableCell>
                       {leader ? `${leader.full_name} (@${leader.username})` : "—"}
                     </TableCell>
+                    <TableCell>{t.memberCount}</TableCell>
                     <TableCell>
                       <Badge variant={t.status === "active" ? "default" : "secondary"}>
                         {t.status}
@@ -296,7 +296,7 @@ function TeamsTable({
               })}
               {!teams.length && (
                 <TableRow>
-                  <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
                     {emptyText}
                   </TableCell>
                 </TableRow>
@@ -309,24 +309,21 @@ function TeamsTable({
   );
 }
 
-interface SimpleProfile {
-  id: string;
-  full_name: string;
-  username: string;
-}
-
 function CreateTeamDialog({
   department,
   leaders,
+  members,
   onClose,
 }: {
   department: TeamDepartment;
-  leaders: SimpleProfile[];
+  leaders: ProfileWithRole[];
+  members: ProfileWithRole[];
   onClose: () => void;
 }) {
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
   const [leaderId, setLeaderId] = useState<string>("");
+  const [memberIds, setMemberIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
@@ -334,6 +331,16 @@ function CreateTeamDialog({
       toast.error("Nhập tên team");
       return;
     }
+    const selectedIds = Array.from(new Set([leaderId, ...memberIds].filter(Boolean)));
+    const selectableProfiles = [...leaders, ...members];
+    const blocked = selectableProfiles.filter(
+      (profile) => selectedIds.includes(profile.id) && profile.activeTeamId,
+    );
+    if (blocked.length) {
+      toast.error("User đã thuộc team khác. Cần chuyển team trước khi thêm.");
+      return;
+    }
+
     setLoading(true);
     const { data: createdTeam, error } = await supabase
       .from("teams")
@@ -346,29 +353,43 @@ function CreateTeamDialog({
       })
       .select("id")
       .single();
-    setLoading(false);
     if (error) {
+      setLoading(false);
       toast.error(error.message);
       return;
     }
-    if (leaderId && createdTeam?.id) {
-      const { error: membershipError } = await supabase.from("team_memberships").insert({
+
+    if (createdTeam?.id && selectedIds.length) {
+      const rows = selectedIds.map((userId) => ({
         team_id: createdTeam.id,
-        user_id: leaderId,
-        role_in_team: "leader",
+        user_id: userId,
+        role_in_team: userId === leaderId ? ("leader" as const) : ("employee" as const),
         is_active: true,
-      });
+      }));
+      const { error: membershipError } = await supabase.from("team_memberships").insert(rows);
       if (membershipError) {
+        setLoading(false);
         toast.error(membershipError.message);
         return;
       }
     }
+
+    setLoading(false);
     toast.success("Tạo team thành công");
     setName("");
     setDesc("");
     setLeaderId("");
+    setMemberIds([]);
     onClose();
   };
+
+  const memberOptions = members
+    .filter((member) => member.id !== leaderId)
+    .map((member) => ({
+      value: member.id,
+      label: member.full_name,
+      sub: `@${member.username}`,
+    }));
 
   return (
     <DialogContent>
@@ -384,27 +405,44 @@ function CreateTeamDialog({
           <Label>Mô tả</Label>
           <Textarea value={desc} onChange={(e) => setDesc(e.target.value)} />
         </div>
-        {department === "marketing" ? (
-          <div>
-            <Label>Leader Marketing</Label>
-            <SearchableSelect
-              value={leaderId}
-              onChange={setLeaderId}
-              options={leaders.map((p) => ({
-                value: p.id,
-                label: p.full_name,
-                sub: `@${p.username}`,
-              }))}
-              placeholder="Chọn Leader Marketing"
-              emptyText="Không có user role Leader Marketing"
-            />
-          </div>
-        ) : (
-          <div className="rounded-lg border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
-            Phase này chưa có role Leader Sale riêng, nên team Sale chỉ tạo team và gán nhân viên
-            Sale.
-          </div>
-        )}
+        <div>
+          <Label>{department === "marketing" ? "Leader Marketing" : "Leader Sale"}</Label>
+          <SearchableSelect
+            value={leaderId}
+            onChange={(value) => {
+              setLeaderId(value);
+              setMemberIds((current) => current.filter((id) => id !== value));
+            }}
+            options={leaders.map((p) => ({
+              value: p.id,
+              label: p.full_name,
+              sub: `@${p.username}`,
+            }))}
+            placeholder={department === "marketing" ? "Chọn Leader Marketing" : "Chọn Leader Sale"}
+            emptyText={
+              department === "marketing"
+                ? "Không có user role Leader Marketing"
+                : "Không có user Sale khả dụng"
+            }
+          />
+          {department === "sale" ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Leader Sale được lưu bằng role trong team, không đổi role global.
+            </p>
+          ) : null}
+        </div>
+        <div>
+          <Label>{department === "marketing" ? "Thành viên Marketing" : "Thành viên Sale"}</Label>
+          <SearchableMultiSelect
+            values={memberIds}
+            onChange={setMemberIds}
+            options={memberOptions}
+            placeholder={
+              department === "marketing" ? "Chọn nhân viên Marketing" : "Chọn nhân viên Sale"
+            }
+            emptyText="Không có nhân viên khả dụng"
+          />
+        </div>
       </div>
       <DialogFooter>
         <Button onClick={submit} disabled={loading}>
@@ -428,7 +466,6 @@ function MembersDialog({
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const qc = useQueryClient();
   const { data: members, refetch } = useQuery({
     queryKey: ["team-members", teamId],
     queryFn: async () => {
@@ -488,6 +525,7 @@ function MembersDialog({
   };
 
   const removeMember = async (id: string) => {
+    const member = (members ?? []).find((item) => item.id === id);
     const { error } = await supabase
       .from("team_memberships")
       .update({ is_active: false, end_date: new Date().toISOString().slice(0, 10) })
@@ -496,6 +534,52 @@ function MembersDialog({
       toast.error(error.message);
       return;
     }
+    if (member?.role_in_team === "leader") {
+      const { error: leaderError } = await supabase
+        .from("teams")
+        .update({ leader_id: null })
+        .eq("id", teamId)
+        .eq("leader_id", member.user_id);
+      if (leaderError) {
+        toast.error(leaderError.message);
+        return;
+      }
+    }
+    await refetch();
+    onChanged();
+  };
+
+  const setTeamLeader = async (membershipId: string, userId: string) => {
+    setBusy(true);
+    const demote = await supabase
+      .from("team_memberships")
+      .update({ role_in_team: "employee" })
+      .eq("team_id", teamId)
+      .eq("is_active", true);
+    if (demote.error) {
+      setBusy(false);
+      toast.error(demote.error.message);
+      return;
+    }
+
+    const promote = await supabase
+      .from("team_memberships")
+      .update({ role_in_team: "leader" })
+      .eq("id", membershipId);
+    if (promote.error) {
+      setBusy(false);
+      toast.error(promote.error.message);
+      return;
+    }
+
+    const updateTeam = await supabase.from("teams").update({ leader_id: userId }).eq("id", teamId);
+    setBusy(false);
+    if (updateTeam.error) {
+      toast.error(updateTeam.error.message);
+      return;
+    }
+
+    toast.success(department === "sale" ? "Đã đặt Leader Sale" : "Đã đặt Leader Marketing");
     await refetch();
     onChanged();
   };
@@ -612,15 +696,36 @@ function MembersDialog({
         <div className="space-y-2 max-h-64 overflow-y-auto">
           {(members ?? []).map((m) => {
             const p = m.profiles as { full_name: string; username: string } | null;
+            const isLeader = m.role_in_team === "leader";
             return (
               <div key={m.id} className="flex items-center justify-between rounded-md border p-2">
-                <span>
-                  {p?.full_name}{" "}
-                  <span className="text-muted-foreground text-xs">@{p?.username}</span>
-                </span>
-                <Button size="sm" variant="ghost" onClick={() => removeMember(m.id)}>
-                  Xóa
-                </Button>
+                <div className="min-w-0">
+                  <span>
+                    {p?.full_name}{" "}
+                    <span className="text-muted-foreground text-xs">@{p?.username}</span>
+                  </span>
+                  {isLeader ? (
+                    <Badge className="ml-2 bg-amber-50 text-amber-700 hover:bg-amber-50">
+                      {department === "sale" ? "Leader Sale" : "Leader Marketing"}
+                    </Badge>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  {!isLeader ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => setTeamLeader(m.id, m.user_id)}
+                    >
+                      <Crown className="mr-2 h-4 w-4" />
+                      Đặt leader
+                    </Button>
+                  ) : null}
+                  <Button size="sm" variant="ghost" onClick={() => removeMember(m.id)}>
+                    Xóa
+                  </Button>
+                </div>
               </div>
             );
           })}

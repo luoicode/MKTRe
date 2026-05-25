@@ -17,6 +17,7 @@ import {
   Megaphone,
   Pencil,
   Pin,
+  PlayCircle,
   Plus,
   RotateCcw,
   Save,
@@ -79,6 +80,7 @@ type CardFormState = {
   content: string;
   image_url: string;
   link_url: string;
+  youtube_url: string;
   sort_order: number;
   is_active: boolean;
 };
@@ -122,6 +124,7 @@ const emptyCardForm: CardFormState = {
   content: "",
   image_url: "",
   link_url: "",
+  youtube_url: "",
   sort_order: 0,
   is_active: true,
 };
@@ -608,6 +611,7 @@ export function ResourcesWorkspace() {
             content: card.content ?? "",
             image_url: card.image_url ?? "",
             link_url: card.link_url ?? "",
+            youtube_url: card.youtube_url ?? "",
             sort_order: card.sort_order ?? 0,
             is_active: card.is_active,
           }
@@ -658,6 +662,11 @@ export function ResourcesWorkspace() {
       toast.error("Nhập tiêu đề và chọn section");
       return;
     }
+    const youtubeUrl = cardForm.youtube_url.trim();
+    if (youtubeUrl && !getYouTubeEmbedUrl(youtubeUrl)) {
+      toast.error("Link YouTube không hợp lệ");
+      return;
+    }
     const payload: TablesUpdate<"onboarding_cards"> = {
       section_id: cardForm.section_id,
       icon: cardForm.icon.trim() || null,
@@ -666,6 +675,7 @@ export function ResourcesWorkspace() {
       content: cardForm.content.trim() || null,
       image_url: cardForm.image_url.trim() || null,
       link_url: cardForm.link_url.trim() || null,
+      youtube_url: youtubeUrl || null,
       sort_order: Number(cardForm.sort_order) || 0,
       is_active: cardForm.is_active,
       updated_by: profile?.id,
@@ -1623,6 +1633,11 @@ function OnboardingCardItem({
               <CheckCircle2 className="mr-1 h-3 w-3" /> Xong
             </Badge>
           )}
+          {card.youtube_url ? (
+            <Badge className="rounded-full bg-red-50 text-red-700 hover:bg-red-50">
+              <PlayCircle className="mr-1 h-3 w-3" /> Video
+            </Badge>
+          ) : null}
           {canEdit && (
             <>
               {!card.is_active && <Badge variant="secondary">Ẩn</Badge>}
@@ -1687,6 +1702,7 @@ function CardDetailDialog({
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [reachedEnd, setReachedEnd] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  const youtubeEmbedUrl = card?.youtube_url ? getYouTubeEmbedUrl(card.youtube_url) : null;
 
   useEffect(() => {
     setReachedEnd(false);
@@ -1737,6 +1753,24 @@ function CardDetailDialog({
                   {card.summary}
                 </p>
               )}
+              {youtubeEmbedUrl ? (
+                <div className="mb-6">
+                  <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <PlayCircle className="h-4 w-4 text-red-600" />
+                    Video: {card.title}
+                  </div>
+                  <div className="aspect-video overflow-hidden rounded-2xl border bg-black shadow-sm">
+                    <iframe
+                      className="h-full w-full"
+                      src={youtubeEmbedUrl}
+                      title={card.title}
+                      allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                      loading="lazy"
+                    />
+                  </div>
+                </div>
+              ) : null}
               <div className="whitespace-pre-line rounded-2xl bg-muted/25 p-5 text-sm leading-8 text-muted-foreground">
                 {card.content ?? "Chưa có nội dung chi tiết."}
               </div>
@@ -2285,6 +2319,45 @@ function getDepartmentLabel(department: InfoDepartment) {
   return department === "sale" ? "Sale" : "Marketing";
 }
 
+function getYouTubeEmbedUrl(url: string) {
+  const videoId = getYouTubeVideoId(url);
+  return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
+}
+
+function getYouTubeVideoId(url: string) {
+  const value = url.trim();
+  if (!value) return null;
+
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
+
+    if (host === "youtu.be") {
+      return normalizeYouTubeId(parsed.pathname.split("/").filter(Boolean)[0]);
+    }
+
+    if (host === "youtube.com" || host === "m.youtube.com" || host === "music.youtube.com") {
+      if (parsed.pathname === "/watch") {
+        return normalizeYouTubeId(parsed.searchParams.get("v"));
+      }
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      if (parts[0] === "shorts" || parts[0] === "embed" || parts[0] === "live") {
+        return normalizeYouTubeId(parts[1]);
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function normalizeYouTubeId(value: string | null | undefined) {
+  if (!value) return null;
+  const id = value.trim();
+  return /^[A-Za-z0-9_-]{6,20}$/.test(id) ? id : null;
+}
+
 function isRecentlyUpdated(value: string) {
   const updatedAt = new Date(value).getTime();
   if (Number.isNaN(updatedAt)) return false;
@@ -2362,6 +2435,16 @@ function CardFormDialog({
               onChange={(event) => setForm({ ...form, link_url: event.target.value })}
             />
           </Field>
+          <div className="md:col-span-2">
+            <Label>Link YouTube</Label>
+            <div className="mt-1">
+              <Input
+                value={form.youtube_url}
+                onChange={(event) => setForm({ ...form, youtube_url: event.target.value })}
+                placeholder="https://www.youtube.com/watch?v=... hoặc https://youtu.be/..."
+              />
+            </div>
+          </div>
           <Field label="Thứ tự">
             <Input
               type="number"

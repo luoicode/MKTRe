@@ -627,6 +627,7 @@ export type Database = {
           title: string;
           updated_at: string;
           updated_by: string | null;
+          youtube_url: string | null;
         };
         Insert: {
           content?: string | null;
@@ -643,6 +644,7 @@ export type Database = {
           title: string;
           updated_at?: string;
           updated_by?: string | null;
+          youtube_url?: string | null;
         };
         Update: {
           content?: string | null;
@@ -659,6 +661,7 @@ export type Database = {
           title?: string;
           updated_at?: string;
           updated_by?: string | null;
+          youtube_url?: string | null;
         };
         Relationships: [
           {

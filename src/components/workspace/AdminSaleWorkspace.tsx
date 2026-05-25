@@ -608,11 +608,11 @@ export function AdminFloatingLeadsWorkspace() {
   return (
     <div className="space-y-4">
       <Card className="rounded-2xl border-slate-200 bg-white shadow-sm">
-        <CardContent className="space-y-3 p-4">
-          <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-start 2xl:justify-between">
+        <CardContent className="space-y-3 p-3.5">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex min-w-0 items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                <Database className="h-5 w-5" />
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                <Database className="h-4 w-4" />
               </div>
               <div className="min-w-0">
                 <h1 className="text-xl font-black tracking-tight text-slate-950">Kho thả nổi</h1>
@@ -622,7 +622,7 @@ export function AdminFloatingLeadsWorkspace() {
               </div>
             </div>
 
-            <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 2xl:justify-center">
+            <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:grid-cols-4 xl:w-auto xl:grid-cols-4 xl:justify-end">
               <AdminLeadStatCard
                 label="Tổng lead"
                 value={adminLeadStats.total}
@@ -644,8 +644,20 @@ export function AdminFloatingLeadsWorkspace() {
                 className="from-emerald-50 to-teal-50 text-emerald-800"
               />
             </div>
+          </div>
 
-            <div className="flex flex-wrap items-end gap-2 2xl:justify-end">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <div className="relative w-full lg:w-[300px]">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <Input
+                className="h-9 rounded-xl border-slate-200 bg-slate-50 pl-9 text-sm font-medium shadow-none transition-colors focus-visible:border-blue-300 focus-visible:ring-blue-100"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Tìm số điện thoại"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
               <Button className="h-9 rounded-xl gap-2" onClick={openCreateDialog}>
                 <Plus className="h-4 w-4" />
                 Thêm số
@@ -704,16 +716,6 @@ export function AdminFloatingLeadsWorkspace() {
                 ))}
               </CompactSelect>
             </div>
-          </div>
-
-          <div className="relative w-full max-w-xs">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <Input
-              className="h-9 rounded-xl border-slate-200 bg-slate-50 pl-9 text-sm font-medium shadow-none transition-colors focus-visible:border-blue-300 focus-visible:ring-blue-100"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Tìm số điện thoại"
-            />
           </div>
         </CardContent>
       </Card>
@@ -1346,11 +1348,11 @@ function AdminLeadStatCard({
   return (
     <Card
       className={cn(
-        "min-w-[96px] overflow-hidden rounded-xl border-0 bg-gradient-to-br shadow-sm",
+        "h-12 min-w-[88px] overflow-hidden rounded-xl border-0 bg-gradient-to-br shadow-sm",
         className,
       )}
     >
-      <CardContent className="flex items-center justify-between gap-2 px-3 py-2">
+      <CardContent className="flex h-full items-center justify-between gap-2 px-3 py-2">
         <div>
           <p className="text-[11px] font-semibold leading-tight opacity-75">{label}</p>
           <p className="text-lg font-black leading-tight">{formatSaleInteger(value)}</p>
