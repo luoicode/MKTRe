@@ -123,20 +123,6 @@ function getAutoSlot(slots: ReportEntrySlot[], now: Date) {
   return futureSlot?.id ?? slots[slots.length - 1]?.id;
 }
 
-function shouldAutoAdvance(
-  active: ReportEntrySlot | undefined,
-  slots: ReportEntrySlot[],
-  nextId: string | undefined,
-  now: Date,
-  canBypassSlotLock = false,
-) {
-  if (!active || !nextId || active.id === nextId) return false;
-  if (isLocked(active, now)) return true;
-  if (canBypassSlotLock) return false;
-  const next = slots.find((slot) => slot.id === nextId);
-  return !!next && isOpen(next, now) && !isOpen(active, now);
-}
-
 type SlotLifecycleState = "available" | "submitted";
 
 function dueAt(slot: ReportEntrySlot) {
@@ -160,10 +146,6 @@ function closeAt(slot: ReportEntrySlot) {
 
 function isOpen(slot: ReportEntrySlot, now: Date) {
   return now.getTime() >= openAt(slot).getTime() && now.getTime() <= closeAt(slot).getTime();
-}
-
-function isLocked(slot: ReportEntrySlot, now: Date) {
-  return now.getTime() > closeAt(slot).getTime();
 }
 
 function isReminderWindow(slot: ReportEntrySlot, now: Date) {
@@ -410,15 +392,8 @@ export function EmployeeReport() {
     if (!entrySlots.length) return;
     if (!activeSlot) {
       setActiveSlot(getAutoSlot(entrySlots, now));
-      return;
     }
-    if (submitted) return;
-    const next = getAutoSlot(entrySlots, now);
-    if (shouldAutoAdvance(activeEntry, entrySlots, next, now, canBypassSlotLock)) {
-      setActiveSlot(next);
-      setSubmitted(null);
-    }
-  }, [entrySlots, activeSlot, activeEntry, now, submitted, canBypassSlotLock]);
+  }, [entrySlots, activeSlot, now]);
 
   useEffect(() => {
     if (!profile || (role !== "employee" && role !== "leader") || !slotReports) return;
