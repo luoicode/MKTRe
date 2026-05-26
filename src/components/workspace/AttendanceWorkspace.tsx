@@ -68,7 +68,7 @@ type ProfileLite = {
 type TeamLite = { id: string; name: string };
 type MembershipLite = { user_id: string; team_id: string; role_in_team?: string | null };
 
-const ATTENDANCE_TRACKED_TEAM_ROLES = new Set(["employee", "leader"]);
+const ATTENDANCE_TRACKED_TEAM_ROLES = new Set(["employee", "leader", "member"]);
 
 type AttendanceStatus =
   | "present"
@@ -759,7 +759,9 @@ export function AttendanceWorkspace() {
         subtitle={
           isEmployeeView
             ? `${profile.full_name} · Tháng ${formatMonthLabel(month)}`
-            : "Theo dõi điểm danh, checklist và lịch làm việc"
+            : role === "leader_sale"
+              ? "Theo dõi điểm danh team Sale"
+              : "Theo dõi điểm danh, checklist và lịch làm việc"
         }
         badge={
           isEmployeeView ? (
@@ -1240,6 +1242,7 @@ function ManagementAttendanceView({
   canReviewLeave: (leave: LeaveRequest) => boolean;
 }) {
   const teamById = new Map(teams.map((team) => [team.id, team.name]));
+  const isSaleTeamAttendance = role === "leader_sale";
   const teamUsers =
     teamFilter === "all"
       ? profiles
@@ -1350,8 +1353,8 @@ function ManagementAttendanceView({
                 <TableHead className="px-6">Nhân sự</TableHead>
                 <TableHead>Team</TableHead>
                 <TableHead>Điểm danh</TableHead>
-                <TableHead>Daily checklist</TableHead>
-                <TableHead>Task deadline</TableHead>
+                {!isSaleTeamAttendance ? <TableHead>Daily checklist</TableHead> : null}
+                {!isSaleTeamAttendance ? <TableHead>Task deadline</TableHead> : null}
                 <TableHead>Streak</TableHead>
                 <TableHead className="pr-6">Nghỉ phép</TableHead>
               </TableRow>
@@ -1398,12 +1401,16 @@ function ManagementAttendanceView({
                         {attendanceStatus ? attendanceLabels[attendanceStatus] : "Chưa điểm danh"}
                       </Badge>
                     </TableCell>
-                    <TableCell>
-                      {checklist.done}/{checklist.total}
-                    </TableCell>
-                    <TableCell>
-                      {doneTasks}/{userTasks.length}
-                    </TableCell>
+                    {!isSaleTeamAttendance ? (
+                      <TableCell>
+                        {checklist.done}/{checklist.total}
+                      </TableCell>
+                    ) : null}
+                    {!isSaleTeamAttendance ? (
+                      <TableCell>
+                        {doneTasks}/{userTasks.length}
+                      </TableCell>
+                    ) : null}
                     <TableCell>
                       {computeStreak(
                         records.filter((item) => item.user_id === user.id),

@@ -31,6 +31,7 @@ import {
 } from "@/lib/saleReportUtils";
 import {
   fetchSaleReportsForDate,
+  findPreferredSaleSlot,
   getSaleSlotStatus,
   reportsToForms,
   saleFormToPayload,
@@ -73,6 +74,7 @@ export function SaleReportForm() {
           ...acc,
           [slot.id]: getSaleSlotStatus({
             report: reportsBySlot[slot.id],
+            slotId: slot.id,
             reportDate,
             slotTime: slot.time,
             now,
@@ -99,6 +101,18 @@ export function SaleReportForm() {
     setForms(loaded.forms);
   }, [reports]);
 
+  useEffect(() => {
+    const preferredSlot = findPreferredSaleSlot(reportsBySlot, reportDate, now);
+    if (
+      slotStatuses[preferredSlot] === "available" &&
+      (slotStatuses[activeSlot] === "not_open" ||
+        slotStatuses[activeSlot] === "locked" ||
+        slotStatuses[activeSlot] === "submitted")
+    ) {
+      setActiveSlot(preferredSlot);
+    }
+  }, [activeSlot, now, reportDate, reportsBySlot, slotStatuses]);
+
   const updateActiveField = (field: keyof SaleReportFormValues, value: string) => {
     setForms((current) => ({
       ...current,
@@ -111,8 +125,12 @@ export function SaleReportForm() {
 
   const handleSave = async (submit = false) => {
     if (!profile) return false;
-    if (activeSlotStatus !== "open") {
-      toast.error("Khung này đã gửi báo cáo, không thể sửa lại.");
+    if (activeSlotStatus !== "available") {
+      toast.error(
+        activeSlotStatus === "submitted"
+          ? "Khung này đã gửi báo cáo, không thể sửa lại."
+          : "Khung này chưa mở hoặc đã khóa theo thời gian báo cáo.",
+      );
       return false;
     }
     setSaving(true);
@@ -236,9 +254,11 @@ export function SaleReportForm() {
             <CardHeader className="px-3 py-2">
               <CardTitle className="text-base">Số liệu {activeSlotConfig.tableLabel}</CardTitle>
               <CardDescription>
-                {activeSlotStatus === "open"
+                {activeSlotStatus === "available"
                   ? `Nhập dữ liệu Sale theo khung ${activeSlotConfig.time}`
-                  : "Khung này đã gửi báo cáo, chỉ xem dữ liệu đã lưu."}
+                  : activeSlotStatus === "submitted"
+                    ? "Khung này đã gửi báo cáo, chỉ xem dữ liệu đã lưu."
+                    : "Chỉ khung đang mở theo thời gian hiện tại mới được nhập."}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 px-3 pb-3">
@@ -252,43 +272,43 @@ export function SaleReportForm() {
                     <SaleNumberField
                       label={saleReportFieldLabels.newDataReceived}
                       value={activeValues.newDataReceived}
-                      disabled={activeSlotStatus !== "open"}
+                      disabled={activeSlotStatus !== "available"}
                       onChange={(value) => updateActiveField("newDataReceived", value)}
                     />
                     <SaleNumberField
                       label={saleReportFieldLabels.newDataClosed}
                       value={activeValues.newDataClosed}
-                      disabled={activeSlotStatus !== "open"}
+                      disabled={activeSlotStatus !== "available"}
                       onChange={(value) => updateActiveField("newDataClosed", value)}
                     />
                     <SaleNumberField
                       label={saleReportFieldLabels.floatingDataClosed}
                       value={activeValues.floatingDataClosed}
-                      disabled={activeSlotStatus !== "open"}
+                      disabled={activeSlotStatus !== "available"}
                       onChange={(value) => updateActiveField("floatingDataClosed", value)}
                     />
                     <SaleNumberField
                       label={saleReportFieldLabels.floatingDataReceived}
                       value={activeValues.floatingDataReceived}
-                      disabled={activeSlotStatus !== "open"}
+                      disabled={activeSlotStatus !== "available"}
                       onChange={(value) => updateActiveField("floatingDataReceived", value)}
                     />
                     <SaleMoneyField
                       label={saleReportFieldLabels.newCustomerRevenue}
                       value={activeValues.newCustomerRevenue}
-                      disabled={activeSlotStatus !== "open"}
+                      disabled={activeSlotStatus !== "available"}
                       onChange={(value) => updateActiveField("newCustomerRevenue", value)}
                     />
                     <SaleMoneyField
                       label={saleReportFieldLabels.floatingRevenue}
                       value={activeValues.floatingRevenue}
-                      disabled={activeSlotStatus !== "open"}
+                      disabled={activeSlotStatus !== "available"}
                       onChange={(value) => updateActiveField("floatingRevenue", value)}
                     />
                     <SaleNumberField
                       label={saleReportFieldLabels.oldCustomers}
                       value={activeValues.oldCustomers}
-                      disabled={activeSlotStatus !== "open"}
+                      disabled={activeSlotStatus !== "available"}
                       onChange={(value) => updateActiveField("oldCustomers", value)}
                     />
                     <div className="space-y-1 sm:col-span-2 2xl:col-span-3">
@@ -298,7 +318,7 @@ export function SaleReportForm() {
                         onChange={(event) => updateActiveField("note", event.target.value)}
                         placeholder="Khách cần follow, vướng mắc, ghi chú ca làm..."
                         className="min-h-16 resize-none"
-                        disabled={activeSlotStatus !== "open"}
+                        disabled={activeSlotStatus !== "available"}
                       />
                     </div>
                   </div>
@@ -307,7 +327,7 @@ export function SaleReportForm() {
                     <Button
                       variant="outline"
                       onClick={() => void handleSave(false)}
-                      disabled={saving || activeSlotStatus !== "open"}
+                      disabled={saving || activeSlotStatus !== "available"}
                     >
                       {saving ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -318,7 +338,7 @@ export function SaleReportForm() {
                     </Button>
                     <Button
                       onClick={() => void capturePreview("submit")}
-                      disabled={saving || activeSlotStatus !== "open"}
+                      disabled={saving || activeSlotStatus !== "available"}
                     >
                       {saving ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -744,7 +764,23 @@ function saleSlotVisual(status: SaleSlotStatus) {
     return {
       label: "Đã gửi",
       icon: CheckCircle2,
-      iconClassName: "text-slate-500",
+      iconClassName: "text-emerald-600",
+      badge: "bg-emerald-100 text-emerald-700",
+    };
+  }
+  if (status === "not_open") {
+    return {
+      label: "Chưa mở",
+      icon: Clock3,
+      iconClassName: "text-slate-400",
+      badge: "bg-slate-100 text-slate-600",
+    };
+  }
+  if (status === "locked") {
+    return {
+      label: "Đã khóa",
+      icon: Clock3,
+      iconClassName: "text-slate-400",
       badge: "bg-slate-100 text-slate-600",
     };
   }

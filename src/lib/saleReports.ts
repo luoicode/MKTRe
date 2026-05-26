@@ -8,10 +8,11 @@ import {
   type SaleReportFormValues,
   type SaleReportSlotId,
 } from "@/lib/saleReportUtils";
+import { getSlotState, type ReportSlotState } from "@/lib/reportSlotGating";
 
 export type SaleReportRow = Tables<"sale_reports">;
 export type SaleReportStatus = "draft" | "submitted";
-export type SaleSlotStatus = "open" | "submitted";
+export type SaleSlotStatus = ReportSlotState;
 
 export type SaleReportSummary = {
   totalDataReceived: number;
@@ -55,25 +56,42 @@ export function getSaleSlotWindow(reportDate: string, slotTime: string) {
 
 export function getSaleSlotStatus({
   report,
+  slotId,
+  slotTime,
+  now = new Date(),
+  bypass = false,
 }: {
   report: SaleReportRow | null | undefined;
   reportDate: string;
   slotTime: string;
   now?: Date;
+  slotId?: string;
+  bypass?: boolean;
 }): SaleSlotStatus {
-  if (report?.status === "submitted") return "submitted";
-  return "open";
+  return getSlotState({
+    slot: { id: slotId, time: slotTime },
+    submitted: report?.status === "submitted",
+    now,
+    bypass,
+  });
 }
 
 export function findPreferredSaleSlot(
   reportsBySlot: SaleReportsBySlot,
-  _reportDate: string,
-  _now = new Date(),
+  reportDate: string,
+  now = new Date(),
 ): SaleReportSlotId {
-  const unsubmittedSlot = saleReportSlots.find(
-    (slot) => reportsBySlot[slot.id]?.status !== "submitted",
+  const activeSlot = saleReportSlots.find(
+    (slot) =>
+      getSaleSlotStatus({
+        report: reportsBySlot[slot.id],
+        reportDate,
+        slotId: slot.id,
+        slotTime: slot.time,
+        now,
+      }) === "available",
   );
-  return unsubmittedSlot?.id ?? saleReportSlots[0].id;
+  return activeSlot?.id ?? saleReportSlots[0].id;
 }
 
 export function getNextSaleSlotLabel(

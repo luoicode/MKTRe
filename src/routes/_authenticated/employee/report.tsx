@@ -41,6 +41,13 @@ import { isReconciliationSlot } from "@/lib/reportAudit";
 import { chooseReportImageDirectory } from "@/utils/reportImageStorage";
 import { insertNotificationsWithTelegram } from "@/lib/telegram";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
+import {
+  getActiveReportSlot,
+  getReportSlotGateKey,
+  getSlotState,
+  isSlotEditable,
+  type ReportSlotState,
+} from "@/lib/reportSlotGating";
 
 export const Route = createFileRoute("/_authenticated/employee/report")({
   component: EmployeeReport,
@@ -112,18 +119,12 @@ function buildEntrySlots(slots: ReportSlot[] | undefined, baseDate: string): Rep
 }
 
 function getAutoSlot(slots: ReportEntrySlot[], now: Date) {
-  const openSlot = [...slots]
-    .sort((a, b) => dueAt(a).getTime() - dueAt(b).getTime())
-    .find((s) => isOpen(s, now));
-  if (openSlot) return openSlot.id;
-
-  const futureSlot = [...slots]
-    .sort((a, b) => openAt(a).getTime() - openAt(b).getTime())
-    .find((s) => openAt(s).getTime() > now.getTime());
-  return futureSlot?.id ?? slots[slots.length - 1]?.id;
+  const activeGate = getActiveReportSlot(now);
+  const openSlot = slots.find((slot) => getReportSlotGateKey(slot) === activeGate);
+  return openSlot?.id ?? slots[0]?.id;
 }
 
-type SlotLifecycleState = "available" | "submitted";
+type SlotLifecycleState = ReportSlotState;
 
 function dueAt(slot: ReportEntrySlot) {
   const raw = slot.slot_time || slot.slot_name;
@@ -134,18 +135,6 @@ function dueAt(slot: ReportEntrySlot) {
 
 function addMinutes(date: Date, minutes: number) {
   return new Date(date.getTime() + minutes * 60_000);
-}
-
-function openAt(slot: ReportEntrySlot) {
-  return addMinutes(dueAt(slot), -60);
-}
-
-function closeAt(slot: ReportEntrySlot) {
-  return addMinutes(dueAt(slot), 60);
-}
-
-function isOpen(slot: ReportEntrySlot, now: Date) {
-  return now.getTime() >= openAt(slot).getTime() && now.getTime() <= closeAt(slot).getTime();
 }
 
 function isReminderWindow(slot: ReportEntrySlot, now: Date) {
@@ -159,24 +148,39 @@ function isReportSubmitted(report?: { status: string | null } | null) {
 
 function getSlotLifecycleState({
   existing,
+  slot,
+  now,
+  canBypassSlotLock = false,
 }: {
   existing?: { status: string | null } | null;
+  slot: ReportEntrySlot;
+  now: Date;
+  canBypassSlotLock?: boolean;
 }): SlotLifecycleState {
-  if (isReportSubmitted(existing)) return "submitted";
-  return "available";
+  if (String(existing?.status ?? "") === "locked") return "locked";
+  return getSlotState({
+    slot,
+    submitted: isReportSubmitted(existing),
+    now,
+    bypass: canBypassSlotLock,
+  });
 }
 
 function canEditReport(state: SlotLifecycleState, canBypassSlotLock = false) {
-  return canBypassSlotLock || state === "available";
+  return canBypassSlotLock || isSlotEditable(state);
 }
 
 function slotVisual(
   slot: ReportEntrySlot,
   report: { status: string | null } | undefined,
   canBypassSlotLock = false,
+  now = new Date(),
 ) {
   const state = getSlotLifecycleState({
     existing: report,
+    slot,
+    now,
+    canBypassSlotLock,
   });
   if (state === "submitted") {
     return {
@@ -196,12 +200,21 @@ function slotVisual(
       badge: "bg-emerald-100 text-emerald-700",
     };
   }
+  if (state === "not_open") {
+    return {
+      label: "Chưa mở",
+      icon: Clock3,
+      className:
+        "border-slate-200 bg-slate-50 text-slate-500 data-[state=active]:bg-slate-200 data-[state=active]:text-slate-700",
+      badge: "bg-slate-100 text-slate-600",
+    };
+  }
   return {
-    label: "Đang mở",
+    label: "Đã khóa",
     icon: Clock3,
     className:
-      "border-emerald-200 bg-emerald-50 text-emerald-700 data-[state=active]:bg-emerald-600 data-[state=active]:text-white",
-    badge: "bg-emerald-100 text-emerald-700",
+      "border-slate-200 bg-slate-50 text-slate-500 data-[state=active]:bg-slate-200 data-[state=active]:text-slate-700",
+    badge: "bg-slate-100 text-slate-600",
   };
 }
 
@@ -531,6 +544,7 @@ export function EmployeeReport() {
                         s,
                         reportBySlotDate.get(`${s.reportDate}:${s.id}`),
                         canBypassSlotLock,
+                        now,
                       );
                       const Icon = visual.icon;
                       return (
@@ -569,6 +583,7 @@ export function EmployeeReport() {
                         s,
                         reportBySlotDate.get(`${s.reportDate}:${s.id}`),
                         canBypassSlotLock,
+                        now,
                       );
                       const Icon = visual.icon;
                       return (
@@ -822,6 +837,9 @@ function SlotForm({
 
   const slotState = getSlotLifecycleState({
     existing,
+    slot: entrySlot,
+    now,
+    canBypassSlotLock,
   });
   const editable = canEditReport(slotState, canBypassSlotLock);
   const isReconciliation = isReconciliationSlot(slotName);
@@ -1062,6 +1080,8 @@ function reportReadonlyMessage(
   if (status === "approved" || status === "locked") return "Báo cáo đã được khóa, chỉ xem.";
   if (status === "submitted") return "Khung này đã báo cáo. Nhân viên không thể sửa lại.";
   if (slotState === "available") return "Khung này chưa báo cáo. Bạn có thể nhập và gửi báo cáo.";
+  if (slotState === "not_open") return "Khung này chưa mở theo thời gian báo cáo.";
+  if (slotState === "locked") return "Khung này đã khóa vì khung khác đang mở.";
   return "Không thể chỉnh sửa báo cáo ở thời điểm hiện tại.";
 }
 
