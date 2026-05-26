@@ -28,7 +28,7 @@ import {
   YAxis,
 } from "recharts";
 import { toast } from "sonner";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +43,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { UserAvatar } from "@/components/UserAvatar";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
@@ -291,14 +292,7 @@ function LeaderSaleDashboardWorkspace() {
             </Card>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-2">
-            <LeaderSalePerformanceTable rows={salesPerformance} />
-            <LeaderSaleLifecycleSummary
-              stats={leadStats}
-              rows={salesPerformance}
-              topHolder={getTopLeadHolder(salesPerformance)}
-            />
-          </div>
+          <LeaderSaleTeamPerformanceCard stats={leadStats} rows={salesPerformance} />
         </>
       )}
     </div>
@@ -328,8 +322,6 @@ function LeaderSaleTeamReportsWorkspace() {
   const { profile } = useAuth();
   const [range, setRange] = useState<DateRangeValue>(() => initialDateRange("today"));
   const [saleFilter, setSaleFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [slotFilter, setSlotFilter] = useState("all");
   const normalizedRange = normalizeDateRange(range);
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["leader-sale-team-reports", profile?.id, normalizedRange.from, normalizedRange.to],
@@ -346,27 +338,20 @@ function LeaderSaleTeamReportsWorkspace() {
   });
   const members = useMemo(() => data?.teamData.members ?? [], [data?.teamData.members]);
   const teamReports = useMemo(() => data?.reports ?? [], [data?.reports]);
-  const nameById = useMemo(
-    () => new Map(members.map((member) => [member.id, getLeaderSaleMemberName(member)])),
-    [members],
-  );
   const reportRows = useMemo(
-    () =>
-      buildLeaderSaleTeamReportRows(members, teamReports, normalizedRange.from, normalizedRange.to),
-    [members, normalizedRange.from, normalizedRange.to, teamReports],
+    () => aggregateSaleReportsByUser(members, teamReports),
+    [members, teamReports],
   );
   const visibleReportRows = useMemo(
     () =>
       reportRows.filter((row) => {
         if (saleFilter !== "all" && row.userId !== saleFilter) return false;
-        if (statusFilter !== "all" && row.status !== statusFilter) return false;
-        if (slotFilter !== "all" && row.slot.id !== slotFilter) return false;
         return true;
       }),
-    [reportRows, saleFilter, slotFilter, statusFilter],
+    [reportRows, saleFilter],
   );
-  const reportWarnings = useMemo(
-    () => buildTeamReportWarnings(members, teamReports, normalizedRange.to),
+  const warningStats = useMemo(
+    () => buildTeamReportWarningStats(members, teamReports, normalizedRange.to),
     [members, normalizedRange.to, teamReports],
   );
 
@@ -375,7 +360,7 @@ function LeaderSaleTeamReportsWorkspace() {
       <WorkspacePageHeader
         icon={<ClipboardList className="h-5 w-5" />}
         title="Báo cáo team Sale"
-        subtitle="Theo dõi ca báo cáo và chỉ số Sale trong team bạn phụ trách"
+        subtitle="Theo dõi hiệu suất Sale trong team bạn phụ trách"
         actions={
           <>
             <DateRangeFilter value={range} onChange={setRange} hideLabel />
@@ -388,29 +373,6 @@ function LeaderSaleTeamReportsWorkspace() {
                 {members.map((member) => (
                   <SelectItem key={member.id} value={member.id}>
                     {getLeaderSaleMemberName(member)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-10 w-40 rounded-xl bg-white">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tất cả trạng thái</SelectItem>
-                <SelectItem value="submitted">Đã gửi</SelectItem>
-                <SelectItem value="missing">Chưa báo cáo</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={slotFilter} onValueChange={setSlotFilter}>
-              <SelectTrigger className="h-10 w-36 rounded-xl bg-white">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tất cả ca</SelectItem>
-                {saleReportSlots.map((slot) => (
-                  <SelectItem key={slot.id} value={slot.id}>
-                    {slot.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -429,18 +391,26 @@ function LeaderSaleTeamReportsWorkspace() {
         }
       />
 
-      {reportWarnings.length ? (
-        <div className="grid gap-2 md:grid-cols-3">
-          {reportWarnings.map((warning) => (
-            <div
-              key={warning}
-              className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800"
-            >
-              {warning}
-            </div>
-          ))}
-        </div>
-      ) : null}
+      <div className="grid gap-3 md:grid-cols-3">
+        <TeamReportInsightCard
+          tone="amber"
+          icon={<AlertTriangle className="h-4 w-4" />}
+          value={warningStats.missingReports}
+          label="Sale chưa báo cáo hôm nay"
+        />
+        <TeamReportInsightCard
+          tone="orange"
+          icon={<ClipboardList className="h-4 w-4" />}
+          value={warningStats.incompleteReports}
+          label="Sale báo cáo thiếu dữ liệu"
+        />
+        <TeamReportInsightCard
+          tone="red"
+          icon={<AlertTriangle className="h-4 w-4" />}
+          value={warningStats.zeroRevenueWithData}
+          label="Sale có data nhưng doanh số bằng 0"
+        />
+      </div>
 
       <Card className="overflow-hidden rounded-2xl border-slate-200 shadow-sm">
         <CardContent className="p-0">
@@ -450,26 +420,26 @@ function LeaderSaleTeamReportsWorkspace() {
             </div>
           ) : (
             <div className="max-h-[68vh] overflow-auto">
-              <table className="w-full min-w-[1180px] text-sm">
-                <thead className="sticky top-0 z-10 border-b bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 shadow-sm">
+              <table className="w-full min-w-[1220px] text-sm">
+                <thead className="sticky top-0 z-10 border-b bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 shadow-sm">
                   <tr>
                     {[
-                      "Ngày",
                       "Sale",
-                      "Ca",
-                      "Trạng thái",
                       "Data mới nhận",
                       "Data mới chốt",
-                      "Data nổi nhận",
-                      "Data nổi chốt",
+                      "Data thả nổi nhận",
+                      "Data thả nổi chốt",
                       "DS khách mới",
                       "DS thả nổi",
                       "Khách cũ",
                       "Tổng DS",
                       "Tỉ lệ chốt",
                       "TB đơn",
-                    ].map((header) => (
-                      <th key={header} className="px-3 py-2.5">
+                    ].map((header, index) => (
+                      <th
+                        key={header}
+                        className={cn("px-3 py-3", index === 0 ? "text-left" : "text-right")}
+                      >
                         {header}
                       </th>
                     ))}
@@ -477,62 +447,55 @@ function LeaderSaleTeamReportsWorkspace() {
                 </thead>
                 <tbody>
                   {visibleReportRows.map((row) => {
-                    const report = row.report;
-                    const summary = report ? summarizeSaleReports([report]) : null;
                     return (
-                      <tr key={row.id} className="border-t border-slate-100 hover:bg-slate-50">
-                        <td className="whitespace-nowrap px-3 py-2.5">
-                          {formatVietnameseDate(row.date)}
+                      <tr key={row.userId} className="border-t border-slate-100 hover:bg-slate-50">
+                        <td className="px-3 py-3">
+                          <div className="flex items-center gap-3">
+                            <UserAvatar name={row.memberName} size={34} />
+                            <div className="min-w-0">
+                              <p className="truncate font-bold text-slate-900">{row.memberName}</p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {row.memberHandle}
+                              </p>
+                            </div>
+                          </div>
                         </td>
-                        <td className="px-3 py-2.5 font-semibold">
-                          {nameById.get(row.userId) ?? row.memberName}
+                        <td className="px-3 py-3 text-right">
+                          {formatReportInteger(row, row.newDataReceived)}
                         </td>
-                        <td className="whitespace-nowrap px-3 py-2.5">{row.slot.time}</td>
-                        <td className="px-3 py-2.5">
-                          <Badge
-                            className={cn(
-                              row.status === "submitted"
-                                ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-50"
-                                : "bg-slate-100 text-slate-700 hover:bg-slate-100",
-                            )}
-                          >
-                            {row.status === "submitted" ? "Đã gửi" : "Chưa báo cáo"}
-                          </Badge>
+                        <td className="px-3 py-3 text-right">
+                          {formatReportInteger(row, row.newDataClosed)}
                         </td>
-                        <td className="px-3 py-2.5">
-                          {formatInteger(report?.new_data_received ?? 0)}
+                        <td className="px-3 py-3 text-right">
+                          {formatReportInteger(row, row.floatingDataReceived)}
                         </td>
-                        <td className="px-3 py-2.5">
-                          {formatInteger(report?.new_data_closed ?? 0)}
+                        <td className="px-3 py-3 text-right">
+                          {formatReportInteger(row, row.floatingDataClosed)}
                         </td>
-                        <td className="px-3 py-2.5">
-                          {formatInteger(report?.floating_data_received ?? 0)}
+                        <td className="px-3 py-3 text-right">
+                          {formatReportMoney(row, row.newCustomerRevenue)}
                         </td>
-                        <td className="px-3 py-2.5">
-                          {formatInteger(report?.floating_data_closed ?? 0)}
+                        <td className="px-3 py-3 text-right">
+                          {formatReportMoney(row, row.floatingRevenue)}
                         </td>
-                        <td className="px-3 py-2.5">
-                          {formatMoney(Number(report?.new_customer_revenue ?? 0))}
+                        <td className="px-3 py-3 text-right">
+                          {formatReportInteger(row, row.oldCustomers)}
                         </td>
-                        <td className="px-3 py-2.5">
-                          {formatMoney(Number(report?.floating_revenue ?? 0))}
+                        <td className="px-3 py-3 text-right font-bold">
+                          {formatReportMoney(row, row.totalRevenue)}
                         </td>
-                        <td className="px-3 py-2.5">{formatInteger(report?.old_customers ?? 0)}</td>
-                        <td className="px-3 py-2.5 font-bold">
-                          {formatMoney(summary?.totalRevenue ?? 0)}
+                        <td className="px-3 py-3 text-right">
+                          <CloseRateBadge value={row.closeRate} hasReports={row.hasReports} />
                         </td>
-                        <td className="px-3 py-2.5">
-                          {formatNullablePercent(summary?.closeRate ?? null)}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          {summary?.averageOrder ? formatMoney(summary.averageOrder) : "—"}
+                        <td className="px-3 py-3 text-right">
+                          {row.hasReports && row.averageOrder ? formatMoney(row.averageOrder) : "—"}
                         </td>
                       </tr>
                     );
                   })}
                   {!visibleReportRows.length && (
                     <tr>
-                      <td colSpan={14} className="px-4 py-10 text-center text-muted-foreground">
+                      <td colSpan={11} className="px-4 py-10 text-center text-muted-foreground">
                         Chưa có báo cáo team phù hợp bộ lọc.
                       </td>
                     </tr>
@@ -566,6 +529,7 @@ type LeaderSaleTeamRole = "leader" | "employee" | "member";
 type LeaderSaleTeamMember = {
   membership_id: string;
   id: string;
+  auth_user_id: string | null;
   team_id: string;
   teamName: string;
   role_in_team: LeaderSaleTeamRole;
@@ -907,6 +871,19 @@ function SaleFloatingPoolBoard() {
         }
         rightContent={
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-9 gap-2 rounded-xl px-3"
+              title="Tải lại danh sách"
+              aria-label="Tải lại danh sách"
+              disabled={leadsQuery.isFetching}
+              onClick={handleRefreshLeads}
+            >
+              <RefreshCw className={cn("h-4 w-4", leadsQuery.isFetching && "animate-spin")} />
+              <span className="hidden sm:inline">Tải lại</span>
+            </Button>
             <FloatingLeadStatCard
               label="Tổng lead"
               value={stats.total}
@@ -951,28 +928,6 @@ function SaleFloatingPoolBoard() {
           </>
         }
       />
-
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-bold text-primary-foreground shadow-sm">
-          Kho thả nổi
-          <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs text-white">
-            {formatInteger(visibleLeads.length)}
-          </span>
-        </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="h-9 gap-2 rounded-xl px-3"
-          title="Tải lại danh sách"
-          aria-label="Tải lại danh sách"
-          disabled={leadsQuery.isFetching}
-          onClick={handleRefreshLeads}
-        >
-          <RefreshCw className={cn("h-4 w-4", leadsQuery.isFetching && "animate-spin")} />
-          <span className="hidden sm:inline">Tải lại</span>
-        </Button>
-      </div>
 
       <Card className="overflow-hidden rounded-2xl border-slate-200 shadow-sm">
         <CardContent className="p-0">
@@ -1427,6 +1382,7 @@ type SaleMemberPerformance = {
   heldLeads: number;
   calledLeads: number;
   closedLeads: number;
+  overdueLeads: number;
 };
 
 function LeaderSalePerformanceTable({ rows }: { rows: SaleMemberPerformance[] }) {
@@ -1479,14 +1435,12 @@ function LeaderSalePerformanceTable({ rows }: { rows: SaleMemberPerformance[] })
   );
 }
 
-function LeaderSaleLifecycleSummary({
+function LeaderSaleTeamPerformanceCard({
   stats,
   rows,
-  topHolder,
 }: {
   stats: ReturnType<typeof summarizeFloatingLeadTeam>;
   rows: SaleMemberPerformance[];
-  topHolder: SaleMemberPerformance | null;
 }) {
   const compactStats = [
     { label: "Tổng lead", value: stats.total, tone: "slate" },
@@ -1496,23 +1450,18 @@ function LeaderSaleLifecycleSummary({
     { label: "Đã chốt", value: stats.closed, tone: "green" },
     { label: "Quá hạn", value: stats.overdue, tone: "rose" },
   ] as const;
-  const insightRows = [
-    ["Tỉ lệ chốt", formatNullablePercent(stats.closeRate)],
-    ["Lead đang giữ quá 24h", formatInteger(stats.overdue)],
-    ["Sale có nhiều lead nhất", topHolder ? topHolder.name : "—"],
-    ["Lead cần xử lý", formatInteger(stats.actionable)],
-  ];
+  const sortedRows = [...rows].sort((a, b) => b.revenue - a.revenue);
 
   return (
-    <Card className="rounded-2xl border-slate-200 shadow-sm">
+    <Card className="overflow-hidden rounded-2xl border-slate-200 shadow-sm">
       <CardHeader className="pb-2">
-        <CardTitle className="text-base">Lead lifecycle team</CardTitle>
+        <CardTitle className="text-base">Hiệu suất & Lead team</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Tóm tắt lead team Sale theo trạng thái xử lý hiện tại.
+          Tổng hợp hiệu suất Sale và trạng thái lead team.
         </p>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-2 sm:grid-cols-3">
+      <CardContent className="space-y-4 p-4 pt-2">
+        <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
           {compactStats.map((item) => (
             <div
               key={item.label}
@@ -1531,42 +1480,41 @@ function LeaderSaleLifecycleSummary({
           ))}
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-2">
-          {insightRows.map(([label, value]) => (
-            <div key={label} className="rounded-xl border bg-slate-50/70 px-3 py-2">
-              <p className="text-xs font-semibold text-muted-foreground">{label}</p>
-              <p className="mt-1 truncate text-sm font-black text-slate-950">{value}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="overflow-hidden rounded-xl border">
-          <table className="w-full min-w-[560px] text-sm">
-            <thead className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+        <div className="max-h-[460px] overflow-auto rounded-xl border">
+          <table className="w-full min-w-[960px] text-sm">
+            <thead className="sticky top-0 z-10 border-b bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 shadow-sm">
               <tr>
-                <th className="px-3 py-2">Sale</th>
-                <th className="px-3 py-2">Lead giữ</th>
-                <th className="px-3 py-2">Đã gọi</th>
-                <th className="px-3 py-2">Đã chốt</th>
-                <th className="px-3 py-2">Tỉ lệ chốt</th>
-                <th className="px-3 py-2">Doanh thu</th>
+                <th className="px-3 py-2.5 text-left">Sale</th>
+                <th className="px-3 py-2.5 text-left">Team</th>
+                <th className="px-3 py-2.5 text-right">Doanh thu</th>
+                <th className="px-3 py-2.5 text-right">Tỉ lệ chốt</th>
+                <th className="px-3 py-2.5 text-right">Data chốt</th>
+                <th className="px-3 py-2.5 text-right">Lead giữ</th>
+                <th className="px-3 py-2.5 text-right">Đã gọi</th>
+                <th className="px-3 py-2.5 text-right">Lead chốt</th>
+                <th className="px-3 py-2.5 text-right">Lead quá hạn</th>
               </tr>
             </thead>
             <tbody>
-              {rows.slice(0, 6).map((row) => (
-                <tr key={row.id} className="border-t">
-                  <td className="px-3 py-2 font-semibold">{row.name}</td>
-                  <td className="px-3 py-2">{formatInteger(row.heldLeads)}</td>
-                  <td className="px-3 py-2">{formatInteger(row.calledLeads)}</td>
-                  <td className="px-3 py-2">{formatInteger(row.closedLeads)}</td>
-                  <td className="px-3 py-2">{formatNullablePercent(row.closeRate)}</td>
-                  <td className="px-3 py-2 font-semibold">{formatMoney(row.revenue)}</td>
+              {sortedRows.map((row) => (
+                <tr key={row.id} className="border-t border-slate-100 hover:bg-slate-50">
+                  <td className="px-3 py-3 font-bold text-slate-900">{row.name}</td>
+                  <td className="px-3 py-3 text-slate-600">{row.teamName}</td>
+                  <td className="px-3 py-3 text-right font-semibold">{formatMoney(row.revenue)}</td>
+                  <td className="px-3 py-3 text-right">{formatNullablePercent(row.closeRate)}</td>
+                  <td className="px-3 py-3 text-right">
+                    {formatInteger(row.dataClosed)} / {formatInteger(row.dataReceived)}
+                  </td>
+                  <td className="px-3 py-3 text-right">{formatInteger(row.heldLeads)}</td>
+                  <td className="px-3 py-3 text-right">{formatInteger(row.calledLeads)}</td>
+                  <td className="px-3 py-3 text-right">{formatInteger(row.closedLeads)}</td>
+                  <td className="px-3 py-3 text-right">{formatInteger(row.overdueLeads)}</td>
                 </tr>
               ))}
-              {!rows.length && (
+              {!sortedRows.length && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
-                    Chưa có dữ liệu lead team.
+                  <td colSpan={9} className="px-3 py-10 text-center text-muted-foreground">
+                    Chưa có thành viên hoặc dữ liệu hiệu suất.
                   </td>
                 </tr>
               )}
@@ -1594,9 +1542,6 @@ function summarizeFloatingLeadTeam(leads: FloatingLeadRow[]) {
       return Number.isFinite(assignedAt) && now >= assignedAt + 24 * 60 * 60_000;
     }).length,
     closed,
-    actionable: leads.filter(
-      (lead) => !lead.is_closed && (!lead.assigned_sale_id || lead.assigned_at),
-    ).length,
     closeRate: total ? closed / total : null,
   };
 }
@@ -1627,12 +1572,14 @@ function buildSaleMemberPerformance(
           (lead.call_1 || lead.call_2 || lead.call_3),
       ).length,
       closedLeads: leads.filter((lead) => lead.closed_by === member.id).length,
+      overdueLeads: leads.filter((lead) => {
+        if (lead.assigned_sale_id !== member.id || !lead.assigned_at || lead.is_closed)
+          return false;
+        const assignedAt = new Date(lead.assigned_at).getTime();
+        return Number.isFinite(assignedAt) && Date.now() >= assignedAt + 24 * 60 * 60_000;
+      }).length,
     };
   });
-}
-
-function getTopLeadHolder(rows: SaleMemberPerformance[]) {
-  return [...rows].sort((a, b) => b.heldLeads - a.heldLeads)[0] ?? null;
 }
 
 function buildLeaderSaleWarnings(
@@ -1665,12 +1612,11 @@ function buildLeaderSaleWarnings(
   return warnings;
 }
 
-function buildTeamReportWarnings(
+function buildTeamReportWarningStats(
   members: LeaderSaleTeamMember[],
   reports: SaleReportRow[],
   date: string,
 ) {
-  const warnings: string[] = [];
   const todaySubmitted = reports.filter(
     (report) => report.report_date === date && report.status === "submitted",
   );
@@ -1681,74 +1627,146 @@ function buildTeamReportWarnings(
     const count = todaySubmitted.filter((report) => report.user_id === member.id).length;
     return count > 0 && count < saleReportSlots.length;
   });
-  if (missing.length) warnings.push(`${missing.length} Sale chưa báo cáo hôm nay.`);
-  if (incomplete.length) warnings.push(`${incomplete.length} Sale báo cáo thiếu ca.`);
-  const lowRevenue = members.filter((member) => {
+  const zeroRevenueWithData = members.filter((member) => {
     const summary = summarizeSaleReports(
       todaySubmitted.filter((report) => report.user_id === member.id),
     );
     return summary.totalDataReceived > 0 && summary.totalRevenue === 0;
   }).length;
-  if (lowRevenue) warnings.push(`${lowRevenue} Sale có data nhưng doanh số bằng 0.`);
-  return warnings;
+  return {
+    missingReports: missing.length,
+    incompleteReports: incomplete.length,
+    zeroRevenueWithData,
+  };
 }
 
-type LeaderSaleTeamReportRow = {
-  id: string;
-  date: string;
+type AggregatedSaleTeamReportRow = {
   userId: string;
   memberName: string;
-  slot: (typeof saleReportSlots)[number];
-  status: "submitted" | "missing";
-  report: SaleReportRow | null;
+  memberHandle: string;
+  hasReports: boolean;
+  newDataReceived: number;
+  newDataClosed: number;
+  floatingDataReceived: number;
+  floatingDataClosed: number;
+  newCustomerRevenue: number;
+  floatingRevenue: number;
+  oldCustomers: number;
+  totalRevenue: number;
+  closeRate: number | null;
+  averageOrder: number | null;
 };
 
-function buildLeaderSaleTeamReportRows(
+function aggregateSaleReportsByUser(
   members: LeaderSaleTeamMember[],
   reports: SaleReportRow[],
-  from: string,
-  to: string,
-): LeaderSaleTeamReportRow[] {
-  const reportByKey = new Map(
-    reports.map((report) => [`${report.user_id}:${report.report_date}:${report.slot_key}`, report]),
-  );
-  return enumerateDateKeys(from, to).flatMap((date) =>
-    members.flatMap((member) =>
-      saleReportSlots.map((slot) => {
-        const report = reportByKey.get(`${member.id}:${date}:${slot.id}`) ?? null;
-        return {
-          id: `${member.id}:${date}:${slot.id}`,
-          date,
-          userId: member.id,
-          memberName: getLeaderSaleMemberName(member),
-          slot,
-          status: report?.status === "submitted" ? "submitted" : "missing",
-          report,
-        };
-      }),
-    ),
+): AggregatedSaleTeamReportRow[] {
+  return members.map((member) => {
+    const memberReports = reports.filter((report) => report.user_id === member.id);
+    const summary = summarizeSaleReports(memberReports);
+    return {
+      userId: member.id,
+      memberName: getLeaderSaleMemberName(member),
+      memberHandle: formatLeaderSaleMemberHandle(member),
+      hasReports: memberReports.length > 0,
+      newDataReceived: memberReports.reduce(
+        (sum, report) => sum + Number(report.new_data_received ?? 0),
+        0,
+      ),
+      newDataClosed: memberReports.reduce(
+        (sum, report) => sum + Number(report.new_data_closed ?? 0),
+        0,
+      ),
+      floatingDataReceived: memberReports.reduce(
+        (sum, report) => sum + Number(report.floating_data_received ?? 0),
+        0,
+      ),
+      floatingDataClosed: memberReports.reduce(
+        (sum, report) => sum + Number(report.floating_data_closed ?? 0),
+        0,
+      ),
+      newCustomerRevenue: memberReports.reduce(
+        (sum, report) => sum + Number(report.new_customer_revenue ?? 0),
+        0,
+      ),
+      floatingRevenue: memberReports.reduce(
+        (sum, report) => sum + Number(report.floating_revenue ?? 0),
+        0,
+      ),
+      oldCustomers: memberReports.reduce(
+        (sum, report) => sum + Number(report.old_customers ?? 0),
+        0,
+      ),
+      totalRevenue: summary.totalRevenue,
+      closeRate: summary.closeRate,
+      averageOrder: summary.averageOrder,
+    };
+  });
+}
+
+function TeamReportInsightCard({
+  tone,
+  icon,
+  value,
+  label,
+}: {
+  tone: "amber" | "orange" | "red";
+  icon: ReactNode;
+  value: number;
+  label: string;
+}) {
+  const styles = {
+    amber: "border-amber-200 bg-amber-50 text-amber-800",
+    orange: "border-orange-200 bg-orange-50 text-orange-800",
+    red: "border-red-200 bg-red-50 text-red-800",
+  };
+  return (
+    <div
+      className={cn(
+        "flex min-h-12 items-center gap-2 rounded-xl border px-3 py-2 shadow-sm",
+        styles[tone],
+      )}
+    >
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/70">
+        {icon}
+      </span>
+      <p className="text-sm font-semibold leading-tight">
+        <span className="font-black">{formatInteger(value)}</span> {label}
+      </p>
+    </div>
   );
 }
 
-function enumerateDateKeys(from: string, to: string) {
-  const dates: string[] = [];
-  const cursor = new Date(`${from}T00:00:00`);
-  const end = new Date(`${to}T00:00:00`);
-  while (cursor <= end) {
-    dates.push(cursor.toISOString().slice(0, 10));
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return dates;
+function formatReportInteger(row: AggregatedSaleTeamReportRow, value: number) {
+  return row.hasReports ? formatInteger(value) : "—";
+}
+
+function formatReportMoney(row: AggregatedSaleTeamReportRow, value: number) {
+  return row.hasReports ? formatMoney(value) : "—";
+}
+
+function CloseRateBadge({ value, hasReports }: { value: number | null; hasReports: boolean }) {
+  if (!hasReports || value === null) return <span className="text-muted-foreground">—</span>;
+  const percent = value * 100;
+  const tone =
+    percent > 20
+      ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-50"
+      : percent >= 10
+        ? "bg-amber-50 text-amber-700 hover:bg-amber-50"
+        : "bg-red-50 text-red-700 hover:bg-red-50";
+  return (
+    <Badge className={cn("min-w-14 justify-center", tone)}>{formatNullablePercent(value)}</Badge>
+  );
 }
 
 function getLeaderSaleMemberName(member: LeaderSaleTeamMember) {
-  return member.full_name || member.username || member.email || "User đã bị xoá";
+  return member.full_name || member.username || member.email || "User chưa có profile";
 }
 
 function formatLeaderSaleMemberHandle(member: LeaderSaleTeamMember) {
   if (member.username) return `@${member.username}`;
   if (member.email) return member.email;
-  return "User đã bị xoá";
+  return "User chưa có profile";
 }
 
 function isLeaderSaleLeader(member: LeaderSaleTeamMember) {
@@ -2112,9 +2130,7 @@ async function fetchLeaderSaleTeamData(
         .eq("department", "sale"),
       supabase
         .from("team_memberships")
-        .select(
-          "id, team_id, user_id, role_in_team, profiles!team_memberships_user_id_fkey(id, auth_user_id, full_name, username, email, phone, status)",
-        )
+        .select("id, team_id, user_id, role_in_team")
         .in("team_id", leaderTeamIds)
         .eq("is_active", true),
     ]);
@@ -2128,45 +2144,17 @@ async function fetchLeaderSaleTeamData(
     (member) => saleTeamIds.has(member.team_id) && isLeaderSaleTeamRole(member.role_in_team),
   );
   const rawMemberIds = Array.from(new Set(rawMembers.map((member) => member.user_id)));
-  const [
-    { data: profilesById, error: profilesByIdError },
-    { data: profilesByAuthId, error: profilesByAuthIdError },
-  ] = rawMemberIds.length
-    ? await Promise.all([
-        supabase
-          .from("profiles")
-          .select("id, auth_user_id, full_name, username, email, phone, status")
-          .in("id", rawMemberIds),
-        supabase
-          .from("profiles")
-          .select("id, auth_user_id, full_name, username, email, phone, status")
-          .in("auth_user_id", rawMemberIds),
-      ])
-    : [
-        { data: [], error: null },
-        { data: [], error: null },
-      ];
+  const { data: profilesById, error: profilesByIdError } = rawMemberIds.length
+    ? await supabase
+        .from("profiles")
+        .select("id, auth_user_id, full_name, username, email, phone, status")
+        .in("id", rawMemberIds)
+    : { data: [], error: null };
   if (profilesByIdError) throw profilesByIdError;
-  if (profilesByAuthIdError) throw profilesByAuthIdError;
 
-  const profileByMembershipUserId = new Map<
-    string,
-    NonNullable<typeof profilesById>[number] | NonNullable<typeof profilesByAuthId>[number]
-  >();
-  for (const member of rawMembers) {
-    const joinedProfile = Array.isArray(member.profiles) ? member.profiles[0] : member.profiles;
-    if (!joinedProfile) continue;
-    profileByMembershipUserId.set(member.user_id, joinedProfile);
-    profileByMembershipUserId.set(joinedProfile.id, joinedProfile);
-    if (joinedProfile.auth_user_id) {
-      profileByMembershipUserId.set(joinedProfile.auth_user_id, joinedProfile);
-    }
-  }
+  const profileByMembershipUserId = new Map<string, NonNullable<typeof profilesById>[number]>();
   for (const profile of profilesById ?? []) {
     profileByMembershipUserId.set(profile.id, profile);
-  }
-  for (const profile of profilesByAuthId ?? []) {
-    if (profile.auth_user_id) profileByMembershipUserId.set(profile.auth_user_id, profile);
   }
   const roleLookupIds = Array.from(
     new Set([
@@ -2186,18 +2174,23 @@ async function fetchLeaderSaleTeamData(
     .map((member) => {
       const profile = profileByMembershipUserId.get(member.user_id);
       const canonicalUserId = profile?.id ?? member.user_id;
+      const normalizedRoleInTeam = normalizeLeaderSaleTeamRole(member.role_in_team);
       return {
         membership_id: member.id,
         id: canonicalUserId,
+        auth_user_id: profile?.auth_user_id ?? null,
         team_id: member.team_id,
         teamName: teamNameById.get(member.team_id) ?? "Team Sale",
-        role_in_team: normalizeLeaderSaleTeamRole(member.role_in_team),
-        full_name: profile?.full_name ?? "User đã bị xoá",
-        username: profile?.username ?? null,
+        role_in_team: normalizedRoleInTeam,
+        full_name: profile?.full_name ?? "User chưa có profile",
+        username: profile?.username ?? "missing-profile",
         email: profile?.email ?? null,
         phone: profile?.phone ?? null,
-        status: profile?.status ?? null,
-        role: roleByUserId.get(canonicalUserId) ?? roleByUserId.get(member.user_id) ?? null,
+        status: profile?.status ?? "inactive",
+        role:
+          roleByUserId.get(canonicalUserId) ??
+          roleByUserId.get(member.user_id) ??
+          normalizedRoleInTeam,
         profileMissing: !profile,
       };
     });
