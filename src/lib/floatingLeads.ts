@@ -49,11 +49,18 @@ export function isFloatingLeadStatus(value: string): value is FloatingLeadStatus
   return floatingLeadStatuses.includes(value as FloatingLeadStatus);
 }
 
-export function getFloatingLeadCallSlot(lead: Pick<FloatingLeadRow, "claim_count">) {
-  return Math.min(Math.max((lead.claim_count ?? 0) + 1, 1), 3);
+export function getFloatingLeadCallSlot(
+  lead: Pick<FloatingLeadRow, "call_1" | "call_2" | "call_3">,
+) {
+  if (!lead.call_1?.trim()) return 1;
+  if (!lead.call_2?.trim()) return 2;
+  if (!lead.call_3?.trim()) return 3;
+  return 3;
 }
 
-export function getFloatingLeadCallField(lead: Pick<FloatingLeadRow, "claim_count">) {
+export function getFloatingLeadCallField(
+  lead: Pick<FloatingLeadRow, "call_1" | "call_2" | "call_3">,
+) {
   const slot = getFloatingLeadCallSlot(lead);
   return `call_${slot}` as FloatingLeadCallField;
 }
@@ -76,7 +83,7 @@ export function deriveFloatingLeadLifecycle(
   if (lead.call_1?.trim()) return "called_1";
   if (lead.assigned_sale_id) return "claimed";
   if ((lead.claim_count ?? 0) > 0) return "released";
-  if (lead.assigned_at && new Date(lead.assigned_at).getTime() < startOfTodayVN().getTime()) {
+  if (lead.assigned_at && isFloatingLeadAssignmentExpired(lead.assigned_at)) {
     return "expired";
   }
   return "new";
@@ -225,6 +232,7 @@ export async function updateFloatingLeadCare({
   const callField = getFloatingLeadCallField(lead);
   const payload: TablesUpdate<"floating_leads"> = {
     [callField]: draft[callField] || null,
+    note: draft.note?.trim() || null,
   };
 
   if (draft.is_closed) {
@@ -255,9 +263,9 @@ export async function updateFloatingLeadCare({
   return data;
 }
 
-function startOfTodayVN() {
-  const today = todayYmd();
-  return new Date(`${today}T00:00:00+07:00`);
+function isFloatingLeadAssignmentExpired(assignedAt: string) {
+  const assignedTime = new Date(assignedAt).getTime();
+  return Number.isFinite(assignedTime) && Date.now() >= assignedTime + 24 * 60 * 60_000;
 }
 
 export async function releaseExpiredFloatingLeadsForSale(profileId: string) {

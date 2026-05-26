@@ -282,10 +282,7 @@ export function SaleKpiWorkspace() {
 export function SaleFloatingPoolWorkspace() {
   const { profile } = useAuth();
   const queryClient = useQueryClient();
-  const [range, setRange] = useState<DateRangeValue>(() => initialDateRange("today"));
-  const [activeLeadTab, setActiveLeadTab] = useState<"pool" | "mine">("pool");
   const [poolStatusFilter, setPoolStatusFilter] = useState("all");
-  const [mineStatusFilter, setMineStatusFilter] = useState("all");
   const [leadDrafts, setLeadDrafts] = useState<Record<string, FloatingLeadCareDraft>>({});
   const [recentlyUpdatedLeadIds, setRecentlyUpdatedLeadIds] = useState<Set<string>>(
     () => new Set(),
@@ -305,57 +302,27 @@ export function SaleFloatingPoolWorkspace() {
     },
   });
   const allLeads = useMemo(() => leadsQuery.data ?? [], [leadsQuery.data]);
-  const poolLeads = useMemo(() => {
-    const currentSaleId = profile?.id;
-    return allLeads.filter((lead) => {
-      const hiddenReason = getSalePoolHiddenReason(lead, currentSaleId);
-      if (hiddenReason) {
-        console.debug("[sale-floating-pool][filter-out]", {
-          currentSaleId,
-          leadId: lead.id,
-          assignedSaleId: lead.assigned_sale_id,
-          claimCount: lead.claim_count,
-          blockedSaleIds: lead.blocked_sale_ids,
-          isClosed: lead.is_closed,
-          reason: hiddenReason,
-        });
-        return false;
-      }
-      return true;
-    });
-  }, [allLeads, profile?.id]);
-  const myLeads = useMemo(
-    () =>
-      allLeads.filter(
-        (lead) =>
-          (lead.assigned_sale_id === profile?.id || lead.closed_by === profile?.id) &&
-          isLeadInDateRange(lead, range),
-      ),
-    [allLeads, profile?.id, range],
+  const visibleLeads = useMemo(
+    () => allLeads.filter((lead) => matchesPoolStatusFilter(lead, poolStatusFilter)),
+    [allLeads, poolStatusFilter],
   );
-  const visibleLeads = useMemo(() => {
-    const source = activeLeadTab === "mine" ? myLeads : poolLeads;
-    return source.filter((lead) =>
-      activeLeadTab === "mine"
-        ? matchesMineStatusFilter(lead, mineStatusFilter)
-        : matchesPoolStatusFilter(lead, poolStatusFilter),
-    );
-  }, [activeLeadTab, mineStatusFilter, myLeads, poolLeads, poolStatusFilter]);
-  const statLeads = useMemo(() => uniqueLeads([...poolLeads, ...myLeads]), [myLeads, poolLeads]);
   const stats = useMemo(
     () => ({
-      total: statLeads.length,
-      unassigned: poolLeads.length,
-      assigned: statLeads.filter((lead) => !!lead.assigned_sale_id && !lead.is_closed).length,
-      closed: statLeads.filter((lead) => lead.is_closed).length,
+      total: allLeads.length,
+      unassigned: allLeads.filter((lead) => !lead.assigned_sale_id && !lead.is_closed).length,
+      assigned: allLeads.filter((lead) => !!lead.assigned_sale_id && !lead.is_closed).length,
+      closed: allLeads.filter((lead) => lead.is_closed).length,
     }),
-    [poolLeads.length, statLeads],
+    [allLeads],
   );
 
   const currentSaleName = profile?.full_name || profile?.username || "Sale";
 
   const isLeadOwnedByCurrentSale = (lead: FloatingLeadRow) =>
     !!profile && (lead.assigned_sale_id === profile.id || lead.closed_by === profile.id);
+
+  const canEditLead = (lead: FloatingLeadRow) =>
+    !!profile && lead.assigned_sale_id === profile.id && !lead.is_closed;
 
   const refreshLeads = () =>
     queryClient.invalidateQueries({
@@ -390,7 +357,13 @@ export function SaleFloatingPoolWorkspace() {
   };
 
   const handleClaimLead = async (lead: FloatingLeadRow) => {
-    if (!profile || lead.assigned_sale_id) return;
+    if (
+      !profile ||
+      lead.assigned_sale_id ||
+      lead.is_closed ||
+      lead.blocked_sale_ids.includes(profile.id)
+    )
+      return;
     try {
       await claimFloatingLead({
         leadId: lead.id,
@@ -411,7 +384,7 @@ export function SaleFloatingPoolWorkspace() {
     field: K,
     value: FloatingLeadCareDraft[K],
   ) => {
-    if (!isLeadOwnedByCurrentSale(lead)) return;
+    if (!canEditLead(lead)) return;
     setLeadDrafts((current) => ({
       ...current,
       [lead.id]: { ...getLeadDraft(lead), [field]: value },
@@ -419,7 +392,7 @@ export function SaleFloatingPoolWorkspace() {
   };
 
   const updateLeadClosed = (lead: FloatingLeadRow, checked: boolean) => {
-    if (!isLeadOwnedByCurrentSale(lead)) return;
+    if (!canEditLead(lead)) return;
     setLeadDrafts((current) => ({
       ...current,
       [lead.id]: { ...getLeadDraft(lead), is_closed: checked },
@@ -438,7 +411,7 @@ export function SaleFloatingPoolWorkspace() {
   };
 
   const handleSaveLead = async (lead: FloatingLeadRow) => {
-    if (!isLeadOwnedByCurrentSale(lead)) {
+    if (!canEditLead(lead)) {
       toast.error("Không thể cập nhật lead");
       return;
     }
@@ -508,11 +481,7 @@ export function SaleFloatingPoolWorkspace() {
         }
         actions={
           <>
-            <DateRangeFilter value={range} onChange={setRange} hideLabel />
-            <Select
-              value={activeLeadTab === "mine" ? mineStatusFilter : poolStatusFilter}
-              onValueChange={activeLeadTab === "mine" ? setMineStatusFilter : setPoolStatusFilter}
-            >
+            <Select value={poolStatusFilter} onValueChange={setPoolStatusFilter}>
               <SelectTrigger
                 aria-label="Tình trạng"
                 className="h-10 w-44 rounded-xl border-slate-200 bg-white text-sm font-semibold shadow-sm"
@@ -520,21 +489,12 @@ export function SaleFloatingPoolWorkspace() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {activeLeadTab === "mine" ? (
-                  <>
-                    <SelectItem value="all">Tất cả tình trạng</SelectItem>
-                    <SelectItem value="processing">Đang xử lý</SelectItem>
-                    <SelectItem value="closed">Đã chốt</SelectItem>
-                  </>
-                ) : (
-                  <>
-                    <SelectItem value="all">Tất cả tình trạng</SelectItem>
-                    <SelectItem value="unclaimed">Chưa ai nhận</SelectItem>
-                    <SelectItem value="called_1">Đã gọi 1</SelectItem>
-                    <SelectItem value="called_2">Đã gọi 2</SelectItem>
-                    <SelectItem value="called_3">Đã gọi 3</SelectItem>
-                  </>
-                )}
+                <SelectItem value="all">Tất cả tình trạng</SelectItem>
+                <SelectItem value="unclaimed">Chưa gọi</SelectItem>
+                <SelectItem value="called_1">Đã gọi 1</SelectItem>
+                <SelectItem value="called_2">Đã gọi 2</SelectItem>
+                <SelectItem value="called_3">Đã gọi 3</SelectItem>
+                <SelectItem value="closed">Đã chốt</SelectItem>
               </SelectContent>
             </Select>
           </>
@@ -542,19 +502,11 @@ export function SaleFloatingPoolWorkspace() {
       />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-2">
-          <LeadTabButton
-            active={activeLeadTab === "pool"}
-            label="Kho thả nổi"
-            count={poolLeads.length}
-            onClick={() => setActiveLeadTab("pool")}
-          />
-          <LeadTabButton
-            active={activeLeadTab === "mine"}
-            label="Số đã nhận"
-            count={myLeads.length}
-            onClick={() => setActiveLeadTab("mine")}
-          />
+        <div className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-bold text-primary-foreground shadow-sm">
+          Kho thả nổi
+          <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs text-white">
+            {formatInteger(visibleLeads.length)}
+          </span>
         </div>
         <Button
           type="button"
@@ -602,11 +554,10 @@ export function SaleFloatingPoolWorkspace() {
                       const isClosed = lead.is_closed;
                       const isBlocked = !!profile?.id && lead.blocked_sale_ids.includes(profile.id);
                       const isMaxedOut = lead.claim_count >= 3;
-                      const isEditing = isMine && !isClosed && editingLeadId === lead.id;
+                      const isEditing = canEditLead(lead) && editingLeadId === lead.id;
                       const isAssigned = !!lead.assigned_sale_id;
                       const isAssignedByOther = isAssigned && !isMine;
                       const isRecentlyUpdated = recentlyUpdatedLeadIds.has(lead.id);
-                      const isPoolTab = activeLeadTab === "pool";
                       const activeCallField = getFloatingLeadCallField(lead);
                       const draft = getLeadDraft(lead);
                       return (
@@ -628,12 +579,7 @@ export function SaleFloatingPoolWorkspace() {
                             {formatVietnameseDate(lead.lead_date)}
                           </td>
                           <td className="whitespace-nowrap px-3 py-3">
-                            {isPoolTab ? (
-                              <span className="inline-flex h-8 max-w-full items-center gap-1.5 whitespace-nowrap rounded-full bg-slate-100 px-2.5 text-sm font-bold leading-none text-slate-700">
-                                <PhoneCall className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                <span className="whitespace-nowrap">{maskPhone(lead.phone)}</span>
-                              </span>
-                            ) : (
+                            {isMine ? (
                               <button
                                 type="button"
                                 className="inline-flex h-8 max-w-full items-center gap-1.5 whitespace-nowrap rounded-full bg-slate-100 px-2.5 text-sm font-bold leading-none text-slate-900 transition hover:bg-slate-200"
@@ -642,18 +588,18 @@ export function SaleFloatingPoolWorkspace() {
                                 <PhoneCall className="h-3.5 w-3.5 shrink-0 text-primary" />
                                 <span className="whitespace-nowrap">{lead.phone}</span>
                               </button>
+                            ) : (
+                              <span className="inline-flex h-8 max-w-full items-center gap-1.5 whitespace-nowrap rounded-full bg-slate-100 px-2.5 text-sm font-bold leading-none text-slate-700">
+                                <PhoneCall className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                <span className="whitespace-nowrap">{maskPhone(lead.phone)}</span>
+                              </span>
                             )}
                           </td>
                           <td className="px-3 py-3">
                             <LeadInlineInput
                               value={draft.call_1 ?? ""}
                               disabled={
-                                !canEditLeadCallField(
-                                  isEditing,
-                                  isPoolTab,
-                                  activeCallField,
-                                  "call_1",
-                                )
+                                !canEditLeadCallField(isEditing, activeCallField, "call_1", lead)
                               }
                               placeholder={isEditing ? "Cập nhật lần 1" : "—"}
                               onChange={(value) => updateLeadField(lead, "call_1", value)}
@@ -663,12 +609,7 @@ export function SaleFloatingPoolWorkspace() {
                             <LeadInlineInput
                               value={draft.call_2 ?? ""}
                               disabled={
-                                !canEditLeadCallField(
-                                  isEditing,
-                                  isPoolTab,
-                                  activeCallField,
-                                  "call_2",
-                                )
+                                !canEditLeadCallField(isEditing, activeCallField, "call_2", lead)
                               }
                               placeholder={isEditing ? "Cập nhật lần 2" : "—"}
                               onChange={(value) => updateLeadField(lead, "call_2", value)}
@@ -678,28 +619,39 @@ export function SaleFloatingPoolWorkspace() {
                             <LeadInlineInput
                               value={draft.call_3 ?? ""}
                               disabled={
-                                !canEditLeadCallField(
-                                  isEditing,
-                                  isPoolTab,
-                                  activeCallField,
-                                  "call_3",
-                                )
+                                !canEditLeadCallField(isEditing, activeCallField, "call_3", lead)
                               }
                               placeholder={isEditing ? "Cập nhật lần 3" : "—"}
                               onChange={(value) => updateLeadField(lead, "call_3", value)}
                             />
                           </td>
                           <td className="px-3 py-3">
-                            {isPoolTab ? (
-                              <LeadPoolStatusBadge lead={lead} />
-                            ) : (
-                              <LeadClosedCheckbox
-                                checked={draft.is_closed}
-                                disabled={!isEditing || isClosed}
-                                onChange={(checked) => updateLeadClosed(lead, checked)}
+                            <LeadPoolStatusBadge lead={lead} currentSaleId={profile?.id} />
+                            {isMine && !isClosed ? (
+                              <div className="mt-2">
+                                <LeadClosedCheckbox
+                                  checked={draft.is_closed}
+                                  disabled={!isEditing}
+                                  onChange={(checked) => updateLeadClosed(lead, checked)}
+                                />
+                              </div>
+                            ) : null}
+                            {isEditing ? (
+                              <textarea
+                                value={draft.note ?? ""}
+                                rows={2}
+                                className="mt-2 w-full resize-none rounded-xl border bg-white px-3 py-2 text-sm outline-none transition focus:border-primary"
+                                placeholder="Ghi chú nội bộ"
+                                onChange={(event) =>
+                                  updateLeadField(lead, "note", event.target.value)
+                                }
                               />
-                            )}
-                            {isMine && !isPoolTab ? (
+                            ) : lead.note ? (
+                              <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
+                                {lead.note}
+                              </p>
+                            ) : null}
+                            {isMine ? (
                               <p className="mt-1 text-[11px] text-muted-foreground">
                                 {isRecentlyUpdated
                                   ? "Cập nhật vài giây trước"
@@ -734,11 +686,10 @@ export function SaleFloatingPoolWorkspace() {
                   const isClosed = lead.is_closed;
                   const isBlocked = !!profile?.id && lead.blocked_sale_ids.includes(profile.id);
                   const isMaxedOut = lead.claim_count >= 3;
-                  const isEditing = isMine && !isClosed && editingLeadId === lead.id;
+                  const isEditing = canEditLead(lead) && editingLeadId === lead.id;
                   const isAssigned = !!lead.assigned_sale_id;
                   const isAssignedByOther = isAssigned && !isMine;
                   const isRecentlyUpdated = recentlyUpdatedLeadIds.has(lead.id);
-                  const isPoolTab = activeLeadTab === "pool";
                   const activeCallField = getFloatingLeadCallField(lead);
                   const draft = getLeadDraft(lead);
                   return (
@@ -758,12 +709,7 @@ export function SaleFloatingPoolWorkspace() {
                           <p className="text-xs font-bold text-muted-foreground">
                             #{index + 1} · {formatVietnameseDate(lead.lead_date)}
                           </p>
-                          {isPoolTab ? (
-                            <p className="mt-1 inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full bg-slate-100 px-2.5 text-sm font-black leading-none text-slate-700">
-                              <PhoneCall className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                              <span className="whitespace-nowrap">{maskPhone(lead.phone)}</span>
-                            </p>
-                          ) : (
+                          {isMine ? (
                             <button
                               type="button"
                               className="mt-1 inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full bg-slate-100 px-2.5 text-sm font-black leading-none text-slate-950"
@@ -772,6 +718,11 @@ export function SaleFloatingPoolWorkspace() {
                               <PhoneCall className="h-3.5 w-3.5 shrink-0 text-primary" />
                               <span className="whitespace-nowrap">{lead.phone}</span>
                             </button>
+                          ) : (
+                            <p className="mt-1 inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full bg-slate-100 px-2.5 text-sm font-black leading-none text-slate-700">
+                              <PhoneCall className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              <span className="whitespace-nowrap">{maskPhone(lead.phone)}</span>
+                            </p>
                           )}
                         </div>
                         <LeadActionButton
@@ -786,7 +737,7 @@ export function SaleFloatingPoolWorkspace() {
                           onSave={() => handleSaveLead(lead)}
                         />
                       </div>
-                      {isMine && !isPoolTab ? (
+                      {isMine ? (
                         <p className="mt-2 text-[11px] text-muted-foreground">
                           {isRecentlyUpdated
                             ? "Cập nhật vài giây trước"
@@ -797,7 +748,7 @@ export function SaleFloatingPoolWorkspace() {
                         <LeadInlineInput
                           value={draft.call_1 ?? ""}
                           disabled={
-                            !canEditLeadCallField(isEditing, isPoolTab, activeCallField, "call_1")
+                            !canEditLeadCallField(isEditing, activeCallField, "call_1", lead)
                           }
                           placeholder="Cuộc gọi lần 1"
                           onChange={(value) => updateLeadField(lead, "call_1", value)}
@@ -805,7 +756,7 @@ export function SaleFloatingPoolWorkspace() {
                         <LeadInlineInput
                           value={draft.call_2 ?? ""}
                           disabled={
-                            !canEditLeadCallField(isEditing, isPoolTab, activeCallField, "call_2")
+                            !canEditLeadCallField(isEditing, activeCallField, "call_2", lead)
                           }
                           placeholder="Cuộc gọi lần 2"
                           onChange={(value) => updateLeadField(lead, "call_2", value)}
@@ -813,30 +764,35 @@ export function SaleFloatingPoolWorkspace() {
                         <LeadInlineInput
                           value={draft.call_3 ?? ""}
                           disabled={
-                            !canEditLeadCallField(isEditing, isPoolTab, activeCallField, "call_3")
+                            !canEditLeadCallField(isEditing, activeCallField, "call_3", lead)
                           }
                           placeholder="Cuộc gọi lần 3"
                           onChange={(value) => updateLeadField(lead, "call_3", value)}
                         />
-                        {isPoolTab ? (
-                          <LeadPoolStatusBadge lead={lead} />
-                        ) : (
-                          <>
+                        <LeadPoolStatusBadge lead={lead} currentSaleId={profile?.id} />
+                        {isMine && !isClosed ? (
+                          <div className="grid gap-2">
                             <LeadClosedCheckbox
                               checked={draft.is_closed}
-                              disabled={!isEditing || isClosed}
+                              disabled={!isEditing}
                               onChange={(checked) => updateLeadClosed(lead, checked)}
                             />
                             <textarea
                               value={draft.note ?? ""}
-                              disabled
                               rows={2}
                               className="w-full resize-none rounded-xl border bg-white px-3 py-2 text-sm outline-none transition focus:border-primary disabled:bg-slate-50 disabled:text-slate-500"
                               placeholder="Ghi chú nội bộ"
-                              readOnly
+                              disabled={!isEditing}
+                              onChange={(event) =>
+                                updateLeadField(lead, "note", event.target.value)
+                              }
                             />
-                          </>
-                        )}
+                          </div>
+                        ) : lead.note ? (
+                          <p className="rounded-xl border bg-slate-50 px-3 py-2 text-sm text-muted-foreground">
+                            {lead.note}
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                   );
@@ -1208,41 +1164,6 @@ function FloatingLeadStatCard({
   );
 }
 
-function LeadTabButton({
-  active,
-  label,
-  count,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  count: number;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={cn(
-        "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold transition",
-        active
-          ? "border-primary bg-primary text-primary-foreground shadow-sm"
-          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-      )}
-      onClick={onClick}
-    >
-      {label}
-      <span
-        className={cn(
-          "rounded-full px-2 py-0.5 text-xs",
-          active ? "bg-white/20 text-white" : "bg-slate-100 text-slate-700",
-        )}
-      >
-        {formatInteger(count)}
-      </span>
-    </button>
-  );
-}
-
 function LeadInlineInput({
   value,
   disabled,
@@ -1267,11 +1188,11 @@ function LeadInlineInput({
 
 function canEditLeadCallField(
   isEditing: boolean,
-  isPoolTab: boolean,
   activeCallField: FloatingLeadCallField,
   field: FloatingLeadCallField,
+  lead: Pick<FloatingLeadRow, "call_1" | "call_2" | "call_3">,
 ) {
-  return isEditing && !isPoolTab && activeCallField === field;
+  return isEditing && activeCallField === field && !lead[field]?.trim();
 }
 
 function LeadActionButton({
@@ -1295,6 +1216,22 @@ function LeadActionButton({
   onEdit: () => void;
   onSave: () => void;
 }) {
+  if (isClosed) {
+    return (
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled
+        className="h-9 w-9 rounded-xl p-0"
+        title="Lead đã chốt"
+        aria-label="Lead đã chốt"
+      >
+        <Lock className="h-4 w-4" />
+      </Button>
+    );
+  }
+
   if (isUnassigned) {
     if (isMaxedOut) {
       return (
@@ -1334,8 +1271,8 @@ function LeadActionButton({
         size="sm"
         variant="outline"
         className="h-9 w-9 rounded-xl p-0 text-emerald-700 hover:bg-emerald-50"
-        title="Nhận data"
-        aria-label="Nhận data"
+        title="Nhận số"
+        aria-label="Nhận số"
         onClick={onClaim}
       >
         <UserPlus className="h-4 w-4" />
@@ -1343,7 +1280,7 @@ function LeadActionButton({
     );
   }
 
-  if (!isMine || isClosed) {
+  if (!isMine) {
     return (
       <Button
         type="button"
@@ -1389,21 +1326,37 @@ function LeadActionButton({
   );
 }
 
-function LeadPoolStatusBadge({ lead }: { lead: FloatingLeadRow }) {
+function LeadPoolStatusBadge({
+  lead,
+  currentSaleId,
+}: {
+  lead: FloatingLeadRow;
+  currentSaleId?: string;
+}) {
   const normalizedCount = getLeadCallStatusCount(lead);
-  const label = normalizedCount === 0 ? "Chưa ai nhận" : `Đã gọi ${normalizedCount}`;
-  const styles = [
-    "border-slate-200 bg-slate-50 text-slate-700",
-    "border-blue-100 bg-blue-50 text-blue-700",
-    "border-amber-100 bg-amber-50 text-amber-700",
-    "border-rose-100 bg-rose-50 text-rose-700",
-  ];
+  const state = getSaleLeadRowState(lead, currentSaleId);
+  const label =
+    state === "closed"
+      ? "Đã chốt"
+      : state === "claimed_by_me"
+        ? "Đang xử lý"
+        : state === "claimed_by_other"
+          ? "Đã có sale nhận"
+          : normalizedCount === 0
+            ? "Chưa ai nhận"
+            : `Đã gọi ${normalizedCount}`;
+  const styles = {
+    unclaimed: "border-slate-200 bg-slate-50 text-slate-700",
+    claimed_by_me: "border-blue-100 bg-blue-50 text-blue-700",
+    claimed_by_other: "border-amber-100 bg-amber-50 text-amber-700",
+    closed: "border-emerald-100 bg-emerald-50 text-emerald-700",
+  };
 
   return (
     <span
       className={cn(
         "inline-flex h-9 min-w-32 items-center justify-center rounded-xl border px-3 text-sm font-bold",
-        styles[normalizedCount],
+        styles[state],
       )}
     >
       {label}
@@ -1447,16 +1400,11 @@ function maskPhone(phone: string) {
   return `•••• ••• ${visible}`;
 }
 
-function isLeadInDateRange(lead: FloatingLeadRow, range: DateRangeValue) {
-  return lead.lead_date >= range.from && lead.lead_date <= range.to;
-}
-
-function getSalePoolHiddenReason(lead: FloatingLeadRow, currentSaleId?: string) {
+function getSaleLeadRowState(lead: FloatingLeadRow, currentSaleId?: string) {
   if (lead.is_closed) return "closed";
-  if (lead.assigned_sale_id) return "assigned";
-  if (lead.claim_count >= 3) return "max_claim_count";
-  if (currentSaleId && lead.blocked_sale_ids.includes(currentSaleId)) return "blocked_for_sale";
-  return null;
+  if (lead.assigned_sale_id === currentSaleId) return "claimed_by_me";
+  if (lead.assigned_sale_id) return "claimed_by_other";
+  return "unclaimed";
 }
 
 function getLeadCallStatusCount(lead: Pick<FloatingLeadRow, "call_1" | "call_2" | "call_3">) {
@@ -1468,28 +1416,14 @@ function getLeadCallStatusCount(lead: Pick<FloatingLeadRow, "call_1" | "call_2" 
 
 function matchesPoolStatusFilter(lead: FloatingLeadRow, filter: string) {
   if (filter === "all") return true;
+  if (filter === "closed") return lead.is_closed;
+  if (lead.is_closed) return false;
   const count = getLeadCallStatusCount(lead);
   if (filter === "unclaimed") return count === 0;
   if (filter === "called_1") return count === 1;
   if (filter === "called_2") return count === 2;
   if (filter === "called_3") return count === 3;
   return true;
-}
-
-function matchesMineStatusFilter(lead: FloatingLeadRow, filter: string) {
-  if (filter === "all") return true;
-  if (filter === "processing") return !lead.is_closed;
-  if (filter === "closed") return lead.is_closed;
-  return true;
-}
-
-function uniqueLeads(leads: FloatingLeadRow[]) {
-  const seen = new Set<string>();
-  return leads.filter((lead) => {
-    if (seen.has(lead.id)) return false;
-    seen.add(lead.id);
-    return true;
-  });
 }
 
 function formatVietnameseDate(value: string) {
