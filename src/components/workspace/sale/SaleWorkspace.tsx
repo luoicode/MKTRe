@@ -541,7 +541,7 @@ export function SaleFloatingPoolWorkspace() {
                       <th className="sticky top-0 z-20 bg-white px-3 py-3">Cuộc gọi lần 1</th>
                       <th className="sticky top-0 z-20 bg-white px-3 py-3">Cuộc gọi lần 2</th>
                       <th className="sticky top-0 z-20 bg-white px-3 py-3">Cuộc gọi lần 3</th>
-                      <th className="sticky top-0 z-20 w-44 bg-white px-3 py-3">Tình trạng</th>
+                      <th className="sticky top-0 z-20 w-64 bg-white px-3 py-3">Tình trạng</th>
                       <th className="sticky top-0 z-20 w-20 bg-white px-4 py-3 text-right">
                         Hành động
                       </th>
@@ -572,13 +572,13 @@ export function SaleFloatingPoolWorkspace() {
                             isAssignedByOther && "text-slate-400",
                           )}
                         >
-                          <td className="px-4 py-3 text-center font-semibold text-slate-500">
+                          <td className="px-4 py-2 text-center align-middle font-semibold text-slate-500">
                             {index + 1}
                           </td>
-                          <td className="whitespace-nowrap px-3 py-3 text-slate-500">
+                          <td className="whitespace-nowrap px-3 py-2 align-middle text-slate-500">
                             {formatVietnameseDate(lead.lead_date)}
                           </td>
-                          <td className="whitespace-nowrap px-3 py-3">
+                          <td className="whitespace-nowrap px-3 py-2 align-middle">
                             {isMine ? (
                               <button
                                 type="button"
@@ -595,7 +595,7 @@ export function SaleFloatingPoolWorkspace() {
                               </span>
                             )}
                           </td>
-                          <td className="px-3 py-3">
+                          <td className="px-3 py-2 align-middle">
                             <LeadInlineInput
                               value={draft.call_1 ?? ""}
                               disabled={
@@ -605,7 +605,7 @@ export function SaleFloatingPoolWorkspace() {
                               onChange={(value) => updateLeadField(lead, "call_1", value)}
                             />
                           </td>
-                          <td className="px-3 py-3">
+                          <td className="px-3 py-2 align-middle">
                             <LeadInlineInput
                               value={draft.call_2 ?? ""}
                               disabled={
@@ -615,7 +615,7 @@ export function SaleFloatingPoolWorkspace() {
                               onChange={(value) => updateLeadField(lead, "call_2", value)}
                             />
                           </td>
-                          <td className="px-3 py-3">
+                          <td className="px-3 py-2 align-middle">
                             <LeadInlineInput
                               value={draft.call_3 ?? ""}
                               disabled={
@@ -625,17 +625,25 @@ export function SaleFloatingPoolWorkspace() {
                               onChange={(value) => updateLeadField(lead, "call_3", value)}
                             />
                           </td>
-                          <td className="px-3 py-3">
-                            <LeadPoolStatusBadge lead={lead} currentSaleId={profile?.id} />
-                            {isMine && !isClosed ? (
-                              <div className="mt-2">
+                          <td className="px-3 py-2 align-middle">
+                            <div className="flex min-w-0 items-center gap-2 whitespace-nowrap">
+                              <LeadPoolStatusBadge lead={lead} currentSaleId={profile?.id} />
+                              {isMine && !isClosed ? (
                                 <LeadClosedCheckbox
                                   checked={draft.is_closed}
                                   disabled={!isEditing}
                                   onChange={(checked) => updateLeadClosed(lead, checked)}
                                 />
-                              </div>
-                            ) : null}
+                              ) : null}
+                              {isMine ? (
+                                <span className="min-w-0 truncate text-xs text-muted-foreground">
+                                  ·{" "}
+                                  {isRecentlyUpdated
+                                    ? "vài giây trước"
+                                    : formatLeadUpdatedAt(lead.updated_at)}
+                                </span>
+                              ) : null}
+                            </div>
                             {isEditing ? (
                               <textarea
                                 value={draft.note ?? ""}
@@ -646,20 +654,9 @@ export function SaleFloatingPoolWorkspace() {
                                   updateLeadField(lead, "note", event.target.value)
                                 }
                               />
-                            ) : lead.note ? (
-                              <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
-                                {lead.note}
-                              </p>
-                            ) : null}
-                            {isMine ? (
-                              <p className="mt-1 text-[11px] text-muted-foreground">
-                                {isRecentlyUpdated
-                                  ? "Cập nhật vài giây trước"
-                                  : formatLeadUpdatedAt(lead.updated_at)}
-                              </p>
                             ) : null}
                           </td>
-                          <td className="px-4 py-3 text-right">
+                          <td className="px-4 py-2 text-right align-middle">
                             <LeadActionButton
                               isUnassigned={isUnassigned}
                               isMine={isMine}
@@ -1224,10 +1221,10 @@ function LeadActionButton({
         variant="outline"
         disabled
         className="h-9 w-9 rounded-xl p-0"
-        title="Lead đã chốt"
-        aria-label="Lead đã chốt"
+        title={isMine ? "Lead đã chốt" : "Lead đã chốt"}
+        aria-label={isMine ? "Lead đã chốt" : "Lead đã chốt"}
       >
-        <Lock className="h-4 w-4" />
+        {isMine ? <Pencil className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
       </Button>
     );
   }
@@ -1355,7 +1352,7 @@ function LeadPoolStatusBadge({
   return (
     <span
       className={cn(
-        "inline-flex h-9 min-w-32 items-center justify-center rounded-xl border px-3 text-sm font-bold",
+        "inline-flex h-7 shrink-0 items-center justify-center rounded-full border px-2.5 text-xs font-bold",
         styles[state],
       )}
     >
@@ -1376,7 +1373,7 @@ function LeadClosedCheckbox({
   return (
     <label
       className={cn(
-        "inline-flex h-9 min-w-32 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-bold",
+        "inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-full border px-2.5 text-xs font-bold",
         checked
           ? "border-emerald-100 bg-emerald-50 text-emerald-700"
           : "border-slate-200 bg-slate-50 text-slate-700",
@@ -1387,7 +1384,7 @@ function LeadClosedCheckbox({
         type="checkbox"
         checked={checked}
         disabled={disabled}
-        className="h-4 w-4 accent-emerald-600"
+        className="h-3.5 w-3.5 accent-emerald-600"
         onChange={(event) => onChange(event.target.checked)}
       />
       Đã chốt
@@ -1436,12 +1433,12 @@ function formatLeadUpdatedAt(value: string) {
   const updatedAt = new Date(value);
   if (Number.isNaN(updatedAt.getTime())) return "";
   const diffSeconds = Math.max(0, Math.floor((Date.now() - updatedAt.getTime()) / 1000));
-  if (diffSeconds < 60) return "Cập nhật vài giây trước";
-  if (diffSeconds < 3600) return `Cập nhật ${Math.floor(diffSeconds / 60)} phút trước`;
-  return `Cập nhật ${updatedAt.toLocaleTimeString("vi-VN", {
+  if (diffSeconds < 60) return "vài giây trước";
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)} phút trước`;
+  return updatedAt.toLocaleTimeString("vi-VN", {
     hour: "2-digit",
     minute: "2-digit",
-  })}`;
+  });
 }
 
 async function fetchSaleReportsForUsers(userIds: string[], from: string, to: string) {
