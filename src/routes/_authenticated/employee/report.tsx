@@ -74,8 +74,6 @@ interface ReportEntrySlot extends ReportSlot {
   groupLabel: string;
 }
 
-const SUBMITTED_REPORT_EDIT_WINDOW_MS = 60 * 60_000;
-
 function addDays(date: string, days: number) {
   const [year, month, day] = date.split("-").map(Number);
   const d = new Date(Date.UTC(year, month - 1, day + days));
@@ -139,7 +137,7 @@ function shouldAutoAdvance(
   return !!next && isOpen(next, now) && !isOpen(active, now);
 }
 
-type SlotTimingState = "not_open" | "open" | "locked";
+type SlotLifecycleState = "locked" | "available" | "submitted" | "expired";
 
 function dueAt(slot: ReportEntrySlot) {
   const raw = slot.slot_time || slot.slot_name;
@@ -168,72 +166,92 @@ function isLocked(slot: ReportEntrySlot, now: Date) {
   return now.getTime() > closeAt(slot).getTime();
 }
 
-function slotTimingState(slot: ReportEntrySlot, now: Date): SlotTimingState {
-  if (now.getTime() < openAt(slot).getTime()) return "not_open";
-  if (isOpen(slot, now)) return "open";
-  return "locked";
-}
-
 function isReminderWindow(slot: ReportEntrySlot, now: Date) {
   const reminderAt = addMinutes(dueAt(slot), -30);
   return now.getTime() >= reminderAt.getTime() && now.getTime() <= dueAt(slot).getTime();
 }
 
-function canEditReport(
+function isReportSubmitted(report?: { status: string | null } | null) {
+  return ["submitted", "approved"].includes(String(report?.status ?? ""));
+}
+
+function getPreviousSlot(
   slot: ReportEntrySlot,
-  now: Date,
-  existing?: { status: string | null; submitted_at?: string | null } | null,
+  slots: ReportEntrySlot[],
+): ReportEntrySlot | undefined {
+  const sameGroup = slots
+    .filter((item) => item.group === slot.group)
+    .sort((a, b) => slotMinutes(a) - slotMinutes(b));
+  const index = sameGroup.findIndex((item) => item.id === slot.id);
+  return index > 0 ? sameGroup[index - 1] : undefined;
+}
+
+function getSlotLifecycleState({
+  slot,
+  slots,
+  now,
+  existing,
+  reportBySlotDate,
   canBypassSlotLock = false,
-) {
-  if (canBypassSlotLock && !isLocked(slot, now)) return true;
-  if (!isOpen(slot, now)) return false;
-  if (!existing) return true;
-  const status = String(existing.status ?? "");
-  if (status === "approved" || status === "locked") return false;
-  if (status === "submitted") {
-    if (!existing.submitted_at) return false;
-    return (
-      now.getTime() - new Date(existing.submitted_at).getTime() <= SUBMITTED_REPORT_EDIT_WINDOW_MS
-    );
-  }
-  return true;
+}: {
+  slot: ReportEntrySlot;
+  slots: ReportEntrySlot[];
+  now: Date;
+  existing?: { status: string | null } | null;
+  reportBySlotDate: Map<string, { status: string | null }>;
+  canBypassSlotLock?: boolean;
+}): SlotLifecycleState {
+  if (isReportSubmitted(existing)) return "submitted";
+  if (canBypassSlotLock) return "available";
+  if (isLocked(slot, now)) return "expired";
+  if (!isOpen(slot, now)) return "locked";
+
+  const previous = getPreviousSlot(slot, slots);
+  if (!previous) return "available";
+
+  const previousReport = reportBySlotDate.get(`${previous.reportDate}:${previous.id}`);
+  return isReportSubmitted(previousReport) ? "available" : "locked";
+}
+
+function canEditReport(state: SlotLifecycleState, canBypassSlotLock = false) {
+  return canBypassSlotLock || state === "available";
 }
 
 function slotVisual(
   slot: ReportEntrySlot,
+  slots: ReportEntrySlot[],
   now: Date,
   report: { status: string | null } | undefined,
+  reportBySlotDate: Map<string, { status: string | null }>,
   canBypassSlotLock = false,
 ) {
-  if (report && ["submitted", "approved"].includes(String(report.status))) {
+  const state = getSlotLifecycleState({
+    slot,
+    slots,
+    now,
+    existing: report,
+    reportBySlotDate,
+    canBypassSlotLock,
+  });
+  if (state === "submitted") {
     return {
-      label: "Đã gửi",
+      label: "Đã báo cáo",
       icon: CheckCircle2,
       className:
         "border-emerald-200 bg-emerald-50 text-emerald-700 data-[state=active]:bg-emerald-600 data-[state=active]:text-white",
       badge: "bg-emerald-100 text-emerald-700",
     };
   }
-  const state = slotTimingState(slot, now);
-  if (state === "locked") {
+  if (state === "expired") {
     return {
-      label: "Đã khoá",
+      label: "Đã quá hạn",
       icon: AlertCircle,
       className:
         "border-red-200 bg-red-50 text-red-700 opacity-90 data-[state=active]:bg-red-600 data-[state=active]:text-white",
       badge: "bg-red-100 text-red-700",
     };
   }
-  if (canBypassSlotLock) {
-    return {
-      label: "Đang mở",
-      icon: Clock3,
-      className:
-        "border-emerald-200 bg-emerald-50 text-emerald-700 data-[state=active]:bg-emerald-600 data-[state=active]:text-white",
-      badge: "bg-emerald-100 text-emerald-700",
-    };
-  }
-  if (state === "open") {
+  if (state === "available") {
     return {
       label: "Đang mở",
       icon: Clock3,
@@ -346,14 +364,14 @@ export function EmployeeReport() {
   const todaySlots = entrySlots.filter((s) => s.group === "today");
   const previousDaySlots = entrySlots.filter((s) => s.group === "previous_day");
   const activeEntry = entrySlots.find((s) => s.id === activeSlot);
-  const canBypassSlotLock = role === "leader";
+  const canBypassSlotLock = role === "admin" || role === "manager";
   const { data: slotReports } = useQuery({
     queryKey: ["my-slot-statuses", profile?.id, date],
     enabled: !!profile,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("slot_reports")
-        .select("slot_id, report_date, status")
+        .select("slot_id, report_date, status, submitted_at")
         .eq("user_id", profile!.id)
         .in("report_date", [date, addDays(date, -1)]);
       if (error) throw error;
@@ -582,8 +600,10 @@ export function EmployeeReport() {
                     {todaySlots.map((s) => {
                       const visual = slotVisual(
                         s,
+                        entrySlots,
                         now,
                         reportBySlotDate.get(`${s.reportDate}:${s.id}`),
+                        reportBySlotDate,
                         canBypassSlotLock,
                       );
                       const Icon = visual.icon;
@@ -621,8 +641,10 @@ export function EmployeeReport() {
                     {previousDaySlots.map((s) => {
                       const visual = slotVisual(
                         s,
+                        entrySlots,
                         now,
                         reportBySlotDate.get(`${s.reportDate}:${s.id}`),
+                        reportBySlotDate,
                         canBypassSlotLock,
                       );
                       const Icon = visual.icon;
@@ -662,12 +684,17 @@ export function EmployeeReport() {
                     slotName={s.slot_name}
                     date={s.reportDate}
                     entrySlot={s}
+                    entrySlots={entrySlots}
+                    reportBySlotDate={reportBySlotDate}
                     now={now}
                     canBypassSlotLock={canBypassSlotLock}
                     groupLabel={s.groupLabel}
                     teamId={exportContext?.teamId ?? null}
                     teamName={exportContext?.teamName ?? null}
-                    onSaved={() => qc.invalidateQueries({ queryKey: ["my-reports"] })}
+                    onSaved={() => {
+                      qc.invalidateQueries({ queryKey: ["my-reports"] });
+                      qc.invalidateQueries({ queryKey: ["my-slot-statuses", profile.id, date] });
+                    }}
                     onSubmitted={handleSubmitted}
                   />
                 )}
@@ -748,6 +775,8 @@ function SlotForm({
   slotName,
   date,
   entrySlot,
+  entrySlots,
+  reportBySlotDate,
   now,
   canBypassSlotLock,
   groupLabel,
@@ -762,6 +791,8 @@ function SlotForm({
   slotName: string;
   date: string;
   entrySlot: ReportEntrySlot;
+  entrySlots: ReportEntrySlot[];
+  reportBySlotDate: Map<string, { status: string | null }>;
   now: Date;
   canBypassSlotLock: boolean;
   groupLabel: string;
@@ -872,14 +903,21 @@ function SlotForm({
     return w;
   }, [nums]);
 
-  const editable = canEditReport(entrySlot, now, existing, canBypassSlotLock);
-  const timingState = slotTimingState(entrySlot, now);
+  const slotState = getSlotLifecycleState({
+    slot: entrySlot,
+    slots: entrySlots,
+    now,
+    existing,
+    reportBySlotDate,
+    canBypassSlotLock,
+  });
+  const editable = canEditReport(slotState, canBypassSlotLock);
   const isReconciliation = isReconciliationSlot(slotName);
   const wasReconciled = isReconciliation || !!hasReconciliationAudit;
 
   const save = async (status: "draft" | "submitted") => {
     if (!editable) {
-      toast.error(reportReadonlyMessage(timingState, existing));
+      toast.error(reportReadonlyMessage(slotState, existing));
       return;
     }
     setSaving(true);
@@ -1020,7 +1058,7 @@ function SlotForm({
 
           {!editable && (
             <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
-              {reportReadonlyMessage(timingState, existing)}
+              {reportReadonlyMessage(slotState, existing)}
             </div>
           )}
 
@@ -1105,15 +1143,14 @@ function SlotForm({
 }
 
 function reportReadonlyMessage(
-  timingState: SlotTimingState,
+  slotState: SlotLifecycleState,
   existing?: { status: string | null; submitted_at?: string | null } | null,
 ) {
   const status = String(existing?.status ?? "");
   if (status === "approved" || status === "locked") return "Báo cáo đã được khóa, chỉ xem.";
-  if (status === "submitted") return "Báo cáo đã gửi chỉ được sửa trong 1 tiếng đầu.";
-  if (timingState === "not_open")
-    return "Khung báo cáo chưa mở. Form sẽ mở trước deadline 1 tiếng.";
-  if (timingState === "locked") return "Khung báo cáo đã khoá. Không thể nhập hoặc gửi thêm.";
+  if (status === "submitted") return "Khung này đã báo cáo. Nhân viên không thể sửa lại.";
+  if (slotState === "expired") return "Khung báo cáo đã quá hạn. Không thể nhập hoặc gửi thêm.";
+  if (slotState === "locked") return "Khung báo cáo chưa mở hoặc khung trước chưa hoàn thành.";
   return "Không thể chỉnh sửa báo cáo ở thời điểm hiện tại.";
 }
 
@@ -1132,7 +1169,7 @@ function StatusBadge({ status }: { status: string }) {
     { v: "default" | "secondary" | "destructive" | "outline"; label: string }
   > = {
     draft: { v: "secondary", label: "Nháp" },
-    submitted: { v: "default", label: "Đã gửi" },
+    submitted: { v: "default", label: "Đã báo cáo" },
     approved: { v: "default", label: "Đã duyệt" },
     rejected: { v: "destructive", label: "Từ chối" },
     locked: { v: "outline", label: "Khóa" },

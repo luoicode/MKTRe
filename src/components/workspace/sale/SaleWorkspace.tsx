@@ -357,13 +357,7 @@ export function SaleFloatingPoolWorkspace() {
   };
 
   const handleClaimLead = async (lead: FloatingLeadRow) => {
-    if (
-      !profile ||
-      lead.assigned_sale_id ||
-      lead.is_closed ||
-      lead.blocked_sale_ids.includes(profile.id)
-    )
-      return;
+    if (!profile || lead.assigned_sale_id || lead.is_closed) return;
     try {
       await claimFloatingLead({
         leadId: lead.id,
@@ -494,6 +488,7 @@ export function SaleFloatingPoolWorkspace() {
                 <SelectItem value="called_1">Đã gọi 1</SelectItem>
                 <SelectItem value="called_2">Đã gọi 2</SelectItem>
                 <SelectItem value="called_3">Đã gọi 3</SelectItem>
+                <SelectItem value="released">Đã release</SelectItem>
                 <SelectItem value="closed">Đã chốt</SelectItem>
               </SelectContent>
             </Select>
@@ -552,7 +547,6 @@ export function SaleFloatingPoolWorkspace() {
                       const isUnassigned = !lead.assigned_sale_id;
                       const isMine = isLeadOwnedByCurrentSale(lead);
                       const isClosed = lead.is_closed;
-                      const isBlocked = !!profile?.id && lead.blocked_sale_ids.includes(profile.id);
                       const isMaxedOut = lead.claim_count >= 3;
                       const isEditing = canEditLead(lead) && editingLeadId === lead.id;
                       const isAssigned = !!lead.assigned_sale_id;
@@ -579,21 +573,14 @@ export function SaleFloatingPoolWorkspace() {
                             {formatVietnameseDate(lead.lead_date)}
                           </td>
                           <td className="whitespace-nowrap px-3 py-2 align-middle">
-                            {isMine ? (
-                              <button
-                                type="button"
-                                className="inline-flex h-8 max-w-full items-center gap-1.5 whitespace-nowrap rounded-full bg-slate-100 px-2.5 text-sm font-bold leading-none text-slate-900 transition hover:bg-slate-200"
-                                onClick={() => copyPhone(lead.phone)}
-                              >
-                                <PhoneCall className="h-3.5 w-3.5 shrink-0 text-primary" />
-                                <span className="whitespace-nowrap">{lead.phone}</span>
-                              </button>
-                            ) : (
-                              <span className="inline-flex h-8 max-w-full items-center gap-1.5 whitespace-nowrap rounded-full bg-slate-100 px-2.5 text-sm font-bold leading-none text-slate-700">
-                                <PhoneCall className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                <span className="whitespace-nowrap">{maskPhone(lead.phone)}</span>
-                              </span>
-                            )}
+                            <button
+                              type="button"
+                              className="inline-flex h-8 max-w-full items-center gap-1.5 whitespace-nowrap rounded-full bg-slate-100 px-2.5 text-sm font-bold leading-none text-slate-900 transition hover:bg-slate-200"
+                              onClick={() => copyPhone(lead.phone)}
+                            >
+                              <PhoneCall className="h-3.5 w-3.5 shrink-0 text-primary" />
+                              <span className="whitespace-nowrap">{lead.phone}</span>
+                            </button>
                           </td>
                           <td className="px-3 py-2 align-middle">
                             <LeadInlineInput
@@ -653,7 +640,6 @@ export function SaleFloatingPoolWorkspace() {
                               isUnassigned={isUnassigned}
                               isMine={isMine}
                               isEditing={isEditing}
-                              isBlocked={isBlocked}
                               isMaxedOut={isMaxedOut}
                               isClosed={isClosed}
                               onClaim={() => handleClaimLead(lead)}
@@ -673,7 +659,6 @@ export function SaleFloatingPoolWorkspace() {
                   const isUnassigned = !lead.assigned_sale_id;
                   const isMine = isLeadOwnedByCurrentSale(lead);
                   const isClosed = lead.is_closed;
-                  const isBlocked = !!profile?.id && lead.blocked_sale_ids.includes(profile.id);
                   const isMaxedOut = lead.claim_count >= 3;
                   const isEditing = canEditLead(lead) && editingLeadId === lead.id;
                   const isAssigned = !!lead.assigned_sale_id;
@@ -698,27 +683,19 @@ export function SaleFloatingPoolWorkspace() {
                           <p className="text-xs font-bold text-muted-foreground">
                             #{index + 1} · {formatVietnameseDate(lead.lead_date)}
                           </p>
-                          {isMine ? (
-                            <button
-                              type="button"
-                              className="mt-1 inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full bg-slate-100 px-2.5 text-sm font-black leading-none text-slate-950"
-                              onClick={() => copyPhone(lead.phone)}
-                            >
-                              <PhoneCall className="h-3.5 w-3.5 shrink-0 text-primary" />
-                              <span className="whitespace-nowrap">{lead.phone}</span>
-                            </button>
-                          ) : (
-                            <p className="mt-1 inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full bg-slate-100 px-2.5 text-sm font-black leading-none text-slate-700">
-                              <PhoneCall className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                              <span className="whitespace-nowrap">{maskPhone(lead.phone)}</span>
-                            </p>
-                          )}
+                          <button
+                            type="button"
+                            className="mt-1 inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full bg-slate-100 px-2.5 text-sm font-black leading-none text-slate-950"
+                            onClick={() => copyPhone(lead.phone)}
+                          >
+                            <PhoneCall className="h-3.5 w-3.5 shrink-0 text-primary" />
+                            <span className="whitespace-nowrap">{lead.phone}</span>
+                          </button>
                         </div>
                         <LeadActionButton
                           isUnassigned={isUnassigned}
                           isMine={isMine}
                           isEditing={isEditing}
-                          isBlocked={isBlocked}
                           isMaxedOut={isMaxedOut}
                           isClosed={isClosed}
                           onClaim={() => handleClaimLead(lead)}
@@ -1181,7 +1158,6 @@ function LeadActionButton({
   isUnassigned,
   isMine,
   isEditing,
-  isBlocked,
   isMaxedOut,
   isClosed,
   onClaim,
@@ -1191,7 +1167,6 @@ function LeadActionButton({
   isUnassigned: boolean;
   isMine: boolean;
   isEditing: boolean;
-  isBlocked: boolean;
   isMaxedOut: boolean;
   isClosed: boolean;
   onClaim: () => void;
@@ -1225,22 +1200,6 @@ function LeadActionButton({
           className="h-9 w-9 rounded-xl p-0"
           title="Lead đã được xử lý đủ 3 lượt"
           aria-label="Lead đã được xử lý đủ 3 lượt"
-        >
-          <Lock className="h-4 w-4" />
-        </Button>
-      );
-    }
-
-    if (isBlocked) {
-      return (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled
-          className="h-9 w-9 rounded-xl p-0"
-          title="Bạn đã xử lý số này trước đó"
-          aria-label="Bạn đã xử lý số này trước đó"
         >
           <Lock className="h-4 w-4" />
         </Button>
@@ -1324,13 +1283,16 @@ function LeadPoolStatusBadge({
         ? "Đang xử lý"
         : state === "claimed_by_other"
           ? "Đã có sale nhận"
-          : normalizedCount === 0
-            ? "Chưa ai nhận"
-            : `Đã gọi ${normalizedCount}`;
+          : state === "released" && normalizedCount === 0
+            ? "Đã release"
+            : normalizedCount === 0
+              ? "Chưa ai nhận"
+              : `Đã gọi ${normalizedCount}`;
   const styles = {
     unclaimed: "border-slate-200 bg-slate-50 text-slate-700",
     claimed_by_me: "border-blue-100 bg-blue-50 text-blue-700",
     claimed_by_other: "border-amber-100 bg-amber-50 text-amber-700",
+    released: "border-violet-100 bg-violet-50 text-violet-700",
     closed: "border-emerald-100 bg-emerald-50 text-emerald-700",
   };
 
@@ -1377,15 +1339,11 @@ function LeadClosedCheckbox({
   );
 }
 
-function maskPhone(phone: string) {
-  const visible = phone.replace(/\D/g, "").slice(-4) || phone.slice(-4);
-  return `•••• ••• ${visible}`;
-}
-
 function getSaleLeadRowState(lead: FloatingLeadRow, currentSaleId?: string) {
   if (lead.is_closed) return "closed";
   if (lead.assigned_sale_id === currentSaleId) return "claimed_by_me";
   if (lead.assigned_sale_id) return "claimed_by_other";
+  if (lead.lifecycle_status === "released") return "released";
   return "unclaimed";
 }
 
@@ -1399,6 +1357,7 @@ function getLeadCallStatusCount(lead: Pick<FloatingLeadRow, "call_1" | "call_2" 
 function matchesPoolStatusFilter(lead: FloatingLeadRow, filter: string) {
   if (filter === "all") return true;
   if (filter === "closed") return lead.is_closed;
+  if (filter === "released") return lead.lifecycle_status === "released";
   if (lead.is_closed) return false;
   const count = getLeadCallStatusCount(lead);
   if (filter === "unclaimed") return count === 0;

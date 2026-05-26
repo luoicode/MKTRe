@@ -211,7 +211,6 @@ export async function claimFloatingLead({
     .eq("is_closed", false)
     .lt("claim_count", 3)
     .is("assigned_sale_id", null)
-    .not("blocked_sale_ids", "cs", `{${profileId}}`)
     .select("*")
     .maybeSingle();
 
