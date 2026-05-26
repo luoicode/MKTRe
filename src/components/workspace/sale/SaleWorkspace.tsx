@@ -635,14 +635,6 @@ export function SaleFloatingPoolWorkspace() {
                                   onChange={(checked) => updateLeadClosed(lead, checked)}
                                 />
                               ) : null}
-                              {isMine ? (
-                                <span className="min-w-0 truncate text-xs text-muted-foreground">
-                                  ·{" "}
-                                  {isRecentlyUpdated
-                                    ? "vài giây trước"
-                                    : formatLeadUpdatedAt(lead.updated_at)}
-                                </span>
-                              ) : null}
                             </div>
                             {isEditing ? (
                               <textarea
@@ -734,13 +726,6 @@ export function SaleFloatingPoolWorkspace() {
                           onSave={() => handleSaveLead(lead)}
                         />
                       </div>
-                      {isMine ? (
-                        <p className="mt-2 text-[11px] text-muted-foreground">
-                          {isRecentlyUpdated
-                            ? "Cập nhật vài giây trước"
-                            : formatLeadUpdatedAt(lead.updated_at)}
-                        </p>
-                      ) : null}
                       <div className="mt-3 grid gap-2">
                         <LeadInlineInput
                           value={draft.call_1 ?? ""}
@@ -1426,19 +1411,6 @@ function matchesPoolStatusFilter(lead: FloatingLeadRow, filter: string) {
 function formatVietnameseDate(value: string) {
   const [year, month, day] = value.split("-");
   return `${day}/${month}/${year}`;
-}
-
-function formatLeadUpdatedAt(value: string) {
-  if (!value) return "";
-  const updatedAt = new Date(value);
-  if (Number.isNaN(updatedAt.getTime())) return "";
-  const diffSeconds = Math.max(0, Math.floor((Date.now() - updatedAt.getTime()) / 1000));
-  if (diffSeconds < 60) return "vài giây trước";
-  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)} phút trước`;
-  return updatedAt.toLocaleTimeString("vi-VN", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 async function fetchSaleReportsForUsers(userIds: string[], from: string, to: string) {
