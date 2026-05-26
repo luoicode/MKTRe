@@ -137,7 +137,7 @@ function shouldAutoAdvance(
   return !!next && isOpen(next, now) && !isOpen(active, now);
 }
 
-type SlotLifecycleState = "locked" | "available" | "submitted" | "expired";
+type SlotLifecycleState = "available" | "submitted";
 
 function dueAt(slot: ReportEntrySlot) {
   const raw = slot.slot_time || slot.slot_name;
@@ -175,42 +175,13 @@ function isReportSubmitted(report?: { status: string | null } | null) {
   return ["submitted", "approved"].includes(String(report?.status ?? ""));
 }
 
-function getPreviousSlot(
-  slot: ReportEntrySlot,
-  slots: ReportEntrySlot[],
-): ReportEntrySlot | undefined {
-  const sameGroup = slots
-    .filter((item) => item.group === slot.group)
-    .sort((a, b) => slotMinutes(a) - slotMinutes(b));
-  const index = sameGroup.findIndex((item) => item.id === slot.id);
-  return index > 0 ? sameGroup[index - 1] : undefined;
-}
-
 function getSlotLifecycleState({
-  slot,
-  slots,
-  now,
   existing,
-  reportBySlotDate,
-  canBypassSlotLock = false,
 }: {
-  slot: ReportEntrySlot;
-  slots: ReportEntrySlot[];
-  now: Date;
   existing?: { status: string | null } | null;
-  reportBySlotDate: Map<string, { status: string | null }>;
-  canBypassSlotLock?: boolean;
 }): SlotLifecycleState {
   if (isReportSubmitted(existing)) return "submitted";
-  if (canBypassSlotLock) return "available";
-  if (isLocked(slot, now)) return "expired";
-  if (!isOpen(slot, now)) return "locked";
-
-  const previous = getPreviousSlot(slot, slots);
-  if (!previous) return "available";
-
-  const previousReport = reportBySlotDate.get(`${previous.reportDate}:${previous.id}`);
-  return isReportSubmitted(previousReport) ? "available" : "locked";
+  return "available";
 }
 
 function canEditReport(state: SlotLifecycleState, canBypassSlotLock = false) {
@@ -219,19 +190,11 @@ function canEditReport(state: SlotLifecycleState, canBypassSlotLock = false) {
 
 function slotVisual(
   slot: ReportEntrySlot,
-  slots: ReportEntrySlot[],
-  now: Date,
   report: { status: string | null } | undefined,
-  reportBySlotDate: Map<string, { status: string | null }>,
   canBypassSlotLock = false,
 ) {
   const state = getSlotLifecycleState({
-    slot,
-    slots,
-    now,
     existing: report,
-    reportBySlotDate,
-    canBypassSlotLock,
   });
   if (state === "submitted") {
     return {
@@ -240,15 +203,6 @@ function slotVisual(
       className:
         "border-emerald-200 bg-emerald-50 text-emerald-700 data-[state=active]:bg-emerald-600 data-[state=active]:text-white",
       badge: "bg-emerald-100 text-emerald-700",
-    };
-  }
-  if (state === "expired") {
-    return {
-      label: "Đã quá hạn",
-      icon: AlertCircle,
-      className:
-        "border-red-200 bg-red-50 text-red-700 opacity-90 data-[state=active]:bg-red-600 data-[state=active]:text-white",
-      badge: "bg-red-100 text-red-700",
     };
   }
   if (state === "available") {
@@ -261,11 +215,11 @@ function slotVisual(
     };
   }
   return {
-    label: "Chưa mở",
+    label: "Đang mở",
     icon: Clock3,
     className:
-      "border-slate-200 bg-slate-50 text-slate-500 opacity-80 data-[state=active]:bg-slate-700 data-[state=active]:text-white",
-    badge: "bg-slate-100 text-slate-600",
+      "border-emerald-200 bg-emerald-50 text-emerald-700 data-[state=active]:bg-emerald-600 data-[state=active]:text-white",
+    badge: "bg-emerald-100 text-emerald-700",
   };
 }
 
@@ -600,10 +554,7 @@ export function EmployeeReport() {
                     {todaySlots.map((s) => {
                       const visual = slotVisual(
                         s,
-                        entrySlots,
-                        now,
                         reportBySlotDate.get(`${s.reportDate}:${s.id}`),
-                        reportBySlotDate,
                         canBypassSlotLock,
                       );
                       const Icon = visual.icon;
@@ -641,10 +592,7 @@ export function EmployeeReport() {
                     {previousDaySlots.map((s) => {
                       const visual = slotVisual(
                         s,
-                        entrySlots,
-                        now,
                         reportBySlotDate.get(`${s.reportDate}:${s.id}`),
-                        reportBySlotDate,
                         canBypassSlotLock,
                       );
                       const Icon = visual.icon;
@@ -684,8 +632,6 @@ export function EmployeeReport() {
                     slotName={s.slot_name}
                     date={s.reportDate}
                     entrySlot={s}
-                    entrySlots={entrySlots}
-                    reportBySlotDate={reportBySlotDate}
                     now={now}
                     canBypassSlotLock={canBypassSlotLock}
                     groupLabel={s.groupLabel}
@@ -775,8 +721,6 @@ function SlotForm({
   slotName,
   date,
   entrySlot,
-  entrySlots,
-  reportBySlotDate,
   now,
   canBypassSlotLock,
   groupLabel,
@@ -791,8 +735,6 @@ function SlotForm({
   slotName: string;
   date: string;
   entrySlot: ReportEntrySlot;
-  entrySlots: ReportEntrySlot[];
-  reportBySlotDate: Map<string, { status: string | null }>;
   now: Date;
   canBypassSlotLock: boolean;
   groupLabel: string;
@@ -904,12 +846,7 @@ function SlotForm({
   }, [nums]);
 
   const slotState = getSlotLifecycleState({
-    slot: entrySlot,
-    slots: entrySlots,
-    now,
     existing,
-    reportBySlotDate,
-    canBypassSlotLock,
   });
   const editable = canEditReport(slotState, canBypassSlotLock);
   const isReconciliation = isReconciliationSlot(slotName);
@@ -1149,8 +1086,7 @@ function reportReadonlyMessage(
   const status = String(existing?.status ?? "");
   if (status === "approved" || status === "locked") return "Báo cáo đã được khóa, chỉ xem.";
   if (status === "submitted") return "Khung này đã báo cáo. Nhân viên không thể sửa lại.";
-  if (slotState === "expired") return "Khung báo cáo đã quá hạn. Không thể nhập hoặc gửi thêm.";
-  if (slotState === "locked") return "Khung báo cáo chưa mở hoặc khung trước chưa hoàn thành.";
+  if (slotState === "available") return "Khung này chưa báo cáo. Bạn có thể nhập và gửi báo cáo.";
   return "Không thể chỉnh sửa báo cáo ở thời điểm hiện tại.";
 }
 
