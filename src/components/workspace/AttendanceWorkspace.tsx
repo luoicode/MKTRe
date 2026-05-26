@@ -12,6 +12,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
 import { useAuth, type AppRole } from "@/lib/auth";
+import { isSaleRole } from "@/lib/roles";
 import { getLeaderTeamIds } from "@/lib/dailyAggregates";
 import { dateKeyVN, formatDateVN, todayStr } from "@/lib/reports";
 import { calculateMonthlyWorkdays, getAttendanceDateKey } from "@/lib/salary";
@@ -346,8 +347,8 @@ export function AttendanceWorkspace() {
   });
   const [reviewNote, setReviewNote] = useState("");
 
-  const isEmployeeView = role === "employee";
-  const canSelfCheckIn = role === "employee" || role === "leader";
+  const isEmployeeView = role === "employee" || role === "sale";
+  const canSelfCheckIn = role === "employee" || role === "leader" || isSaleRole(role);
   const { from, to } = monthBounds(month);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
@@ -372,7 +373,7 @@ export function AttendanceWorkspace() {
           .eq("is_active", true);
         if (membershipError) throw membershipError;
         memberships = (allMemberships ?? []).filter(isAttendanceTrackedMembership);
-      } else if (role === "leader") {
+      } else if (role === "leader" || role === "leader_sale") {
         visibleTeamIds = await getLeaderTeamIds(profile!.id);
       } else {
         const { data: ownMemberships, error } = await supabase
@@ -404,7 +405,10 @@ export function AttendanceWorkspace() {
       }
 
       const membershipUserIds = memberships.map((membership) => membership.user_id);
-      const userIds = role === "employee" ? [profile!.id] : Array.from(new Set(membershipUserIds));
+      const userIds =
+        role === "employee" || role === "sale"
+          ? [profile!.id]
+          : Array.from(new Set(membershipUserIds));
 
       const profilesQuery = supabase
         .from("profiles")
@@ -417,7 +421,7 @@ export function AttendanceWorkspace() {
       if (profilesError) throw profilesError;
 
       const visibleUserIds =
-        role === "employee"
+        role === "employee" || role === "sale"
           ? [profile!.id]
           : ((profiles ?? []) as ProfileLite[]).map((row) => row.id);
 
@@ -595,7 +599,7 @@ export function AttendanceWorkspace() {
   const canReviewLeaveRequest = (leave: LeaveRequest | null) => {
     if (!leave || !profile || !role) return false;
     if (role === "admin" || role === "manager") return true;
-    if (role !== "leader" || leave.user_id === profile.id) return false;
+    if ((role !== "leader" && role !== "leader_sale") || leave.user_id === profile.id) return false;
     return (data?.memberships ?? []).some(
       (membership) =>
         membership.user_id === leave.user_id &&

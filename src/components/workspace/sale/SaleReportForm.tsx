@@ -1,14 +1,5 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Camera,
-  CheckCircle2,
-  Clock3,
-  FileSpreadsheet,
-  Loader2,
-  Save,
-  Send,
-  TimerOff,
-} from "lucide-react";
+import { Camera, CheckCircle2, Clock3, FileSpreadsheet, Loader2, Save, Send } from "lucide-react";
 import { toast } from "sonner";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,9 +11,9 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { captureElementAsPngUrl } from "@/lib/captureImage";
 import { useAuth } from "@/lib/auth";
-import { ReportImagePreviewDialog } from "@/components/ReportImagePreviewDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ReportPreviewModal } from "@/components/workspace/sale/ReportPreviewModal";
 import {
   calculateSaleComputedMetrics,
   emptySaleReportForm,
@@ -40,8 +31,6 @@ import {
 } from "@/lib/saleReportUtils";
 import {
   fetchSaleReportsForDate,
-  findPreferredSaleSlot,
-  getNextSaleSlotLabel,
   getSaleSlotStatus,
   reportsToForms,
   saleFormToPayload,
@@ -67,6 +56,7 @@ export function SaleReportForm() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
+  const [previewMode, setPreviewMode] = useState<"capture" | "submit">("capture");
   const previewRef = useRef<HTMLDivElement | null>(null);
   const activeSlotConfig =
     saleReportSlots.find((slot) => slot.id === activeSlot) ?? saleReportSlots[0];
@@ -93,8 +83,6 @@ export function SaleReportForm() {
     [now, reportDate, reportsBySlot],
   );
   const activeSlotStatus = slotStatuses[activeSlot];
-  const hasOpenSlot = Object.values(slotStatuses).some((status) => status === "open");
-  const nextSlotLabel = getNextSaleSlotLabel(reportsBySlot, reportDate, now);
   const activeValues = forms[activeSlot];
   const activeMetrics = calculateSaleComputedMetrics(activeValues);
   const dailyTotals = useMemo(() => sumSaleForms(forms), [forms]);
@@ -111,13 +99,6 @@ export function SaleReportForm() {
     setForms(loaded.forms);
   }, [reports]);
 
-  useEffect(() => {
-    setActiveSlot((current) => {
-      if (slotStatuses[current] === "open") return current;
-      return findPreferredSaleSlot(reportsBySlot, reportDate, now);
-    });
-  }, [now, reportDate, reportsBySlot, slotStatuses]);
-
   const updateActiveField = (field: keyof SaleReportFormValues, value: string) => {
     setForms((current) => ({
       ...current,
@@ -129,10 +110,10 @@ export function SaleReportForm() {
   };
 
   const handleSave = async (submit = false) => {
-    if (!profile) return;
+    if (!profile) return false;
     if (activeSlotStatus !== "open") {
-      toast.error("Khung báo cáo này đang bị khóa.");
-      return;
+      toast.error("Khung này đã gửi báo cáo, không thể sửa lại.");
+      return false;
     }
     setSaving(true);
     const payload = saleFormToPayload({
@@ -148,21 +129,23 @@ export function SaleReportForm() {
     setSaving(false);
     if (error) {
       toast.error(`Không thể lưu báo cáo Sale: ${error.message}`);
-      return;
+      return false;
     }
     await qc.invalidateQueries({ queryKey: ["sale-reports", profile.id] });
     await qc.invalidateQueries({ queryKey: ["sale-dashboard", profile.id] });
     if (submit) {
       toast.success("Đã gửi báo cáo Sale");
-      return;
+      return true;
     }
     toast.success("Đã lưu nháp báo cáo Sale");
+    return true;
   };
 
-  const capturePreview = async () => {
+  const capturePreview = async (mode: "capture" | "submit" = previewMode) => {
     if (previewImageUrl) {
       URL.revokeObjectURL(previewImageUrl);
     }
+    setPreviewMode(mode);
     setPreviewImageUrl(null);
     setPreviewBlob(null);
     setPreviewOpen(true);
@@ -185,12 +168,18 @@ export function SaleReportForm() {
   };
 
   const closePreview = () => {
+    if (saving) return;
     setPreviewOpen(false);
     if (previewImageUrl) {
       URL.revokeObjectURL(previewImageUrl);
     }
     setPreviewImageUrl(null);
     setPreviewBlob(null);
+  };
+
+  const confirmSubmitFromPreview = async () => {
+    const saved = await handleSave(true);
+    if (saved) closePreview();
   };
 
   return (
@@ -209,20 +198,15 @@ export function SaleReportForm() {
           const status = slotStatuses[slot.id];
           const visual = saleSlotVisual(status);
           const Icon = visual.icon;
-          const isClickable = status === "open";
           const isActive = activeSlot === slot.id;
           return (
             <button
               key={slot.id}
               type="button"
-              disabled={!isClickable}
-              onClick={() => {
-                if (isClickable) setActiveSlot(slot.id);
-              }}
+              onClick={() => setActiveSlot(slot.id)}
               className={cn(
                 "rounded-xl border bg-card px-3 py-2 text-left transition",
-                isClickable && "hover:border-primary/40 hover:shadow-sm",
-                !isClickable && "cursor-not-allowed bg-slate-50 text-slate-400 opacity-75",
+                "hover:border-primary/40 hover:shadow-sm",
                 isActive && "border-primary bg-primary/5 shadow-sm ring-1 ring-primary/10",
               )}
             >
@@ -247,20 +231,6 @@ export function SaleReportForm() {
       </div>
 
       <div className="space-y-3 md:min-h-0 md:flex-1 md:overflow-y-auto md:pr-1">
-        {!hasOpenSlot ? (
-          <Card className="border-slate-200 bg-slate-50">
-            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-3 text-sm">
-              <span className="font-semibold text-slate-700">
-                Hiện chưa có khung báo cáo nào đang mở.
-              </span>
-              <span className="text-muted-foreground">
-                {nextSlotLabel
-                  ? `Khung báo cáo tiếp theo: ${nextSlotLabel}.`
-                  : "Các khung hôm nay đã kết thúc."}
-              </span>
-            </CardContent>
-          </Card>
-        ) : null}
         <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_340px]">
           <Card>
             <CardHeader className="px-3 py-2">
@@ -268,7 +238,7 @@ export function SaleReportForm() {
               <CardDescription>
                 {activeSlotStatus === "open"
                   ? `Nhập dữ liệu Sale theo khung ${activeSlotConfig.time}`
-                  : "Khung này đang bị khóa, chỉ xem dữ liệu đã lưu."}
+                  : "Khung này đã gửi báo cáo, chỉ xem dữ liệu đã lưu."}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 px-3 pb-3">
@@ -347,7 +317,7 @@ export function SaleReportForm() {
                       Lưu nháp
                     </Button>
                     <Button
-                      onClick={() => void handleSave(true)}
+                      onClick={() => void capturePreview("submit")}
                       disabled={saving || activeSlotStatus !== "open"}
                     >
                       {saving ? (
@@ -359,7 +329,7 @@ export function SaleReportForm() {
                     </Button>
                     <Button
                       variant="secondary"
-                      onClick={() => void capturePreview()}
+                      onClick={() => void capturePreview("capture")}
                       disabled={capturing}
                     >
                       {capturing ? (
@@ -385,13 +355,17 @@ export function SaleReportForm() {
           reportDate={today}
         />
       </div>
-      <ReportImagePreviewDialog
+      <ReportPreviewModal
         open={previewOpen}
         imageUrl={previewImageUrl}
         blob={previewBlob}
         filename={reportFilename}
-        isGenerating={capturing}
+        isCapturing={capturing}
+        isSubmitting={saving}
+        showSubmitAction={previewMode === "submit"}
         onClose={closePreview}
+        onRecapture={() => void capturePreview(previewMode)}
+        onConfirmSubmit={() => void confirmSubmitFromPreview()}
       />
     </div>
   );
@@ -774,32 +748,8 @@ function saleSlotVisual(status: SaleSlotStatus) {
       badge: "bg-slate-100 text-slate-600",
     };
   }
-  if (status === "not_open") {
-    return {
-      label: "Chưa mở",
-      icon: Clock3,
-      iconClassName: "text-slate-500",
-      badge: "bg-slate-100 text-slate-600",
-    };
-  }
-  if (status === "locked") {
-    return {
-      label: "Đã khóa",
-      icon: TimerOff,
-      iconClassName: "text-slate-500",
-      badge: "bg-slate-100 text-slate-600",
-    };
-  }
-  if (status === "expired") {
-    return {
-      label: "Quá hạn",
-      icon: TimerOff,
-      iconClassName: "text-slate-500",
-      badge: "bg-slate-100 text-slate-600",
-    };
-  }
   return {
-    label: "Đang nhập",
+    label: "Đang mở",
     icon: Clock3,
     iconClassName: "text-primary",
     badge: "bg-primary/10 text-primary",

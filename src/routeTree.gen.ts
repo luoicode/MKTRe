@@ -19,6 +19,7 @@ import { Route as AuthenticatedSaleProfileRouteImport } from './routes/_authenti
 import { Route as AuthenticatedSaleKpiRouteImport } from './routes/_authenticated/sale/kpi'
 import { Route as AuthenticatedSaleFloatingPoolRouteImport } from './routes/_authenticated/sale/floating-pool'
 import { Route as AuthenticatedSaleDashboardRouteImport } from './routes/_authenticated/sale/dashboard'
+import { Route as AuthenticatedSaleAttendanceRouteImport } from './routes/_authenticated/sale/attendance'
 import { Route as AuthenticatedManagerTodayTeamsRouteImport } from './routes/_authenticated/manager/today-teams'
 import { Route as AuthenticatedManagerTeamsRouteImport } from './routes/_authenticated/manager/teams'
 import { Route as AuthenticatedManagerTasksRouteImport } from './routes/_authenticated/manager/tasks'
@@ -127,6 +128,12 @@ const AuthenticatedSaleDashboardRoute =
   AuthenticatedSaleDashboardRouteImport.update({
     id: '/sale/dashboard',
     path: '/sale/dashboard',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedSaleAttendanceRoute =
+  AuthenticatedSaleAttendanceRouteImport.update({
+    id: '/sale/attendance',
+    path: '/sale/attendance',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedManagerTodayTeamsRoute =
@@ -520,6 +527,7 @@ export interface FileRoutesByFullPath {
   '/manager/tasks': typeof AuthenticatedManagerTasksRoute
   '/manager/teams': typeof AuthenticatedManagerTeamsRoute
   '/manager/today-teams': typeof AuthenticatedManagerTodayTeamsRoute
+  '/sale/attendance': typeof AuthenticatedSaleAttendanceRoute
   '/sale/dashboard': typeof AuthenticatedSaleDashboardRoute
   '/sale/floating-pool': typeof AuthenticatedSaleFloatingPoolRoute
   '/sale/kpi': typeof AuthenticatedSaleKpiRoute
@@ -587,6 +595,7 @@ export interface FileRoutesByTo {
   '/manager/tasks': typeof AuthenticatedManagerTasksRoute
   '/manager/teams': typeof AuthenticatedManagerTeamsRoute
   '/manager/today-teams': typeof AuthenticatedManagerTodayTeamsRoute
+  '/sale/attendance': typeof AuthenticatedSaleAttendanceRoute
   '/sale/dashboard': typeof AuthenticatedSaleDashboardRoute
   '/sale/floating-pool': typeof AuthenticatedSaleFloatingPoolRoute
   '/sale/kpi': typeof AuthenticatedSaleKpiRoute
@@ -656,6 +665,7 @@ export interface FileRoutesById {
   '/_authenticated/manager/tasks': typeof AuthenticatedManagerTasksRoute
   '/_authenticated/manager/teams': typeof AuthenticatedManagerTeamsRoute
   '/_authenticated/manager/today-teams': typeof AuthenticatedManagerTodayTeamsRoute
+  '/_authenticated/sale/attendance': typeof AuthenticatedSaleAttendanceRoute
   '/_authenticated/sale/dashboard': typeof AuthenticatedSaleDashboardRoute
   '/_authenticated/sale/floating-pool': typeof AuthenticatedSaleFloatingPoolRoute
   '/_authenticated/sale/kpi': typeof AuthenticatedSaleKpiRoute
@@ -725,6 +735,7 @@ export interface FileRouteTypes {
     | '/manager/tasks'
     | '/manager/teams'
     | '/manager/today-teams'
+    | '/sale/attendance'
     | '/sale/dashboard'
     | '/sale/floating-pool'
     | '/sale/kpi'
@@ -792,6 +803,7 @@ export interface FileRouteTypes {
     | '/manager/tasks'
     | '/manager/teams'
     | '/manager/today-teams'
+    | '/sale/attendance'
     | '/sale/dashboard'
     | '/sale/floating-pool'
     | '/sale/kpi'
@@ -860,6 +872,7 @@ export interface FileRouteTypes {
     | '/_authenticated/manager/tasks'
     | '/_authenticated/manager/teams'
     | '/_authenticated/manager/today-teams'
+    | '/_authenticated/sale/attendance'
     | '/_authenticated/sale/dashboard'
     | '/_authenticated/sale/floating-pool'
     | '/_authenticated/sale/kpi'
@@ -944,6 +957,13 @@ declare module '@tanstack/react-router' {
       path: '/sale/dashboard'
       fullPath: '/sale/dashboard'
       preLoaderRoute: typeof AuthenticatedSaleDashboardRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/sale/attendance': {
+      id: '/_authenticated/sale/attendance'
+      path: '/sale/attendance'
+      fullPath: '/sale/attendance'
+      preLoaderRoute: typeof AuthenticatedSaleAttendanceRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/manager/today-teams': {
@@ -1399,6 +1419,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedManagerTasksRoute: typeof AuthenticatedManagerTasksRoute
   AuthenticatedManagerTeamsRoute: typeof AuthenticatedManagerTeamsRoute
   AuthenticatedManagerTodayTeamsRoute: typeof AuthenticatedManagerTodayTeamsRoute
+  AuthenticatedSaleAttendanceRoute: typeof AuthenticatedSaleAttendanceRoute
   AuthenticatedSaleDashboardRoute: typeof AuthenticatedSaleDashboardRoute
   AuthenticatedSaleFloatingPoolRoute: typeof AuthenticatedSaleFloatingPoolRoute
   AuthenticatedSaleKpiRoute: typeof AuthenticatedSaleKpiRoute
@@ -1468,6 +1489,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedManagerTasksRoute: AuthenticatedManagerTasksRoute,
   AuthenticatedManagerTeamsRoute: AuthenticatedManagerTeamsRoute,
   AuthenticatedManagerTodayTeamsRoute: AuthenticatedManagerTodayTeamsRoute,
+  AuthenticatedSaleAttendanceRoute: AuthenticatedSaleAttendanceRoute,
   AuthenticatedSaleDashboardRoute: AuthenticatedSaleDashboardRoute,
   AuthenticatedSaleFloatingPoolRoute: AuthenticatedSaleFloatingPoolRoute,
   AuthenticatedSaleKpiRoute: AuthenticatedSaleKpiRoute,

@@ -11,7 +11,7 @@ import {
 
 export type SaleReportRow = Tables<"sale_reports">;
 export type SaleReportStatus = "draft" | "submitted";
-export type SaleSlotStatus = "not_open" | "open" | "submitted" | "locked" | "expired";
+export type SaleSlotStatus = "open" | "submitted";
 
 export type SaleReportSummary = {
   totalDataReceived: number;
@@ -55,9 +55,6 @@ export function getSaleSlotWindow(reportDate: string, slotTime: string) {
 
 export function getSaleSlotStatus({
   report,
-  reportDate,
-  slotTime,
-  now = new Date(),
 }: {
   report: SaleReportRow | null | undefined;
   reportDate: string;
@@ -65,57 +62,26 @@ export function getSaleSlotStatus({
   now?: Date;
 }): SaleSlotStatus {
   if (report?.status === "submitted") return "submitted";
-  const { openAt, closeAt } = getSaleSlotWindow(reportDate, slotTime);
-  if (now.getTime() < openAt.getTime()) return "not_open";
-  if (now.getTime() <= closeAt.getTime()) return "open";
-  return report ? "locked" : "expired";
+  return "open";
 }
 
 export function findPreferredSaleSlot(
   reportsBySlot: SaleReportsBySlot,
-  reportDate: string,
-  now = new Date(),
+  _reportDate: string,
+  _now = new Date(),
 ): SaleReportSlotId {
-  const openSlot = saleReportSlots.find(
-    (slot) =>
-      getSaleSlotStatus({
-        report: reportsBySlot[slot.id],
-        reportDate,
-        slotTime: slot.time,
-        now,
-      }) === "open",
+  const unsubmittedSlot = saleReportSlots.find(
+    (slot) => reportsBySlot[slot.id]?.status !== "submitted",
   );
-  if (openSlot) return openSlot.id;
-
-  const nextSlot = saleReportSlots.find(
-    (slot) =>
-      getSaleSlotStatus({
-        report: reportsBySlot[slot.id],
-        reportDate,
-        slotTime: slot.time,
-        now,
-      }) === "not_open",
-  );
-  return nextSlot?.id ?? saleReportSlots[saleReportSlots.length - 1].id;
+  return unsubmittedSlot?.id ?? saleReportSlots[0].id;
 }
 
 export function getNextSaleSlotLabel(
-  reportsBySlot: SaleReportsBySlot,
-  reportDate: string,
-  now = new Date(),
+  _reportsBySlot: SaleReportsBySlot,
+  _reportDate: string,
+  _now = new Date(),
 ) {
-  const nextSlot = saleReportSlots.find(
-    (slot) =>
-      getSaleSlotStatus({
-        report: reportsBySlot[slot.id],
-        reportDate,
-        slotTime: slot.time,
-        now,
-      }) === "not_open",
-  );
-  if (!nextSlot) return null;
-  const { openAt } = getSaleSlotWindow(reportDate, nextSlot.time);
-  return `${nextSlot.tableLabel} mở lúc ${formatTime(openAt)}`;
+  return null;
 }
 
 export function formatTime(date: Date) {
