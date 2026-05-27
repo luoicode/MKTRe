@@ -38,6 +38,7 @@ import {
   todayYmd,
   type SaleSlotStatus,
 } from "@/lib/saleReports";
+import { canEditSubmittedReport } from "@/lib/reportSlotGating";
 
 const initialForms = saleReportSlots.reduce<Record<SaleReportSlotId, SaleReportFormValues>>(
   (acc, slot) => ({ ...acc, [slot.id]: { ...emptySaleReportForm } }),
@@ -85,6 +86,9 @@ export function SaleReportForm() {
     [now, reportDate, reportsBySlot],
   );
   const activeSlotStatus = slotStatuses[activeSlot];
+  const activeReport = reportsBySlot[activeSlot];
+  const activeSubmittedEditable = canEditSubmittedReport(activeReport, now);
+  const activeSlotEditable = activeSlotStatus === "available" || activeSubmittedEditable;
   const activeValues = forms[activeSlot];
   const activeMetrics = calculateSaleComputedMetrics(activeValues);
   const dailyTotals = useMemo(() => sumSaleForms(forms), [forms]);
@@ -107,7 +111,8 @@ export function SaleReportForm() {
       slotStatuses[preferredSlot] === "available" &&
       (slotStatuses[activeSlot] === "not_open" ||
         slotStatuses[activeSlot] === "locked" ||
-        slotStatuses[activeSlot] === "submitted")
+        (slotStatuses[activeSlot] === "submitted" &&
+          !canEditSubmittedReport(reportsBySlot[activeSlot], now)))
     ) {
       setActiveSlot(preferredSlot);
     }
@@ -125,10 +130,10 @@ export function SaleReportForm() {
 
   const handleSave = async (submit = false) => {
     if (!profile) return false;
-    if (activeSlotStatus !== "available") {
+    if (!activeSlotEditable) {
       toast.error(
         activeSlotStatus === "submitted"
-          ? "Khung này đã gửi báo cáo, không thể sửa lại."
+          ? "Khung này đã gửi quá 2 tiếng, không thể sửa lại."
           : "Khung này chưa mở hoặc đã khóa theo thời gian báo cáo.",
       );
       return false;
@@ -257,7 +262,9 @@ export function SaleReportForm() {
                 {activeSlotStatus === "available"
                   ? `Nhập dữ liệu Sale theo khung ${activeSlotConfig.time}`
                   : activeSlotStatus === "submitted"
-                    ? "Khung này đã gửi báo cáo, chỉ xem dữ liệu đã lưu."
+                    ? activeSubmittedEditable
+                      ? "Khung này đã gửi báo cáo. Bạn vẫn có thể sửa trong 2 tiếng sau khi gửi."
+                      : "Khung này đã gửi báo cáo, chỉ xem dữ liệu đã lưu."
                     : "Chỉ khung đang mở theo thời gian hiện tại mới được nhập."}
               </CardDescription>
             </CardHeader>
@@ -272,43 +279,43 @@ export function SaleReportForm() {
                     <SaleNumberField
                       label={saleReportFieldLabels.newDataReceived}
                       value={activeValues.newDataReceived}
-                      disabled={activeSlotStatus !== "available"}
+                      disabled={!activeSlotEditable}
                       onChange={(value) => updateActiveField("newDataReceived", value)}
                     />
                     <SaleNumberField
                       label={saleReportFieldLabels.newDataClosed}
                       value={activeValues.newDataClosed}
-                      disabled={activeSlotStatus !== "available"}
+                      disabled={!activeSlotEditable}
                       onChange={(value) => updateActiveField("newDataClosed", value)}
                     />
                     <SaleNumberField
                       label={saleReportFieldLabels.floatingDataClosed}
                       value={activeValues.floatingDataClosed}
-                      disabled={activeSlotStatus !== "available"}
+                      disabled={!activeSlotEditable}
                       onChange={(value) => updateActiveField("floatingDataClosed", value)}
                     />
                     <SaleNumberField
                       label={saleReportFieldLabels.floatingDataReceived}
                       value={activeValues.floatingDataReceived}
-                      disabled={activeSlotStatus !== "available"}
+                      disabled={!activeSlotEditable}
                       onChange={(value) => updateActiveField("floatingDataReceived", value)}
                     />
                     <SaleMoneyField
                       label={saleReportFieldLabels.newCustomerRevenue}
                       value={activeValues.newCustomerRevenue}
-                      disabled={activeSlotStatus !== "available"}
+                      disabled={!activeSlotEditable}
                       onChange={(value) => updateActiveField("newCustomerRevenue", value)}
                     />
                     <SaleMoneyField
                       label={saleReportFieldLabels.floatingRevenue}
                       value={activeValues.floatingRevenue}
-                      disabled={activeSlotStatus !== "available"}
+                      disabled={!activeSlotEditable}
                       onChange={(value) => updateActiveField("floatingRevenue", value)}
                     />
                     <SaleNumberField
                       label={saleReportFieldLabels.oldCustomers}
                       value={activeValues.oldCustomers}
-                      disabled={activeSlotStatus !== "available"}
+                      disabled={!activeSlotEditable}
                       onChange={(value) => updateActiveField("oldCustomers", value)}
                     />
                     <div className="space-y-1 sm:col-span-2 2xl:col-span-3">
@@ -318,7 +325,7 @@ export function SaleReportForm() {
                         onChange={(event) => updateActiveField("note", event.target.value)}
                         placeholder="Khách cần follow, vướng mắc, ghi chú ca làm..."
                         className="min-h-16 resize-none"
-                        disabled={activeSlotStatus !== "available"}
+                        disabled={!activeSlotEditable}
                       />
                     </div>
                   </div>
@@ -327,7 +334,7 @@ export function SaleReportForm() {
                     <Button
                       variant="outline"
                       onClick={() => void handleSave(false)}
-                      disabled={saving || activeSlotStatus !== "available"}
+                      disabled={saving || !activeSlotEditable || activeSlotStatus === "submitted"}
                     >
                       {saving ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -338,14 +345,14 @@ export function SaleReportForm() {
                     </Button>
                     <Button
                       onClick={() => void capturePreview("submit")}
-                      disabled={saving || activeSlotStatus !== "available"}
+                      disabled={saving || !activeSlotEditable}
                     >
                       {saving ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
                         <Send className="mr-2 h-4 w-4" />
                       )}
-                      Gửi báo cáo
+                      {activeSlotStatus === "submitted" ? "Cập nhật báo cáo" : "Gửi báo cáo"}
                     </Button>
                     <Button
                       variant="secondary"

@@ -8,6 +8,11 @@ export type ReportSlotLike = {
   time?: string | null;
 };
 
+export type SubmittedReportLike = {
+  status?: string | null;
+  submitted_at?: string | null;
+};
+
 const SLOT_OPEN_MINUTES: Record<ReportSlotGateKey, number> = {
   morning: 11 * 60 + 55,
   afternoon: 16 * 60 + 35,
@@ -136,6 +141,19 @@ export function getPreviousMarketingSlot({
   }
 
   return null;
+}
+
+export function canEditSubmittedReport(
+  report: SubmittedReportLike | null | undefined,
+  now = new Date(),
+  windowMs = 2 * 60 * 60 * 1000,
+) {
+  if (String(report?.status ?? "") !== "submitted") return false;
+  if (!report?.submitted_at) return false;
+  const submittedAt = new Date(report.submitted_at).getTime();
+  if (!Number.isFinite(submittedAt)) return false;
+  const elapsed = now.getTime() - submittedAt;
+  return elapsed >= 0 && elapsed <= windowMs;
 }
 
 export function isSlotEditable(state: ReportSlotState) {

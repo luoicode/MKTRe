@@ -42,6 +42,7 @@ import { chooseReportImageDirectory } from "@/utils/reportImageStorage";
 import { insertNotificationsWithTelegram } from "@/lib/telegram";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import {
+  canEditSubmittedReport,
   getActiveReportSlot,
   getMarketingReportSlotState,
   getPreviousMarketingSlot,
@@ -224,8 +225,13 @@ function getSlotLifecycleState({
   });
 }
 
-function canEditReport(state: SlotLifecycleState, canBypassSlotLock = false) {
-  if (state === "submitted") return false;
+function canEditReport(
+  state: SlotLifecycleState,
+  canBypassSlotLock = false,
+  existing?: { status: string | null; submitted_at?: string | null } | null,
+  now = new Date(),
+) {
+  if (state === "submitted") return canEditSubmittedReport(existing, now);
   return canBypassSlotLock || isSlotEditable(state);
 }
 
@@ -925,7 +931,8 @@ function SlotForm({
     now,
     canBypassSlotLock,
   });
-  const editable = canEditReport(slotState, canBypassSlotLock);
+  const editable = canEditReport(slotState, canBypassSlotLock, existing, now);
+  const canSaveDraft = editable && String(existing?.status ?? "") !== "submitted";
   const isReconciliation = isReconciliationSlot(slotName);
   const wasReconciled = isReconciliation || !!hasReconciliationAudit;
   const inheritedLabel =
@@ -1112,12 +1119,19 @@ function SlotForm({
               >
                 <FolderOpen className="h-4 w-4" />
               </Button>
-              <Button size="sm" variant="secondary" onClick={() => save("draft")} disabled={saving}>
-                <Save className="mr-2 h-4 w-4" /> Lưu nháp
-              </Button>
+              {canSaveDraft && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => save("draft")}
+                  disabled={saving}
+                >
+                  <Save className="mr-2 h-4 w-4" /> Lưu nháp
+                </Button>
+              )}
               <Button size="sm" onClick={() => save("submitted")} disabled={saving}>
                 <Send className="mr-2 h-4 w-4" />{" "}
-                {existing?.status === "submitted" ? "Gửi lại báo cáo" : "Gửi báo cáo"}
+                {existing?.status === "submitted" ? "Cập nhật báo cáo" : "Gửi báo cáo"}
               </Button>
             </div>
           )}
@@ -1169,7 +1183,8 @@ function reportReadonlyMessage(
 ) {
   const status = String(existing?.status ?? "");
   if (status === "approved" || status === "locked") return "Báo cáo đã được khóa, chỉ xem.";
-  if (status === "submitted") return "Khung này đã báo cáo. Nhân viên không thể sửa lại.";
+  if (status === "submitted")
+    return "Khung này đã báo cáo quá 2 tiếng. Nhân viên không thể sửa lại.";
   if (slotState === "available") return "Khung này chưa báo cáo. Bạn có thể nhập và gửi báo cáo.";
   if (slotState === "not_open") return "Khung này chưa mở theo thời gian báo cáo.";
   if (slotState === "locked") return "Khung này đang khóa theo thời gian báo cáo.";
