@@ -60,6 +60,56 @@ export function getSlotState({
   return slotOpen > activeOpen ? "not_open" : "locked";
 }
 
+function toLocalDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate(),
+  ).padStart(2, "0")}`;
+}
+
+function addLocalDays(date: Date, days: number) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+export function getMarketingReportSlotState({
+  reportDate,
+  slot,
+  submitted,
+  now = new Date(),
+  bypass = false,
+}: {
+  reportDate: string;
+  slot: ReportSlotLike;
+  submitted: boolean;
+  now?: Date;
+  bypass?: boolean;
+}): ReportSlotState {
+  if (submitted) return "submitted";
+  if (bypass) return "available";
+
+  const slotKey = getReportSlotGateKey(slot);
+  if (!slotKey) return "locked";
+
+  const today = toLocalDateKey(now);
+  const yesterday = toLocalDateKey(addLocalDays(now, -1));
+  const minutes = now.getHours() * 60 + now.getMinutes();
+
+  if (reportDate === yesterday) {
+    return minutes >= 13 * 60 && minutes <= 15 * 60 ? "available" : "locked";
+  }
+
+  if (reportDate !== today) return "locked";
+
+  if (minutes < SLOT_OPEN_MINUTES.afternoon) {
+    return slotKey === "morning" ? "available" : "locked";
+  }
+
+  if (minutes < SLOT_OPEN_MINUTES.evening) {
+    return slotKey === "afternoon" ? "available" : "locked";
+  }
+
+  return slotKey === "evening" ? "available" : "locked";
+}
+
 export function isSlotEditable(state: ReportSlotState) {
   return state === "available";
 }

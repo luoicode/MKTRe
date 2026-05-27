@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getReconciledReportIds } from "@/lib/reportAudit";
+import { MARKETING_ROLES } from "@/lib/roles";
 
 export interface SlotMeta {
   id: string;
@@ -125,8 +126,22 @@ export async function getLatestDailyReportPerEmployee(params: {
   const slotMeta = (slots ?? []) as SlotMeta[];
   const slotById = new Map(slotMeta.map((s) => [s.id, s]));
   const slot21 = slotMeta.find((s) => /21/.test(s.slot_name)) ?? slotMeta[slotMeta.length - 1];
-  const userIds = Array.from(new Set((memberships ?? []).map((m) => m.user_id)));
-  const teamByUser = new Map((memberships ?? []).map((m) => [m.user_id, m.team_id]));
+  const membershipRows = memberships ?? [];
+  const rawUserIds = Array.from(new Set(membershipRows.map((m) => m.user_id)));
+  const { data: marketingRoles } = rawUserIds.length
+    ? await supabase
+        .from("user_roles")
+        .select("user_id")
+        .in("user_id", rawUserIds)
+        .in("role", [...MARKETING_ROLES])
+    : { data: [] as { user_id: string }[] };
+  const marketingUserIdSet = new Set((marketingRoles ?? []).map((role) => role.user_id));
+  const userIds = rawUserIds.filter((userId) => marketingUserIdSet.has(userId));
+  const teamByUser = new Map(
+    membershipRows
+      .filter((membership) => marketingUserIdSet.has(membership.user_id))
+      .map((m) => [m.user_id, m.team_id]),
+  );
 
   const reportFilters = [`team_id.in.(${teamIds.join(",")})`];
   if (userIds.length) reportFilters.push(`user_id.in.(${userIds.join(",")})`);

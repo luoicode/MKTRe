@@ -43,8 +43,8 @@ import { insertNotificationsWithTelegram } from "@/lib/telegram";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import {
   getActiveReportSlot,
+  getMarketingReportSlotState,
   getReportSlotGateKey,
-  getSlotState,
   isSlotEditable,
   type ReportSlotState,
 } from "@/lib/reportSlotGating";
@@ -158,7 +158,8 @@ function getSlotLifecycleState({
   canBypassSlotLock?: boolean;
 }): SlotLifecycleState {
   if (String(existing?.status ?? "") === "locked") return "locked";
-  return getSlotState({
+  return getMarketingReportSlotState({
+    reportDate: slot.reportDate,
     slot,
     submitted: isReportSubmitted(existing),
     now,
@@ -167,6 +168,7 @@ function getSlotLifecycleState({
 }
 
 function canEditReport(state: SlotLifecycleState, canBypassSlotLock = false) {
+  if (state === "submitted") return false;
   return canBypassSlotLock || isSlotEditable(state);
 }
 
@@ -575,6 +577,9 @@ export function EmployeeReport() {
                   <CardDescription className="text-xs">
                     {formatDateVN(addDays(date, -1))}
                   </CardDescription>
+                  <p className="text-xs text-muted-foreground">
+                    Khung hôm trước chỉ mở từ 13h đến 15h.
+                  </p>
                 </CardHeader>
                 <CardContent className="px-2.5 pb-2.5 pt-0 md:px-3">
                   <TabsList className="grid h-auto w-full grid-cols-1 bg-muted/50 p-1">
@@ -1081,7 +1086,7 @@ function reportReadonlyMessage(
   if (status === "submitted") return "Khung này đã báo cáo. Nhân viên không thể sửa lại.";
   if (slotState === "available") return "Khung này chưa báo cáo. Bạn có thể nhập và gửi báo cáo.";
   if (slotState === "not_open") return "Khung này chưa mở theo thời gian báo cáo.";
-  if (slotState === "locked") return "Khung này đã khóa vì khung khác đang mở.";
+  if (slotState === "locked") return "Khung này đang khóa theo thời gian báo cáo.";
   return "Không thể chỉnh sửa báo cáo ở thời điểm hiện tại.";
 }
 

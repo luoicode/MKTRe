@@ -45,6 +45,7 @@ export const Route = createFileRoute("/_authenticated/admin/reports")({ componen
 type TeamRow = {
   id: string;
   name: string;
+  department: string | null;
 };
 
 function AdminReports() {
@@ -78,7 +79,8 @@ function AdminMarketingReports() {
     queryFn: async () => {
       const { data: teams, error: teamsError } = await supabase
         .from("teams")
-        .select("id, name")
+        .select("id, name, department")
+        .or("department.is.null,department.eq.marketing")
         .order("name");
       if (teamsError) throw teamsError;
 
