@@ -145,6 +145,8 @@ export function SaleReportForm() {
       slotId: activeSlot,
       status: submit ? "submitted" : "draft",
       values: activeValues,
+      submittedAt:
+        submit && activeReport?.status === "submitted" ? activeReport.submitted_at : undefined,
     });
     const { error } = await supabase
       .from("sale_reports")

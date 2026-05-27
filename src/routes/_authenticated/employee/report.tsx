@@ -944,7 +944,12 @@ function SlotForm({
       return;
     }
     setSaving(true);
-    const submittedAt = status === "submitted" ? new Date().toISOString() : null;
+    const submittedAt =
+      status === "submitted"
+        ? existing?.status === "submitted"
+          ? (existing.submitted_at ?? new Date().toISOString())
+          : new Date().toISOString()
+        : null;
     const payload = {
       user_id: profileId,
       team_id: teamId ?? null,

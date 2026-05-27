@@ -167,12 +167,14 @@ export function saleFormToPayload({
   slotId,
   status,
   values,
+  submittedAt,
 }: {
   userId: string;
   reportDate: string;
   slotId: SaleReportSlotId;
   status: SaleReportStatus;
   values: SaleReportFormValues;
+  submittedAt?: string | null;
 }): TablesInsert<"sale_reports"> {
   const slot = saleReportSlots.find((item) => item.id === slotId) ?? saleReportSlots[0];
   return {
@@ -189,7 +191,7 @@ export function saleFormToPayload({
     old_customers: parseSaleNumber(values.oldCustomers),
     note: values.note.trim() || null,
     status,
-    submitted_at: status === "submitted" ? new Date().toISOString() : null,
+    submitted_at: status === "submitted" ? (submittedAt ?? new Date().toISOString()) : null,
   };
 }
 
