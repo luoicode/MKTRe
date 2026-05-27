@@ -44,6 +44,7 @@ import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import {
   getActiveReportSlot,
   getMarketingReportSlotState,
+  getPreviousMarketingSlot,
   getReportSlotGateKey,
   isSlotEditable,
   type ReportSlotState,
@@ -80,6 +81,23 @@ interface ReportEntrySlot extends ReportSlot {
   group: "today" | "previous_day";
   groupLabel: string;
 }
+
+type PreviousReportSlot = {
+  id: string;
+  reportDate: string;
+  label: string;
+};
+
+type SlotReportFormSource = {
+  ads_cost: number | null;
+  mess_count: number | null;
+  data_count: number | null;
+  closed_orders: number | null;
+  daily_data_revenue: number | null;
+  total_orders: number | null;
+  total_revenue: number | null;
+  note: string | null;
+};
 
 function addDays(date: string, days: number) {
   const [year, month, day] = date.split("-").map(Number);
@@ -122,6 +140,45 @@ function getAutoSlot(slots: ReportEntrySlot[], now: Date) {
   const activeGate = getActiveReportSlot(now);
   const openSlot = slots.find((slot) => getReportSlotGateKey(slot) === activeGate);
   return openSlot?.id ?? slots[0]?.id;
+}
+
+function getPreviousReportSlot(
+  slot: ReportEntrySlot,
+  slots: ReportSlot[] | undefined,
+): PreviousReportSlot | null {
+  const previous = getPreviousMarketingSlot({
+    reportDate: slot.reportDate,
+    slot,
+    slotKey: getReportSlotGateKey(slot),
+  });
+  if (!previous) return null;
+
+  const previousSlot = (slots ?? []).find((candidate) => {
+    if (isPreviousDaySlot(candidate)) return false;
+    return getReportSlotGateKey(candidate) === previous.slotKey;
+  });
+
+  if (!previousSlot) return null;
+
+  return {
+    id: previousSlot.id,
+    reportDate: previous.reportDate,
+    label: previous.label,
+  };
+}
+
+function reportToForm(report: SlotReportFormSource): FormState {
+  const s = (n: number | null | undefined) => (n == null || Number(n) === 0 ? "" : String(n));
+  return {
+    ads_cost: s(report.ads_cost),
+    mess_count: s(report.mess_count),
+    data_count: s(report.data_count),
+    closed_orders: s(report.closed_orders),
+    daily_data_revenue: s(report.daily_data_revenue),
+    total_orders: s(report.total_orders),
+    total_revenue: s(report.total_revenue),
+    note: report.note ?? "",
+  };
 }
 
 type SlotLifecycleState = ReportSlotState;
@@ -627,6 +684,7 @@ export function EmployeeReport() {
                     slotName={s.slot_name}
                     date={s.reportDate}
                     entrySlot={s}
+                    previousSlot={getPreviousReportSlot(s, slots)}
                     now={now}
                     canBypassSlotLock={canBypassSlotLock}
                     groupLabel={s.groupLabel}
@@ -716,6 +774,7 @@ function SlotForm({
   slotName,
   date,
   entrySlot,
+  previousSlot,
   now,
   canBypassSlotLock,
   groupLabel,
@@ -730,6 +789,7 @@ function SlotForm({
   slotName: string;
   date: string;
   entrySlot: ReportEntrySlot;
+  previousSlot?: PreviousReportSlot | null;
   now: Date;
   canBypassSlotLock: boolean;
   groupLabel: string;
@@ -740,6 +800,9 @@ function SlotForm({
 }) {
   const [form, setForm] = useState<FormState>(empty);
   const [saving, setSaving] = useState(false);
+  const previousSlotId = previousSlot?.id ?? null;
+  const previousSlotReportDate = previousSlot?.reportDate ?? null;
+  const previousSlotLabel = previousSlot?.label ?? null;
 
   const {
     data: existing,
@@ -754,6 +817,23 @@ function SlotForm({
         .eq("user_id", profileId)
         .eq("report_date", date)
         .eq("slot_id", slotId)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+  const { data: previousReport, isLoading: isPreviousReportLoading } = useQuery({
+    queryKey: ["slot_report_prefill", profileId, previousSlotReportDate, previousSlotId],
+    enabled: !isLoading && !existing && !!previousSlotId && !!previousSlotReportDate,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("slot_reports")
+        .select(
+          "ads_cost, mess_count, data_count, closed_orders, daily_data_revenue, total_orders, total_revenue, note",
+        )
+        .eq("user_id", profileId)
+        .eq("report_date", previousSlotReportDate!)
+        .eq("slot_id", previousSlotId!)
         .maybeSingle();
       if (error) throw error;
       return data;
@@ -775,22 +855,21 @@ function SlotForm({
   });
 
   useEffect(() => {
+    if (isLoading) return;
     if (existing) {
-      const s = (n: number | null | undefined) => (n == null || Number(n) === 0 ? "" : String(n));
-      setForm({
-        ads_cost: s(existing.ads_cost),
-        mess_count: s(existing.mess_count),
-        data_count: s(existing.data_count),
-        closed_orders: s(existing.closed_orders),
-        daily_data_revenue: s(existing.daily_data_revenue),
-        total_orders: s(existing.total_orders),
-        total_revenue: s(existing.total_revenue),
-        note: existing.note ?? "",
-      });
-    } else {
-      setForm(empty);
+      setForm(reportToForm(existing));
+      return;
     }
-  }, [existing]);
+    if (previousSlotId && isPreviousReportLoading) return;
+    setForm(previousReport ? reportToForm(previousReport) : empty);
+  }, [
+    existing,
+    isLoading,
+    isPreviousReportLoading,
+    previousReport,
+    previousSlotId,
+    previousSlotReportDate,
+  ]);
 
   const nums = useMemo(
     () => ({
@@ -849,6 +928,8 @@ function SlotForm({
   const editable = canEditReport(slotState, canBypassSlotLock);
   const isReconciliation = isReconciliationSlot(slotName);
   const wasReconciled = isReconciliation || !!hasReconciliationAudit;
+  const inheritedLabel =
+    !existing && previousReport && previousSlotLabel ? previousSlotLabel : null;
 
   const save = async (status: "draft" | "submitted") => {
     if (!editable) {
@@ -978,6 +1059,11 @@ function SlotForm({
             {numField("total_orders", "Tổng Đơn Chốt")}
             {numField("total_revenue", "Tổng Doanh Số")}
           </div>
+          {inheritedLabel && (
+            <div className="rounded-md border border-blue-200 bg-blue-50 p-2 text-xs font-medium text-blue-700">
+              Đã kế thừa số liệu từ khung {inheritedLabel}. Bạn có thể chỉnh sửa trước khi gửi.
+            </div>
+          )}
           <div>
             <Label className="text-xs" htmlFor="note">
               Ghi chú

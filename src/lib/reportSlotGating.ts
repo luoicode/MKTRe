@@ -110,6 +110,34 @@ export function getMarketingReportSlotState({
   return slotKey === "evening" ? "available" : "locked";
 }
 
+export function getPreviousMarketingSlot({
+  reportDate,
+  slot,
+  slotKey,
+}: {
+  reportDate: string;
+  slot?: ReportSlotLike;
+  slotKey?: ReportSlotGateKey | null;
+}): { reportDate: string; slotKey: ReportSlotGateKey; label: string } | null {
+  const key = slotKey ?? (slot ? getReportSlotGateKey(slot) : null);
+  const raw = String(slot?.slot_time || slot?.time || slot?.slot_name || "").replace("h", ":");
+  const hour = Number(raw.split(":")[0]);
+
+  if (hour === 13) {
+    return { reportDate, slotKey: "evening", label: "21h00 hôm trước" };
+  }
+
+  if (key === "afternoon") {
+    return { reportDate, slotKey: "morning", label: "11h55" };
+  }
+
+  if (key === "evening") {
+    return { reportDate, slotKey: "afternoon", label: "16h55" };
+  }
+
+  return null;
+}
+
 export function isSlotEditable(state: ReportSlotState) {
   return state === "available";
 }
