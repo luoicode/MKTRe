@@ -1,6 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
 import { getReconciledReportIds } from "@/lib/reportAudit";
-import { MARKETING_ROLES } from "@/lib/roles";
 
 export interface SlotMeta {
   id: string;
@@ -55,6 +54,7 @@ export interface TeamTotals {
 }
 
 const COUNT_STATUSES = new Set(["submitted", "approved"]);
+const TEAM_MEMBER_REPORT_ROLES = new Set(["leader", "employee", "member"]);
 
 export function emptyTotals(totalEmployees = 0): TeamTotals {
   return {
@@ -118,7 +118,7 @@ export async function getLatestDailyReportPerEmployee(params: {
       .order("sort_order"),
     supabase
       .from("team_memberships")
-      .select("user_id, team_id")
+      .select("user_id, team_id, role_in_team")
       .in("team_id", teamIds)
       .eq("is_active", true),
   ]);
@@ -126,22 +126,12 @@ export async function getLatestDailyReportPerEmployee(params: {
   const slotMeta = (slots ?? []) as SlotMeta[];
   const slotById = new Map(slotMeta.map((s) => [s.id, s]));
   const slot21 = slotMeta.find((s) => /21/.test(s.slot_name)) ?? slotMeta[slotMeta.length - 1];
-  const membershipRows = memberships ?? [];
-  const rawUserIds = Array.from(new Set(membershipRows.map((m) => m.user_id)));
-  const { data: marketingRoles } = rawUserIds.length
-    ? await supabase
-        .from("user_roles")
-        .select("user_id")
-        .in("user_id", rawUserIds)
-        .in("role", [...MARKETING_ROLES])
-    : { data: [] as { user_id: string }[] };
-  const marketingUserIdSet = new Set((marketingRoles ?? []).map((role) => role.user_id));
-  const userIds = rawUserIds.filter((userId) => marketingUserIdSet.has(userId));
-  const teamByUser = new Map(
-    membershipRows
-      .filter((membership) => marketingUserIdSet.has(membership.user_id))
-      .map((m) => [m.user_id, m.team_id]),
+  const membershipRows = (memberships ?? []).filter((membership) =>
+    TEAM_MEMBER_REPORT_ROLES.has(String(membership.role_in_team)),
   );
+  const rawUserIds = Array.from(new Set(membershipRows.map((m) => m.user_id)));
+  const userIds = rawUserIds;
+  const teamByUser = new Map(membershipRows.map((m) => [m.user_id, m.team_id]));
 
   const reportFilters = [`team_id.in.(${teamIds.join(",")})`];
   if (userIds.length) reportFilters.push(`user_id.in.(${userIds.join(",")})`);
