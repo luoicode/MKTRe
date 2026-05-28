@@ -15,6 +15,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/lib/auth";
 import { initialDateRange, type DateRangeValue } from "@/lib/dateRange";
 import {
@@ -23,7 +25,6 @@ import {
   getFloatingLeadDisplayStatus,
   todayYmd,
   updateMarketingFloatingLeadSource,
-  validateLeadPhones,
   type FloatingLeadDisplayStatus,
   type FloatingLeadRow,
 } from "@/lib/floatingLeads";
@@ -34,9 +35,9 @@ export function MarketingFloatingPoolWorkspace() {
   const queryClient = useQueryClient();
   const [range, setRange] = useState<DateRangeValue>(() => initialDateRange("today"));
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [phoneInputs, setPhoneInputs] = useState<string[]>(() =>
-    Array.from({ length: 5 }, () => ""),
-  );
+  const [phoneText, setPhoneText] = useState("");
+  const [invalidPhones, setInvalidPhones] = useState<string[]>([]);
+  const [duplicatePhones, setDuplicatePhones] = useState<string[]>([]);
   const [editingLeadId, setEditingLeadId] = useState<string | null>(null);
   const [phoneDrafts, setPhoneDrafts] = useState<Record<string, string>>({});
 
@@ -57,8 +58,11 @@ export function MarketingFloatingPoolWorkspace() {
   const createMutation = useMutation({
     mutationFn: async () => {
       if (!profile) throw new Error("Không tìm thấy hồ sơ người dùng.");
-      const { phones, error } = validateLeadPhones(phoneInputs.join("\n"));
-      if (error) throw new Error(error);
+      const { phones, invalid, duplicates } = parseMarketingLeadPhones(phoneText);
+      setInvalidPhones(invalid);
+      setDuplicatePhones(duplicates);
+      if (!phones.length && !invalid.length) throw new Error("Nhập ít nhất 1 số điện thoại.");
+      if (invalid.length) throw new Error("Vui lòng kiểm tra các số điện thoại không hợp lệ.");
       return createMarketingFloatingLeads({
         phones,
         profileId: profile.id,
@@ -70,7 +74,9 @@ export function MarketingFloatingPoolWorkspace() {
       await queryClient.invalidateQueries({
         queryKey: ["marketing-floating-leads", range.from, range.to],
       });
-      setPhoneInputs(Array.from({ length: 5 }, () => ""));
+      setPhoneText("");
+      setInvalidPhones([]);
+      setDuplicatePhones([]);
       setDialogOpen(false);
       toast.success(`Đã thêm ${rows.length} số vào kho thả nổi`);
     },
@@ -226,37 +232,56 @@ export function MarketingFloatingPoolWorkspace() {
         </CardContent>
       </Card>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (open) {
+            setInvalidPhones([]);
+            setDuplicatePhones([]);
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Thêm số vào kho thả nổi</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="grid gap-2">
-              {phoneInputs.map((value, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-sm font-bold text-slate-600">
-                    {index + 1}
-                  </span>
-                  <Input
-                    value={value}
-                    inputMode="tel"
-                    placeholder={`Số điện thoại ${index + 1}`}
-                    onChange={(event) =>
-                      setPhoneInputs((current) =>
-                        current.map((item, itemIndex) =>
-                          itemIndex === index ? event.target.value : item,
-                        ),
-                      )
-                    }
-                  />
-                </div>
-              ))}
+              <Label htmlFor="marketing-floating-phone-list">Danh sách số điện thoại</Label>
+              <Textarea
+                id="marketing-floating-phone-list"
+                value={phoneText}
+                inputMode="tel"
+                className="min-h-44 resize-y rounded-xl"
+                placeholder={`Nhập mỗi số một dòng\nVí dụ:\n0988123123\n0977333772\n0855519019`}
+                onChange={(event) => {
+                  setPhoneText(event.target.value);
+                  if (invalidPhones.length) setInvalidPhones([]);
+                  if (duplicatePhones.length) setDuplicatePhones([]);
+                }}
+              />
             </div>
             <p className="text-xs text-muted-foreground">
-              Nhập tối đa 5 số mỗi lần. Ô trống sẽ được bỏ qua, số trùng trong cùng lần nhập sẽ tự
-              bỏ qua.
+              Mỗi dòng là một số. Dòng trống sẽ được bỏ qua, số trùng trong cùng lần nhập sẽ tự bỏ
+              qua.
             </p>
+            {invalidPhones.length ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                <p className="font-semibold">Số không hợp lệ:</p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                  {invalidPhones.map((phone) => (
+                    <li key={phone}>{phone}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {duplicatePhones.length ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                <p className="font-semibold">Đã bỏ qua số trùng:</p>
+                <p className="mt-1 break-words">{duplicatePhones.join(", ")}</p>
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
@@ -275,6 +300,36 @@ export function MarketingFloatingPoolWorkspace() {
       </Dialog>
     </div>
   );
+}
+
+function parseMarketingLeadPhones(input: string) {
+  const rawLines = input
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  const phones: string[] = [];
+  const invalid: string[] = [];
+  const duplicates: string[] = [];
+
+  rawLines.forEach((rawPhone) => {
+    const normalizedPhone = rawPhone.replace(/\s+/g, " ");
+    const digits = normalizedPhone.replace(/\D/g, "");
+    if (digits.length < 8 || digits.length > 15) {
+      invalid.push(rawPhone);
+      return;
+    }
+
+    if (seen.has(digits)) {
+      duplicates.push(normalizedPhone);
+      return;
+    }
+
+    seen.add(digits);
+    phones.push(normalizedPhone);
+  });
+
+  return { phones, invalid, duplicates };
 }
 
 function MarketingLeadRow({
