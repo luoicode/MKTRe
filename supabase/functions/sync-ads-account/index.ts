@@ -243,12 +243,14 @@ Deno.serve(async (req: Request) => {
     }
 
     const spendLimit = toNumber(accountInfo.spend_cap);
-    const balance = toNumber(accountInfo.balance);
+    const amountSpent = toNumber(accountInfo.amount_spent);
+    const remainingBalance = Math.max(spendLimit - amountSpent, 0);
     const updatePayload: Record<string, unknown> = {
       currency: accountInfo.currency ?? "VND",
       timezone_name: accountInfo.timezone_name ?? null,
       spend_limit: spendLimit,
-      balance,
+      amount_spent: amountSpent,
+      balance: remainingBalance,
       adset_on: activeAdsetCount,
       token_status: "active",
       last_synced_at: syncedAt,

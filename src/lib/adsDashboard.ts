@@ -96,6 +96,7 @@ interface AdsAccountPublicRow {
   currency: string | null;
   timezone_name: string | null;
   spend_limit: number | string | null;
+  amount_spent: number | string | null;
   balance: number | string | null;
   adset_on: number | string | null;
   is_active: boolean;
@@ -148,7 +149,7 @@ export async function fetchEmployeeAdsAccounts(
   const { data: accountRows, error: accountsError } = await adsSupabase
     .from("marketing_ads_accounts_public")
     .select(
-      "id, account_name, ad_account_id, business_name, currency, timezone_name, spend_limit, balance, adset_on, is_active, last_synced_at",
+      "id, account_name, ad_account_id, business_name, currency, timezone_name, spend_limit, amount_spent, balance, adset_on, is_active, last_synced_at",
     )
     .eq("is_active", true)
     .order("account_name", { ascending: true });
@@ -166,7 +167,7 @@ export async function fetchAdminAdsAccounts(
   const { data: accountRows, error: accountsError } = await adsSupabase
     .from("marketing_ads_accounts_public")
     .select(
-      "id, account_name, ad_account_id, business_name, created_by, created_by_name, created_by_username, created_by_role, currency, timezone_name, spend_limit, balance, adset_on, token_status, is_active, last_synced_at",
+      "id, account_name, ad_account_id, business_name, created_by, created_by_name, created_by_username, created_by_role, currency, timezone_name, spend_limit, amount_spent, balance, adset_on, token_status, is_active, last_synced_at",
     )
     .order("account_name", { ascending: true });
 
@@ -354,8 +355,10 @@ function mapAccountRowToDashboardAccount(
 ): AdsAccount {
   const campaigns = snapshots.map(mapSnapshotRowToCampaign);
   const spendLimit = toNumber(accountRow.spend_limit);
-  const balance = toNumber(accountRow.balance);
-  const amountSpent = Math.max(spendLimit - balance, 0);
+  const rawAmountSpent = toNumber(accountRow.amount_spent);
+  const rawBalance = toNumber(accountRow.balance);
+  const amountSpent = rawAmountSpent > 0 ? rawAmountSpent : Math.max(spendLimit - rawBalance, 0);
+  const balance = rawBalance > 0 ? rawBalance : Math.max(spendLimit - amountSpent, 0);
 
   return {
     id: accountRow.id,
