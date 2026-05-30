@@ -607,6 +607,7 @@ export function AdsKpiCards({ account }: { account: AdsAccount | null }) {
       <KpiCard label="Adset ON" value={formatNumber(account?.adsetOn ?? 0)} />
       <AccountSpendLimitCard
         amountSpent={account?.amountSpent ?? 0}
+        lastSyncedAt={account?.lastSyncedAt ?? null}
         remainingBudget={remainingBudget}
         spendLimit={account?.spendLimit ?? 0}
         spendPercent={spendPercent}
@@ -1026,11 +1027,13 @@ function KpiCard({ label, value }: { label: string; value: string }) {
 
 function AccountSpendLimitCard({
   amountSpent,
+  lastSyncedAt,
   remainingBudget,
   spendLimit,
   spendPercent,
 }: {
   amountSpent: number;
+  lastSyncedAt: string | null;
   remainingBudget: number;
   spendLimit: number;
   spendPercent: number;
@@ -1059,6 +1062,9 @@ function AccountSpendLimitCard({
       <div className="mt-2 text-xs font-medium text-slate-500">
         Đã chi tiêu {formatMoneyWithSpace(amountSpent)} | Giới hạn chi tiêu:{" "}
         {formatMoneyWithSpace(spendLimit)}
+      </div>
+      <div className="mt-1 text-[11.5px] font-medium text-slate-400">
+        Đồng bộ lần cuối: {formatAdsDateTime(lastSyncedAt)}
       </div>
     </article>
   );
@@ -1140,4 +1146,20 @@ function formatMoneyWithSpace(value: number) {
 
 function formatNumber(value: number) {
   return currencyFormatter.format(Math.round(value || 0));
+}
+
+function formatAdsDateTime(value: string | null) {
+  if (!value) return "Chưa đồng bộ";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Chưa đồng bộ";
+  return new Intl.DateTimeFormat("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(date);
 }
