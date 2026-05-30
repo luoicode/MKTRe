@@ -58,6 +58,7 @@ const NAV: NavItem[] = [
   // Admin
   { to: "/admin/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: ["admin"] },
   { to: "/admin/reports", label: "Báo cáo", icon: FileText, roles: ["admin"] },
+  { to: "/admin/ads-dashboard", label: "Ads Dashboard", icon: BarChart3, roles: ["admin"] },
   { to: "/admin/kpi", label: "KPI", icon: Target, roles: ["admin"] },
   { to: "/admin/floating-pool", label: "Kho thả nổi", icon: Warehouse, roles: ["admin"] },
   { to: "/admin/users", label: "Người dùng", icon: Users, roles: ["admin"] },
@@ -98,6 +99,7 @@ const NAV: NavItem[] = [
     roles: ["leader"],
   },
   { to: "/leader/report-slots", label: "Nhập báo cáo", icon: FileText, roles: ["leader"] },
+  { to: "/leader/ads-dashboard", label: "Ads Dashboard", icon: BarChart3, roles: ["leader"] },
   { to: "/leader/daily-report", label: "Báo cáo Marketing", icon: FileText, roles: ["leader"] },
   { to: "/leader/floating-pool", label: "Kho thả nổi", icon: Warehouse, roles: ["leader"] },
   { to: "/leader/kpi", label: "KPI Marketing", icon: Target, roles: ["leader"] },
@@ -114,6 +116,7 @@ const NAV: NavItem[] = [
     icon: LayoutDashboard,
     roles: ["employee"],
   },
+  { to: "/employee/ads-dashboard", label: "Ads Dashboard", icon: BarChart3, roles: ["employee"] },
   { to: "/employee/report", label: "Nhập báo cáo", icon: FileText, roles: ["employee"] },
   { to: "/employee/floating-pool", label: "Kho thả nổi", icon: Warehouse, roles: ["employee"] },
   { to: "/employee/kpi", label: "KPI Marketing", icon: Target, roles: ["employee"] },

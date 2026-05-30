@@ -31,11 +31,6 @@ import { RefreshButton } from "@/components/RefreshButton";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { toast } from "sonner";
 import {
-  fetchFacebookManagerSpend,
-  formatFacebookManagerSpend,
-  syncFacebookManagerSpend,
-} from "@/lib/facebookAdSpend";
-import {
   AdminMarketingSaleTabs,
   AdminSaleReports,
 } from "@/components/workspace/AdminSaleWorkspace";
@@ -59,7 +54,6 @@ function AdminMarketingReports() {
   const [teamId, setTeamId] = useState("all");
   const [screenshot, setScreenshot] = useState(false);
   const [now, setNow] = useState(new Date().toISOString());
-  const [isSyncingFacebookSpend, setIsSyncingFacebookSpend] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const normalizedRange = normalizeDateRange(range);
   const dateLabel =
@@ -104,15 +98,6 @@ function AdminMarketingReports() {
       };
     },
   });
-  const {
-    data: facebookSpend,
-    isFetching: isFacebookSpendFetching,
-    refetch: refetchFacebookSpend,
-  } = useQuery({
-    queryKey: ["facebook-manager-spend", normalizedRange.from, normalizedRange.to],
-    queryFn: () => fetchFacebookManagerSpend(normalizedRange.from, normalizedRange.to),
-  });
-
   const totals = useMemo(() => (data ? sumTotals(data.rows) : null), [data]);
   const totalsMetrics = useMemo(() => (totals ? calculateReportMetrics(totals) : null), [totals]);
   const selectedTeamName =
@@ -136,17 +121,13 @@ function AdminMarketingReports() {
         ? "BÁO CÁO TỔNG TEAM TRONG NGÀY"
         : "BÁO CÁO TỔNG TEAM THEO KHOẢNG NGÀY";
   const refreshData = async () => {
-    setIsSyncingFacebookSpend(true);
     try {
-      await syncFacebookManagerSpend(normalizedRange.from, normalizedRange.to);
-      await Promise.all([refetch(), refetchFacebookSpend()]);
+      await refetch();
       toast.success("Đã làm mới dữ liệu");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Không thể đồng bộ Facebook Ads";
+      const message = error instanceof Error ? error.message : "Không thể làm mới báo cáo";
       toast.error(message);
-      await Promise.allSettled([refetch(), refetchFacebookSpend()]);
-    } finally {
-      setIsSyncingFacebookSpend(false);
+      await Promise.allSettled([refetch()]);
     }
   };
 
@@ -178,10 +159,7 @@ function AdminMarketingReports() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <RefreshButton
-                isRefreshing={isFetching || isFacebookSpendFetching || isSyncingFacebookSpend}
-                onRefresh={refreshData}
-              />
+              <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
               <ReportActions
                 targetRef={ref}
                 filename={teamReportExportFilename(now, normalizedRange.to, selectedTeamName)}
@@ -242,15 +220,6 @@ function AdminMarketingReports() {
 
           <div className="grid shrink-0 grid-cols-3 gap-1.5 md:grid-cols-6">
             <Stat label="Tổng Chi Phí Ads" value={fmtVndDong(totals.ads_cost)} />
-            <Stat
-              label="Chi phí trên trình quản lí"
-              value={
-                isSyncingFacebookSpend
-                  ? "Đang đồng bộ..."
-                  : formatFacebookManagerSpend(facebookSpend, fmtVndDong)
-              }
-              variant="managerSpend"
-            />
             <Stat label="Tổng MESS" value={fmtInt(totals.mess_count)} />
             <Stat label="Chi Phí ADS/MESS" value={fmtVndDong(totalsMetrics.cp_mess)} />
             <Stat label="Tổng Data" value={fmtInt(totals.data_count)} />

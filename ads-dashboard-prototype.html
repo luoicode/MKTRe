@@ -1,0 +1,1317 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ads Dashboard Prototype</title>
+    <style>
+      :root {
+        --bg: #f7f9fc;
+        --surface: #ffffff;
+        --surface-soft: #f9fbfd;
+        --border: #e7edf5;
+        --border-strong: #cbd5e1;
+        --text: #0f172a;
+        --muted: #6b778a;
+        --primary: #2563eb;
+        --primary-soft: #eff6ff;
+        --green: #0f9f6e;
+        --green-soft: #e8f8f1;
+        --blue: #2563eb;
+        --blue-soft: #eaf2ff;
+        --purple: #7c3aed;
+        --purple-soft: #f2eafe;
+        --amber: #b45309;
+        --amber-soft: #fff7e6;
+        --red: #dc2626;
+        --red-soft: #fff1f2;
+        --shadow: 0 10px 28px rgba(15, 23, 42, 0.045);
+        --radius: 18px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at top left, rgba(37, 99, 235, 0.055), transparent 34rem),
+          var(--bg);
+        color: var(--text);
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      .page {
+        width: min(1120px, calc(100vw - 32px));
+        margin: 28px auto;
+      }
+
+      .shell {
+        display: grid;
+        gap: 14px;
+      }
+
+      .header {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+        padding: 18px 20px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(14px);
+      }
+
+      .title-stack {
+        min-width: 0;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(24px, 3vw, 31px);
+        line-height: 1.12;
+        letter-spacing: -0.025em;
+        font-weight: 780;
+      }
+
+      .subtitle {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .header-actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
+        min-width: 330px;
+      }
+
+      .date-filter {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 4px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--surface-soft);
+      }
+
+      .filter-btn,
+      .sync-btn,
+      .add-btn,
+      .danger-btn,
+      .secondary-btn,
+      .primary-btn {
+        border: 0;
+        border-radius: 11px;
+        font-weight: 650;
+        transition:
+          transform 0.16s ease,
+          background 0.16s ease,
+          color 0.16s ease,
+          box-shadow 0.16s ease;
+      }
+
+      .filter-btn {
+        padding: 7px 10px;
+        background: transparent;
+        color: var(--muted);
+        font-size: 12.5px;
+      }
+
+      .filter-btn:hover {
+        color: var(--text);
+        background: #fff;
+      }
+
+      .filter-btn.active {
+        color: #1d4ed8;
+        background: #dbeafe;
+        box-shadow: none;
+      }
+
+      .sync-btn,
+      .add-btn,
+      .danger-btn,
+      .secondary-btn,
+      .primary-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        min-height: 38px;
+        padding: 0 13px;
+      }
+
+      .sync-btn {
+        width: 38px;
+        min-width: 38px;
+        padding: 0;
+        color: var(--primary);
+        border: 1px solid #dbeafe;
+        background: #f8fbff;
+        box-shadow: none;
+        font-size: 17px;
+      }
+
+      .sync-btn:hover {
+        background: #eff6ff;
+        border-color: #bfdbfe;
+      }
+
+      .sync-btn:disabled {
+        cursor: not-allowed;
+        opacity: 0.72;
+      }
+
+      .add-btn {
+        color: var(--primary);
+        border: 1px solid #dbeafe;
+        background: #f8fbff;
+        font-size: 13px;
+      }
+
+      .danger-btn {
+        color: var(--red);
+        border: 1px solid #fecdd3;
+        background: #fff;
+        min-height: 34px;
+        padding: 0 11px;
+        font-size: 12.5px;
+        font-weight: 700;
+      }
+
+      .danger-btn:hover {
+        color: #fff;
+        background: var(--red);
+      }
+
+      .secondary-btn {
+        color: var(--text);
+        border: 1px solid var(--border);
+        background: #fff;
+      }
+
+      .primary-btn {
+        color: #fff;
+        background: var(--primary);
+      }
+
+      .confirm-danger {
+        color: #fff;
+        background: var(--red);
+      }
+
+      .spin {
+        display: inline-block;
+        animation: spin 0.8s linear infinite;
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .custom-range {
+        display: none;
+        grid-template-columns: repeat(2, minmax(150px, 1fr));
+        gap: 8px;
+        width: 100%;
+      }
+
+      .custom-range.visible {
+        display: grid;
+      }
+
+      .date-field {
+        display: grid;
+        gap: 5px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .date-field input {
+        height: 36px;
+        min-width: 0;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 0 11px;
+        color: var(--text);
+        background: #fff;
+        outline: none;
+      }
+
+      .tabs-card,
+      .kpi-grid,
+      .table-card {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+
+      .tabs-card {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px;
+        overflow: hidden;
+      }
+
+      .tabs {
+        display: flex;
+        gap: 4px;
+        min-width: 0;
+        flex: 1;
+        overflow-x: auto;
+        scrollbar-width: thin;
+      }
+
+      .account-tab {
+        position: relative;
+        flex: 0 0 auto;
+        max-width: 260px;
+        padding: 9px 12px 11px;
+        border: 0;
+        border-radius: 12px;
+        background: transparent;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 650;
+        text-align: left;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .account-tab:hover {
+        color: var(--text);
+        background: var(--surface-soft);
+      }
+
+      .account-tab.active {
+        color: var(--text);
+        background: #f2f7ff;
+      }
+
+      .account-tab.active::after {
+        content: "";
+        position: absolute;
+        left: 12px;
+        right: 12px;
+        bottom: 4px;
+        height: 2px;
+        border-radius: 999px;
+        background: var(--primary);
+      }
+
+      .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        padding: 10px;
+        overflow: hidden;
+      }
+
+      .kpi-card {
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 15px;
+        background: #fff;
+      }
+
+      .kpi-card:last-child {
+        border-right: 1px solid var(--border);
+      }
+
+      .kpi-label {
+        color: var(--muted);
+        font-size: 12.5px;
+        font-weight: 650;
+      }
+
+      .kpi-value {
+        margin-top: 8px;
+        font-size: 24px;
+        font-weight: 760;
+        letter-spacing: -0.025em;
+      }
+
+      .money-value {
+        font-size: 20px;
+      }
+
+      .progress-shell {
+        height: 5px;
+        margin-top: 12px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #e9eef6;
+      }
+
+      .progress-bar {
+        height: 100%;
+        width: 0;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #22c55e, #3b82f6);
+        transition: width 0.28s ease;
+      }
+
+      .table-card {
+        overflow: hidden;
+      }
+
+      .table-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        padding: 16px 18px 12px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .table-title h2 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 740;
+        letter-spacing: -0.02em;
+      }
+
+      .table-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .selected-account {
+        max-width: 310px;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 11px;
+        background: var(--surface-soft);
+        color: var(--muted);
+        font-size: 12.5px;
+        font-weight: 650;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        min-width: 980px;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      th,
+      td {
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: middle;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: #fbfcfe;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 760;
+        text-align: left;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      td.num,
+      th.num {
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      tbody tr:not(.total-row):hover {
+        background: #f8fbff;
+      }
+
+      .campaign-name {
+        max-width: 360px;
+        color: #1e4f85;
+        font-weight: 650;
+        line-height: 1.35;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 22px;
+        padding: 0 8px;
+        border-radius: 999px;
+        font-size: 11.5px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .badge-blue {
+        color: var(--blue);
+        background: var(--blue-soft);
+      }
+
+      .badge-purple {
+        color: var(--purple);
+        background: var(--purple-soft);
+      }
+
+      .badge-gray {
+        color: #475569;
+        background: #eef2f7;
+      }
+
+      .badge-green {
+        color: var(--green);
+        background: var(--green-soft);
+      }
+
+      .badge-amber {
+        color: var(--amber);
+        background: var(--amber-soft);
+      }
+
+      .spent {
+        color: #c2410c;
+        font-weight: 720;
+      }
+
+      .metric-stack {
+        display: inline-grid;
+        justify-items: end;
+        gap: 1px;
+        line-height: 1.15;
+      }
+
+      .metric-main {
+        color: var(--text);
+        font-weight: 760;
+      }
+
+      .metric-sub {
+        color: var(--muted);
+        font-size: 11.5px;
+        font-weight: 520;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .total-row {
+        background: #f5f9ff;
+        font-weight: 720;
+      }
+
+      .total-row td {
+        border-top: 1px solid var(--border-strong);
+        border-bottom: 0;
+      }
+
+      .modal-backdrop,
+      .toast-stack {
+        position: fixed;
+      }
+
+      .modal-backdrop {
+        inset: 0;
+        z-index: 20;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+        background: rgba(15, 23, 42, 0.44);
+        backdrop-filter: blur(6px);
+      }
+
+      .modal-backdrop.visible {
+        display: flex;
+      }
+
+      .modal {
+        width: min(520px, 100%);
+        border-radius: 24px;
+        background: #fff;
+        box-shadow: 0 24px 80px rgba(15, 23, 42, 0.24);
+        overflow: hidden;
+      }
+
+      .modal-head {
+        padding: 22px 24px 10px;
+      }
+
+      .modal-head h3 {
+        margin: 0;
+        font-size: 22px;
+      }
+
+      .modal-body {
+        display: grid;
+        gap: 14px;
+        padding: 12px 24px 22px;
+      }
+
+      .modal-foot {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 16px 24px 22px;
+        border-top: 1px solid var(--border);
+        background: var(--surface-soft);
+      }
+
+      .field {
+        display: grid;
+        gap: 7px;
+      }
+
+      .field label {
+        color: #334155;
+        font-size: 13px;
+        font-weight: 850;
+      }
+
+      .field input {
+        height: 44px;
+        border: 1px solid var(--border);
+        border-radius: 13px;
+        padding: 0 12px;
+        outline: none;
+      }
+
+      .field input:focus {
+        border-color: #93c5fd;
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+      }
+
+      .helper {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .danger-copy {
+        color: #7f1d1d;
+        line-height: 1.55;
+      }
+
+      .danger-summary {
+        display: grid;
+        gap: 6px;
+        padding: 12px;
+        border: 1px solid #fecdd3;
+        border-radius: 15px;
+        background: var(--red-soft);
+        color: #7f1d1d;
+        font-size: 14px;
+      }
+
+      .toast-stack {
+        right: 22px;
+        bottom: 22px;
+        z-index: 40;
+        display: grid;
+        gap: 10px;
+      }
+
+      .toast {
+        min-width: 280px;
+        padding: 13px 15px;
+        border: 1px solid var(--border);
+        border-radius: 15px;
+        background: #fff;
+        box-shadow: var(--shadow);
+        color: var(--text);
+        font-weight: 800;
+      }
+
+      @media (max-width: 920px) {
+        .header {
+          display: grid;
+        }
+
+        .header-actions {
+          min-width: 0;
+          justify-content: flex-start;
+        }
+
+        .kpi-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .table-header {
+          display: grid;
+        }
+
+        .table-actions {
+          justify-content: flex-start;
+          flex-wrap: wrap;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .page {
+          width: min(100vw - 18px, 1180px);
+          margin: 14px auto;
+        }
+
+        .header,
+        .kpi-card,
+        .table-header {
+          padding: 16px;
+        }
+
+        .date-filter,
+        .custom-range,
+        .add-btn {
+          width: 100%;
+        }
+
+        .filter-btn {
+          flex: 1;
+        }
+
+        .kpi-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .kpi-card {
+          border-right: 1px solid var(--border);
+          border-bottom: 1px solid var(--border);
+        }
+
+        .kpi-card:last-child {
+          border-bottom: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="shell">
+        <header class="header">
+          <div class="title-stack">
+            <h1>Ads Dashboard</h1>
+            <p class="subtitle">
+              Theo dõi nhanh tình trạng tài khoản quảng cáo và hiệu suất chiến dịch
+            </p>
+          </div>
+          <div class="header-actions">
+            <div class="date-filter" id="dateFilter"></div>
+            <button
+              class="sync-btn"
+              id="syncBtn"
+              type="button"
+              title="Đồng bộ dữ liệu"
+              aria-label="Đồng bộ dữ liệu"
+            >
+              <span id="syncIcon">↻</span>
+              <span class="sr-only" id="syncLabel">Đồng bộ dữ liệu</span>
+            </button>
+            <div class="custom-range" id="customRange">
+              <label class="date-field">
+                Từ ngày
+                <input type="date" value="2026-05-26" />
+              </label>
+              <label class="date-field">
+                Đến ngày
+                <input type="date" value="2026-05-29" />
+              </label>
+            </div>
+          </div>
+        </header>
+
+        <section class="tabs-card">
+          <div class="tabs" id="accountTabs"></div>
+          <button class="add-btn" id="openAddAccount" type="button">+ Thêm tài khoản</button>
+        </section>
+
+        <section class="kpi-grid" id="kpiGrid"></section>
+
+        <section class="table-card">
+          <div class="table-header">
+            <div class="table-title">
+              <h2>Chiến dịch đang chạy</h2>
+            </div>
+            <div class="table-actions">
+              <div class="selected-account" id="selectedAccountName" title=""></div>
+              <button class="danger-btn" id="pauseAllBtn" type="button" title="Tắt tất cả Campaign">
+                ⏹ Tắt tất cả
+              </button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tên Campaign</th>
+                  <th>Loại</th>
+                  <th>Trạng thái</th>
+                  <th class="num">Ngân sách</th>
+                  <th class="num">Đã tiêu</th>
+                  <th class="num">Kết quả</th>
+                  <th class="num">Lượt mua</th>
+                  <th class="num">Chi phí / KQ</th>
+                </tr>
+              </thead>
+              <tbody id="campaignBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <div class="modal-backdrop" id="addAccountModal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="addAccountTitle">
+        <div class="modal-head">
+          <h3 id="addAccountTitle">Thêm tài khoản quảng cáo</h3>
+        </div>
+        <form id="addAccountForm">
+          <div class="modal-body">
+            <label class="field">
+              Tên tài khoản quảng cáo
+              <input
+                id="newAccountName"
+                required
+                placeholder="VD: INV_AKA_DASNOTRI_HỮU HUY_03_29/05/26"
+              />
+            </label>
+            <label class="field">
+              ID tài khoản quảng cáo
+              <input id="newAccountId" required placeholder="act_2407288503067302" />
+            </label>
+            <label class="field">
+              Access token
+              <input id="newAccessToken" required type="password" placeholder="EAAB..." />
+            </label>
+            <p class="helper">
+              Token chỉ dùng để test hiển thị dữ liệu. Giai đoạn sau Leader Marketing sẽ quản lý tài
+              khoản quảng cáo và gán cho nhân viên.
+            </p>
+          </div>
+          <div class="modal-foot">
+            <button class="secondary-btn" data-close-modal type="button">Huỷ</button>
+            <button class="primary-btn" type="submit">Lưu tài khoản</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="pauseModal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="pauseTitle">
+        <div class="modal-head">
+          <h3 id="pauseTitle">Cảnh báo</h3>
+        </div>
+        <div class="modal-body">
+          <p class="danger-copy">
+            Bạn sắp tắt toàn bộ Campaign đang hoạt động của tài khoản quảng cáo này.
+            <br />
+            Hành động này có thể làm dừng toàn bộ việc phân phối quảng cáo và ảnh hưởng đến hiệu
+            suất chiến dịch.
+            <br />
+            Bạn có chắc chắn muốn tiếp tục?
+          </p>
+          <div class="danger-summary">
+            <div><b>Tài khoản:</b> <span id="pauseAccountName"></span></div>
+            <div><b>Số Campaign đang hoạt động:</b> <span id="pauseCampCount"></span></div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="secondary-btn" data-close-modal type="button">Huỷ</button>
+          <button class="confirm-danger primary-btn" id="confirmPauseAll" type="button">
+            Xác nhận tắt tất cả
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <div class="toast-stack" id="toastStack"></div>
+
+    <script>
+      const dateFilters = ["Hôm nay", "Hôm qua", "Tuần này", "Tháng này", "Tuỳ chỉnh"];
+      let activeDateFilter = "Hôm nay";
+      let activeAccountIndex = 0;
+
+      const accounts = [
+        {
+          accountName: "INV_AKA_DASNOTRI_HỮU HUY_01_26/05/26",
+          accountId: "act_2407288503067302",
+          spendLimit: 100000000,
+          amountSpent: 87550000,
+          campOn: 14,
+          adsetOn: 38,
+          campaigns: [
+            {
+              name: "Notri Gold - Hữu Huy - MESS - 28/5 - A&",
+              status: "Đang chạy",
+              budget: 12000000,
+              spent: 10550000,
+              result: 1245,
+              purchase: 89,
+            },
+            {
+              name: "Notri Gold - Hữu Huy - CĐ - 28/5 - B1 - Bản sao",
+              status: "Đang chạy",
+              budget: 15000000,
+              spent: 13960000,
+              result: 567,
+              purchase: null,
+            },
+            {
+              name: "Notri Gold - Hữu Huy - CĐ - 28/5 - Z* - Bản sao",
+              status: "Cảnh báo",
+              budget: 8500000,
+              spent: 7290000,
+              result: 230,
+              purchase: 12,
+            },
+            {
+              name: "Notri Gold - Hữu Huy - MESS - 28/5 - A& - Bản sao",
+              status: "Đang chạy",
+              budget: 10000000,
+              spent: 9240000,
+              result: 880,
+              purchase: 41,
+            },
+            {
+              name: "Retarget NOTRI GOLD CD 29/5 - Warm Audience",
+              status: "Tạm tắt",
+              budget: 6500000,
+              spent: 4130000,
+              result: 0,
+              purchase: 0,
+            },
+          ],
+        },
+        {
+          accountName: "INV_AKA_DASNOTRI_HỮU HUY_02_26/05/26",
+          accountId: "act_2407288503067303",
+          spendLimit: 70000000,
+          amountSpent: 38540000,
+          campOn: 9,
+          adsetOn: 24,
+          campaigns: [
+            {
+              name: "DASNOTRI - Hữu Huy - MESS - 29/5 - Test angle 01",
+              status: "Đang chạy",
+              budget: 9000000,
+              spent: 6010000,
+              result: 642,
+              purchase: 28,
+            },
+            {
+              name: "DASNOTRI - Hữu Huy - CD - 29/5 - Landing Page A",
+              status: "Đang chạy",
+              budget: 12500000,
+              spent: 8840000,
+              result: 356,
+              purchase: null,
+            },
+            {
+              name: "DASNOTRI - Hữu Huy - MESS - 29/5 - Remarketing",
+              status: "Cảnh báo",
+              budget: 7800000,
+              spent: 7240000,
+              result: 420,
+              purchase: 19,
+            },
+          ],
+        },
+        {
+          accountName: "NOTRI_GOLD_HUU_HUY_MESS_01",
+          accountId: "act_2407288503099",
+          spendLimit: 35000000,
+          amountSpent: 11240000,
+          campOn: 5,
+          adsetOn: 12,
+          campaigns: [
+            {
+              name: "NOTRI GOLD HUU HUY MESS 01 - Broad - 29/5",
+              status: "Đang chạy",
+              budget: 5000000,
+              spent: 3120000,
+              result: 301,
+              purchase: 8,
+            },
+            {
+              name: "NOTRI GOLD HUU HUY MESS 01 - Lookalike",
+              status: "Đang chạy",
+              budget: 4500000,
+              spent: 2880000,
+              result: 256,
+              purchase: null,
+            },
+          ],
+        },
+      ];
+
+      const currency = new Intl.NumberFormat("vi-VN");
+
+      const elements = {
+        dateFilter: document.getElementById("dateFilter"),
+        customRange: document.getElementById("customRange"),
+        syncBtn: document.getElementById("syncBtn"),
+        syncIcon: document.getElementById("syncIcon"),
+        syncLabel: document.getElementById("syncLabel"),
+        accountTabs: document.getElementById("accountTabs"),
+        kpiGrid: document.getElementById("kpiGrid"),
+        selectedAccountName: document.getElementById("selectedAccountName"),
+        campaignBody: document.getElementById("campaignBody"),
+        openAddAccount: document.getElementById("openAddAccount"),
+        addAccountModal: document.getElementById("addAccountModal"),
+        addAccountForm: document.getElementById("addAccountForm"),
+        pauseAllBtn: document.getElementById("pauseAllBtn"),
+        pauseModal: document.getElementById("pauseModal"),
+        pauseAccountName: document.getElementById("pauseAccountName"),
+        pauseCampCount: document.getElementById("pauseCampCount"),
+        confirmPauseAll: document.getElementById("confirmPauseAll"),
+        toastStack: document.getElementById("toastStack"),
+      };
+
+      function formatMoney(value, suffix = " đ") {
+        return `${currency.format(Math.round(Number(value) || 0))}${suffix}`;
+      }
+
+      function formatNumber(value) {
+        return currency.format(Math.round(Number(value) || 0));
+      }
+
+      function detectCampaignType(name) {
+        const normalized = name.toUpperCase();
+        if (normalized.includes("MESS")) return { label: "MESS", className: "badge-blue" };
+        if (normalized.includes("CĐ") || normalized.includes("CD")) {
+          return { label: "Chuyển đổi", className: "badge-purple" };
+        }
+        return { label: "Khác", className: "badge-gray" };
+      }
+
+      function statusBadge(status) {
+        if (status === "Đang chạy") return "badge-green";
+        if (status === "Cảnh báo") return "badge-amber";
+        return "badge-gray";
+      }
+
+      function resultLabel(campaign) {
+        const type = detectCampaignType(campaign.name).label;
+        if (!campaign.result) return "—";
+        if (type === "MESS") {
+          return `<span class="metric-stack"><span class="metric-main">${formatNumber(campaign.result)}</span><span class="metric-sub">khách hàng tiềm năng</span></span>`;
+        }
+        if (type === "Chuyển đổi") {
+          return `<span class="metric-stack"><span class="metric-main">${formatNumber(campaign.result)}</span><span class="metric-sub">lượt hoàn tất đăng ký</span></span>`;
+        }
+        return `<span class="metric-main">${formatNumber(campaign.result)}</span>`;
+      }
+
+      function purchaseLabel(purchase) {
+        if (!purchase) return "—";
+        return `<span class="metric-stack"><span class="metric-main">${formatNumber(purchase)}</span><span class="metric-sub">đơn</span></span>`;
+      }
+
+      function costPerResult(campaign) {
+        if (!campaign.result) return "—";
+        return formatMoney(campaign.spent / campaign.result);
+      }
+
+      function getCurrentAccount() {
+        return accounts[activeAccountIndex];
+      }
+
+      function renderDateFilters() {
+        elements.dateFilter.innerHTML = dateFilters
+          .map(
+            (label) => `
+              <button class="filter-btn ${label === activeDateFilter ? "active" : ""}" type="button" data-filter="${label}">
+                ${label}
+              </button>
+            `,
+          )
+          .join("");
+        elements.customRange.classList.toggle("visible", activeDateFilter === "Tuỳ chỉnh");
+      }
+
+      function renderTabs() {
+        elements.accountTabs.innerHTML = accounts
+          .map(
+            (account, index) => `
+              <button class="account-tab ${index === activeAccountIndex ? "active" : ""}" type="button" data-account-index="${index}" title="${account.accountName}">
+                ${account.accountName}
+              </button>
+            `,
+          )
+          .join("");
+      }
+
+      function renderKpis() {
+        const account = getCurrentAccount();
+        const remaining = Math.max(account.spendLimit - account.amountSpent, 0);
+        const usedPercent =
+          account.spendLimit > 0
+            ? Math.min((account.amountSpent / account.spendLimit) * 100, 100)
+            : 0;
+        const kpis = [
+          { label: "Camp ON", value: formatNumber(account.campOn) },
+          { label: "Adset ON", value: formatNumber(account.adsetOn) },
+          { label: "Số tiền còn lại", value: formatMoney(remaining), money: true },
+          {
+            label: "Đã chi tiêu / Giới hạn",
+            value: `${formatMoney(account.amountSpent)} / ${formatMoney(account.spendLimit)}`,
+            money: true,
+            progress: usedPercent,
+          },
+        ];
+
+        elements.kpiGrid.innerHTML = kpis
+          .map(
+            (kpi) => `
+              <article class="kpi-card">
+                <div class="kpi-label">${kpi.label}</div>
+                <div class="kpi-value ${kpi.money ? "money-value" : ""}">${kpi.value}</div>
+                ${
+                  typeof kpi.progress === "number"
+                    ? `<div class="progress-shell"><div class="progress-bar" style="width:${kpi.progress}%"></div></div>`
+                    : ""
+                }
+              </article>
+            `,
+          )
+          .join("");
+      }
+
+      function renderCampaigns() {
+        const account = getCurrentAccount();
+        elements.selectedAccountName.textContent = account.accountName;
+        elements.selectedAccountName.title = account.accountName;
+
+        const totals = account.campaigns.reduce(
+          (acc, campaign) => {
+            acc.budget += Number(campaign.budget) || 0;
+            acc.spent += Number(campaign.spent) || 0;
+            acc.result += Number(campaign.result) || 0;
+            acc.purchase += Number(campaign.purchase) || 0;
+            return acc;
+          },
+          { budget: 0, spent: 0, result: 0, purchase: 0 },
+        );
+
+        const rows = account.campaigns
+          .map((campaign) => {
+            const type = detectCampaignType(campaign.name);
+            return `
+              <tr>
+                <td><div class="campaign-name">${campaign.name}</div></td>
+                <td><span class="badge ${type.className}">${type.label}</span></td>
+                <td><span class="badge ${statusBadge(campaign.status)}">${campaign.status}</span></td>
+                <td class="num">${formatMoney(campaign.budget)}</td>
+                <td class="num spent">${formatMoney(campaign.spent)}</td>
+                <td class="num">${resultLabel(campaign)}</td>
+                <td class="num">${purchaseLabel(campaign.purchase)}</td>
+                <td class="num">${costPerResult(campaign)}</td>
+              </tr>
+            `;
+          })
+          .join("");
+
+        const totalCostPerResult =
+          totals.result > 0 ? formatMoney(totals.spent / totals.result) : "—";
+        elements.campaignBody.innerHTML = `
+          ${rows}
+          <tr class="total-row">
+            <td>Kết quả từ ${account.campaigns.length} chiến dịch</td>
+            <td></td>
+            <td></td>
+            <td class="num">${formatMoney(totals.budget)}</td>
+            <td class="num spent">${formatMoney(totals.spent)}</td>
+            <td class="num">${totals.result ? formatNumber(totals.result) : "—"}</td>
+            <td class="num">${totals.purchase ? `${formatNumber(totals.purchase)} đơn` : "—"}</td>
+            <td class="num">${totalCostPerResult}</td>
+          </tr>
+        `;
+      }
+
+      function renderAll() {
+        renderDateFilters();
+        renderTabs();
+        renderKpis();
+        renderCampaigns();
+      }
+
+      function openModal(modal) {
+        modal.classList.add("visible");
+      }
+
+      function closeModal(modal) {
+        modal.classList.remove("visible");
+      }
+
+      function showToast(message) {
+        const toast = document.createElement("div");
+        toast.className = "toast";
+        toast.textContent = message;
+        elements.toastStack.appendChild(toast);
+        setTimeout(() => {
+          toast.style.opacity = "0";
+          toast.style.transform = "translateY(8px)";
+          toast.style.transition = "all 0.2s ease";
+        }, 2200);
+        setTimeout(() => toast.remove(), 2500);
+      }
+
+      elements.dateFilter.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-filter]");
+        if (!button) return;
+        activeDateFilter = button.dataset.filter;
+        renderDateFilters();
+      });
+
+      elements.accountTabs.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-account-index]");
+        if (!button) return;
+        activeAccountIndex = Number(button.dataset.accountIndex);
+        renderAll();
+      });
+
+      elements.syncBtn.addEventListener("click", () => {
+        elements.syncBtn.disabled = true;
+        elements.syncIcon.classList.add("spin");
+        elements.syncBtn.title = "Đang đồng bộ...";
+        elements.syncBtn.setAttribute("aria-label", "Đang đồng bộ...");
+        elements.syncLabel.textContent = "Đang đồng bộ...";
+
+        setTimeout(() => {
+          const account = getCurrentAccount();
+          account.amountSpent += Math.round(Math.random() * 950000);
+          account.campaigns = account.campaigns.map((campaign) => ({
+            ...campaign,
+            spent:
+              campaign.status === "Đang chạy"
+                ? campaign.spent + Math.round(Math.random() * 240000)
+                : campaign.spent,
+            result:
+              campaign.status === "Đang chạy"
+                ? campaign.result + Math.round(Math.random() * 18)
+                : campaign.result,
+          }));
+          elements.syncBtn.disabled = false;
+          elements.syncIcon.classList.remove("spin");
+          elements.syncBtn.title = "Đồng bộ dữ liệu";
+          elements.syncBtn.setAttribute("aria-label", "Đồng bộ dữ liệu");
+          elements.syncLabel.textContent = "Đồng bộ dữ liệu";
+          renderAll();
+          showToast("Đã đồng bộ dữ liệu mock mới nhất.");
+        }, 1400);
+      });
+
+      elements.openAddAccount.addEventListener("click", () => openModal(elements.addAccountModal));
+
+      document.querySelectorAll("[data-close-modal]").forEach((button) => {
+        button.addEventListener("click", () => {
+          closeModal(elements.addAccountModal);
+          closeModal(elements.pauseModal);
+        });
+      });
+
+      elements.addAccountForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const name = document.getElementById("newAccountName").value.trim();
+        const accountId = document.getElementById("newAccountId").value.trim();
+        if (!name || !accountId) return;
+
+        accounts.push({
+          accountName: name,
+          accountId,
+          spendLimit: 50000000,
+          amountSpent: 0,
+          campOn: 0,
+          adsetOn: 0,
+          campaigns: [],
+        });
+
+        activeAccountIndex = accounts.length - 1;
+        elements.addAccountForm.reset();
+        closeModal(elements.addAccountModal);
+        renderAll();
+        showToast("Đã thêm tài khoản quảng cáo mock.");
+      });
+
+      elements.pauseAllBtn.addEventListener("click", () => {
+        const account = getCurrentAccount();
+        const activeCampaigns = account.campaigns.filter(
+          (campaign) => campaign.status === "Đang chạy",
+        ).length;
+        elements.pauseAccountName.textContent = account.accountName;
+        elements.pauseCampCount.textContent = formatNumber(activeCampaigns);
+        openModal(elements.pauseModal);
+      });
+
+      elements.confirmPauseAll.addEventListener("click", () => {
+        const account = getCurrentAccount();
+        account.campaigns = account.campaigns.map((campaign) => ({
+          ...campaign,
+          status: campaign.status === "Đang chạy" ? "Tạm tắt" : campaign.status,
+        }));
+        account.campOn = 0;
+        closeModal(elements.pauseModal);
+        renderAll();
+        showToast("Đã tắt toàn bộ Campaign của tài khoản.");
+      });
+
+      document.querySelectorAll(".modal-backdrop").forEach((backdrop) => {
+        backdrop.addEventListener("click", (event) => {
+          if (event.target === backdrop) closeModal(backdrop);
+        });
+      });
+
+      renderAll();
+    </script>
+  </body>
+</html>

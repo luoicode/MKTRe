@@ -50,6 +50,7 @@ import { Route as AuthenticatedLeaderDashboardRouteImport } from './routes/_auth
 import { Route as AuthenticatedLeaderDailyReportRouteImport } from './routes/_authenticated/leader/daily-report'
 import { Route as AuthenticatedLeaderAttendanceRouteImport } from './routes/_authenticated/leader/attendance'
 import { Route as AuthenticatedLeaderAssetsRouteImport } from './routes/_authenticated/leader/assets'
+import { Route as AuthenticatedLeaderAdsDashboardRouteImport } from './routes/_authenticated/leader/ads-dashboard'
 import { Route as AuthenticatedEmployeeTasksRouteImport } from './routes/_authenticated/employee/tasks'
 import { Route as AuthenticatedEmployeeResourcesRouteImport } from './routes/_authenticated/employee/resources'
 import { Route as AuthenticatedEmployeeReportsRouteImport } from './routes/_authenticated/employee/reports'
@@ -62,6 +63,7 @@ import { Route as AuthenticatedEmployeeFloatingPoolRouteImport } from './routes/
 import { Route as AuthenticatedEmployeeDashboardRouteImport } from './routes/_authenticated/employee/dashboard'
 import { Route as AuthenticatedEmployeeAttendanceRouteImport } from './routes/_authenticated/employee/attendance'
 import { Route as AuthenticatedEmployeeAssetsRouteImport } from './routes/_authenticated/employee/assets'
+import { Route as AuthenticatedEmployeeAdsDashboardRouteImport } from './routes/_authenticated/employee/ads-dashboard'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminTeamsRouteImport } from './routes/_authenticated/admin/teams'
 import { Route as AuthenticatedAdminTasksRouteImport } from './routes/_authenticated/admin/tasks'
@@ -76,6 +78,7 @@ import { Route as AuthenticatedAdminFloatingPoolRouteImport } from './routes/_au
 import { Route as AuthenticatedAdminDashboardRouteImport } from './routes/_authenticated/admin/dashboard'
 import { Route as AuthenticatedAdminAttendanceRouteImport } from './routes/_authenticated/admin/attendance'
 import { Route as AuthenticatedAdminAssetsRouteImport } from './routes/_authenticated/admin/assets'
+import { Route as AuthenticatedAdminAdsDashboardRouteImport } from './routes/_authenticated/admin/ads-dashboard'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -314,6 +317,12 @@ const AuthenticatedLeaderAssetsRoute =
     path: '/leader/assets',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedLeaderAdsDashboardRoute =
+  AuthenticatedLeaderAdsDashboardRouteImport.update({
+    id: '/leader/ads-dashboard',
+    path: '/leader/ads-dashboard',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedEmployeeTasksRoute =
   AuthenticatedEmployeeTasksRouteImport.update({
     id: '/employee/tasks',
@@ -384,6 +393,12 @@ const AuthenticatedEmployeeAssetsRoute =
   AuthenticatedEmployeeAssetsRouteImport.update({
     id: '/employee/assets',
     path: '/employee/assets',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedEmployeeAdsDashboardRoute =
+  AuthenticatedEmployeeAdsDashboardRouteImport.update({
+    id: '/employee/ads-dashboard',
+    path: '/employee/ads-dashboard',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
@@ -466,11 +481,18 @@ const AuthenticatedAdminAssetsRoute =
     path: '/admin/assets',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminAdsDashboardRoute =
+  AuthenticatedAdminAdsDashboardRouteImport.update({
+    id: '/admin/ads-dashboard',
+    path: '/admin/ads-dashboard',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
+  '/admin/ads-dashboard': typeof AuthenticatedAdminAdsDashboardRoute
   '/admin/assets': typeof AuthenticatedAdminAssetsRoute
   '/admin/attendance': typeof AuthenticatedAdminAttendanceRoute
   '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
@@ -485,6 +507,7 @@ export interface FileRoutesByFullPath {
   '/admin/tasks': typeof AuthenticatedAdminTasksRoute
   '/admin/teams': typeof AuthenticatedAdminTeamsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/employee/ads-dashboard': typeof AuthenticatedEmployeeAdsDashboardRoute
   '/employee/assets': typeof AuthenticatedEmployeeAssetsRoute
   '/employee/attendance': typeof AuthenticatedEmployeeAttendanceRoute
   '/employee/dashboard': typeof AuthenticatedEmployeeDashboardRoute
@@ -497,6 +520,7 @@ export interface FileRoutesByFullPath {
   '/employee/reports': typeof AuthenticatedEmployeeReportsRoute
   '/employee/resources': typeof AuthenticatedEmployeeResourcesRoute
   '/employee/tasks': typeof AuthenticatedEmployeeTasksRoute
+  '/leader/ads-dashboard': typeof AuthenticatedLeaderAdsDashboardRoute
   '/leader/assets': typeof AuthenticatedLeaderAssetsRoute
   '/leader/attendance': typeof AuthenticatedLeaderAttendanceRoute
   '/leader/daily-report': typeof AuthenticatedLeaderDailyReportRoute
@@ -539,6 +563,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
+  '/admin/ads-dashboard': typeof AuthenticatedAdminAdsDashboardRoute
   '/admin/assets': typeof AuthenticatedAdminAssetsRoute
   '/admin/attendance': typeof AuthenticatedAdminAttendanceRoute
   '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
@@ -553,6 +578,7 @@ export interface FileRoutesByTo {
   '/admin/tasks': typeof AuthenticatedAdminTasksRoute
   '/admin/teams': typeof AuthenticatedAdminTeamsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/employee/ads-dashboard': typeof AuthenticatedEmployeeAdsDashboardRoute
   '/employee/assets': typeof AuthenticatedEmployeeAssetsRoute
   '/employee/attendance': typeof AuthenticatedEmployeeAttendanceRoute
   '/employee/dashboard': typeof AuthenticatedEmployeeDashboardRoute
@@ -565,6 +591,7 @@ export interface FileRoutesByTo {
   '/employee/reports': typeof AuthenticatedEmployeeReportsRoute
   '/employee/resources': typeof AuthenticatedEmployeeResourcesRoute
   '/employee/tasks': typeof AuthenticatedEmployeeTasksRoute
+  '/leader/ads-dashboard': typeof AuthenticatedLeaderAdsDashboardRoute
   '/leader/assets': typeof AuthenticatedLeaderAssetsRoute
   '/leader/attendance': typeof AuthenticatedLeaderAttendanceRoute
   '/leader/daily-report': typeof AuthenticatedLeaderDailyReportRoute
@@ -609,6 +636,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/login': typeof LoginRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
+  '/_authenticated/admin/ads-dashboard': typeof AuthenticatedAdminAdsDashboardRoute
   '/_authenticated/admin/assets': typeof AuthenticatedAdminAssetsRoute
   '/_authenticated/admin/attendance': typeof AuthenticatedAdminAttendanceRoute
   '/_authenticated/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
@@ -623,6 +651,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/tasks': typeof AuthenticatedAdminTasksRoute
   '/_authenticated/admin/teams': typeof AuthenticatedAdminTeamsRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/_authenticated/employee/ads-dashboard': typeof AuthenticatedEmployeeAdsDashboardRoute
   '/_authenticated/employee/assets': typeof AuthenticatedEmployeeAssetsRoute
   '/_authenticated/employee/attendance': typeof AuthenticatedEmployeeAttendanceRoute
   '/_authenticated/employee/dashboard': typeof AuthenticatedEmployeeDashboardRoute
@@ -635,6 +664,7 @@ export interface FileRoutesById {
   '/_authenticated/employee/reports': typeof AuthenticatedEmployeeReportsRoute
   '/_authenticated/employee/resources': typeof AuthenticatedEmployeeResourcesRoute
   '/_authenticated/employee/tasks': typeof AuthenticatedEmployeeTasksRoute
+  '/_authenticated/leader/ads-dashboard': typeof AuthenticatedLeaderAdsDashboardRoute
   '/_authenticated/leader/assets': typeof AuthenticatedLeaderAssetsRoute
   '/_authenticated/leader/attendance': typeof AuthenticatedLeaderAttendanceRoute
   '/_authenticated/leader/daily-report': typeof AuthenticatedLeaderDailyReportRoute
@@ -679,6 +709,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/notifications'
+    | '/admin/ads-dashboard'
     | '/admin/assets'
     | '/admin/attendance'
     | '/admin/dashboard'
@@ -693,6 +724,7 @@ export interface FileRouteTypes {
     | '/admin/tasks'
     | '/admin/teams'
     | '/admin/users'
+    | '/employee/ads-dashboard'
     | '/employee/assets'
     | '/employee/attendance'
     | '/employee/dashboard'
@@ -705,6 +737,7 @@ export interface FileRouteTypes {
     | '/employee/reports'
     | '/employee/resources'
     | '/employee/tasks'
+    | '/leader/ads-dashboard'
     | '/leader/assets'
     | '/leader/attendance'
     | '/leader/daily-report'
@@ -747,6 +780,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/notifications'
+    | '/admin/ads-dashboard'
     | '/admin/assets'
     | '/admin/attendance'
     | '/admin/dashboard'
@@ -761,6 +795,7 @@ export interface FileRouteTypes {
     | '/admin/tasks'
     | '/admin/teams'
     | '/admin/users'
+    | '/employee/ads-dashboard'
     | '/employee/assets'
     | '/employee/attendance'
     | '/employee/dashboard'
@@ -773,6 +808,7 @@ export interface FileRouteTypes {
     | '/employee/reports'
     | '/employee/resources'
     | '/employee/tasks'
+    | '/leader/ads-dashboard'
     | '/leader/assets'
     | '/leader/attendance'
     | '/leader/daily-report'
@@ -816,6 +852,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/login'
     | '/_authenticated/notifications'
+    | '/_authenticated/admin/ads-dashboard'
     | '/_authenticated/admin/assets'
     | '/_authenticated/admin/attendance'
     | '/_authenticated/admin/dashboard'
@@ -830,6 +867,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/tasks'
     | '/_authenticated/admin/teams'
     | '/_authenticated/admin/users'
+    | '/_authenticated/employee/ads-dashboard'
     | '/_authenticated/employee/assets'
     | '/_authenticated/employee/attendance'
     | '/_authenticated/employee/dashboard'
@@ -842,6 +880,7 @@ export interface FileRouteTypes {
     | '/_authenticated/employee/reports'
     | '/_authenticated/employee/resources'
     | '/_authenticated/employee/tasks'
+    | '/_authenticated/leader/ads-dashboard'
     | '/_authenticated/leader/assets'
     | '/_authenticated/leader/attendance'
     | '/_authenticated/leader/daily-report'
@@ -1176,6 +1215,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedLeaderAssetsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/leader/ads-dashboard': {
+      id: '/_authenticated/leader/ads-dashboard'
+      path: '/leader/ads-dashboard'
+      fullPath: '/leader/ads-dashboard'
+      preLoaderRoute: typeof AuthenticatedLeaderAdsDashboardRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/employee/tasks': {
       id: '/_authenticated/employee/tasks'
       path: '/employee/tasks'
@@ -1258,6 +1304,13 @@ declare module '@tanstack/react-router' {
       path: '/employee/assets'
       fullPath: '/employee/assets'
       preLoaderRoute: typeof AuthenticatedEmployeeAssetsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/employee/ads-dashboard': {
+      id: '/_authenticated/employee/ads-dashboard'
+      path: '/employee/ads-dashboard'
+      fullPath: '/employee/ads-dashboard'
+      preLoaderRoute: typeof AuthenticatedEmployeeAdsDashboardRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/users': {
@@ -1358,11 +1411,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminAssetsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/ads-dashboard': {
+      id: '/_authenticated/admin/ads-dashboard'
+      path: '/admin/ads-dashboard'
+      fullPath: '/admin/ads-dashboard'
+      preLoaderRoute: typeof AuthenticatedAdminAdsDashboardRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
 
 interface AuthenticatedRouteChildren {
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
+  AuthenticatedAdminAdsDashboardRoute: typeof AuthenticatedAdminAdsDashboardRoute
   AuthenticatedAdminAssetsRoute: typeof AuthenticatedAdminAssetsRoute
   AuthenticatedAdminAttendanceRoute: typeof AuthenticatedAdminAttendanceRoute
   AuthenticatedAdminDashboardRoute: typeof AuthenticatedAdminDashboardRoute
@@ -1377,6 +1438,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminTasksRoute: typeof AuthenticatedAdminTasksRoute
   AuthenticatedAdminTeamsRoute: typeof AuthenticatedAdminTeamsRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
+  AuthenticatedEmployeeAdsDashboardRoute: typeof AuthenticatedEmployeeAdsDashboardRoute
   AuthenticatedEmployeeAssetsRoute: typeof AuthenticatedEmployeeAssetsRoute
   AuthenticatedEmployeeAttendanceRoute: typeof AuthenticatedEmployeeAttendanceRoute
   AuthenticatedEmployeeDashboardRoute: typeof AuthenticatedEmployeeDashboardRoute
@@ -1389,6 +1451,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedEmployeeReportsRoute: typeof AuthenticatedEmployeeReportsRoute
   AuthenticatedEmployeeResourcesRoute: typeof AuthenticatedEmployeeResourcesRoute
   AuthenticatedEmployeeTasksRoute: typeof AuthenticatedEmployeeTasksRoute
+  AuthenticatedLeaderAdsDashboardRoute: typeof AuthenticatedLeaderAdsDashboardRoute
   AuthenticatedLeaderAssetsRoute: typeof AuthenticatedLeaderAssetsRoute
   AuthenticatedLeaderAttendanceRoute: typeof AuthenticatedLeaderAttendanceRoute
   AuthenticatedLeaderDailyReportRoute: typeof AuthenticatedLeaderDailyReportRoute
@@ -1430,6 +1493,7 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
+  AuthenticatedAdminAdsDashboardRoute: AuthenticatedAdminAdsDashboardRoute,
   AuthenticatedAdminAssetsRoute: AuthenticatedAdminAssetsRoute,
   AuthenticatedAdminAttendanceRoute: AuthenticatedAdminAttendanceRoute,
   AuthenticatedAdminDashboardRoute: AuthenticatedAdminDashboardRoute,
@@ -1445,6 +1509,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminTasksRoute: AuthenticatedAdminTasksRoute,
   AuthenticatedAdminTeamsRoute: AuthenticatedAdminTeamsRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
+  AuthenticatedEmployeeAdsDashboardRoute:
+    AuthenticatedEmployeeAdsDashboardRoute,
   AuthenticatedEmployeeAssetsRoute: AuthenticatedEmployeeAssetsRoute,
   AuthenticatedEmployeeAttendanceRoute: AuthenticatedEmployeeAttendanceRoute,
   AuthenticatedEmployeeDashboardRoute: AuthenticatedEmployeeDashboardRoute,
@@ -1458,6 +1524,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedEmployeeReportsRoute: AuthenticatedEmployeeReportsRoute,
   AuthenticatedEmployeeResourcesRoute: AuthenticatedEmployeeResourcesRoute,
   AuthenticatedEmployeeTasksRoute: AuthenticatedEmployeeTasksRoute,
+  AuthenticatedLeaderAdsDashboardRoute: AuthenticatedLeaderAdsDashboardRoute,
   AuthenticatedLeaderAssetsRoute: AuthenticatedLeaderAssetsRoute,
   AuthenticatedLeaderAttendanceRoute: AuthenticatedLeaderAttendanceRoute,
   AuthenticatedLeaderDailyReportRoute: AuthenticatedLeaderDailyReportRoute,
