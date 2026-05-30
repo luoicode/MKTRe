@@ -1297,8 +1297,8 @@ export function ResourcesWorkspace() {
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
         {resourceMode === "training" && (
-          <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="space-y-3">
+          <section className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="min-w-0 space-y-3">
               <div className="rounded-2xl border bg-card p-3 shadow-sm">
                 <div className="relative max-w-md">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -2292,8 +2292,8 @@ function DocumentCard({
 }) {
   const Icon = getDocumentIcon(getDocumentFileType(document));
   return (
-    <div className="group rounded-2xl border bg-background p-4 shadow-sm transition hover:border-primary/25 hover:shadow-md">
-      <div className="flex items-start gap-3">
+    <div className="group min-w-0 overflow-hidden rounded-2xl border bg-background p-4 shadow-sm transition hover:border-primary/25 hover:shadow-md">
+      <div className="flex min-w-0 items-start gap-3">
         <div
           className={cn(
             "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
@@ -2325,7 +2325,7 @@ function DocumentCard({
             <span>{getDepartmentLabel(getDocumentDepartment(document))}</span>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1">
           <Button variant="ghost" size="sm" className="h-8 rounded-lg px-2" onClick={onOpen}>
             <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
             Xem
@@ -2373,7 +2373,7 @@ function PinnedDocumentsPanel({
   onOpen: (document: OnboardingDocument) => void;
 }) {
   return (
-    <aside className="h-fit rounded-2xl border bg-card p-4 shadow-sm xl:sticky xl:top-3">
+    <aside className="h-fit min-w-0 rounded-2xl border bg-card p-4 shadow-sm xl:sticky xl:top-3">
       <div className="flex items-center gap-2">
         <Pin className="h-4 w-4 text-amber-600" />
         <h2 className="font-black">Ghim quan trọng</h2>

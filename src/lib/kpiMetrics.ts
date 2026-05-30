@@ -5,15 +5,7 @@ import { fmtVndDong } from "@/lib/reports";
 
 export type KpiValueKind = "money" | "number" | "percent" | "ratio";
 
-export type MarketingMetricKey =
-  | "ads_cost"
-  | "revenue"
-  | "mess"
-  | "data"
-  | "cost_per_data"
-  | "cpl"
-  | "cps"
-  | "roi";
+export type MarketingMetricKey = "revenue" | "data" | "cost_per_data";
 
 export type SaleMetricKey = "revenue" | "orders" | "close_rate" | "average_order";
 
@@ -31,26 +23,11 @@ export type MetricConfig<TActual, TTarget> = {
 
 export const marketingMetrics: MetricConfig<ReportMetricTotals, MarketingKpiTarget>[] = [
   {
-    key: "ads_cost",
-    label: "Chi phí",
-    kind: "money",
-    lowerIsBetter: true,
-    actual: (actual) => actual.ads_cost,
-    target: (target) => Number(target?.ads_target ?? 0),
-  },
-  {
     key: "revenue",
     label: "Doanh thu",
     kind: "money",
     actual: (actual) => actual.total_revenue,
     target: (target) => Number(target?.revenue_target ?? 0),
-  },
-  {
-    key: "mess",
-    label: "MESS",
-    kind: "number",
-    actual: (actual) => actual.mess_count,
-    target: (target) => Number(target?.mess_target ?? 0),
   },
   {
     key: "data",
@@ -69,35 +46,6 @@ export const marketingMetrics: MetricConfig<ReportMetricTotals, MarketingKpiTarg
       Number(target?.data_target ?? 0) > 0
         ? Number(target?.ads_target ?? 0) / Number(target?.data_target ?? 1)
         : null,
-  },
-  {
-    key: "cpl",
-    label: "CPL",
-    kind: "money",
-    lowerIsBetter: true,
-    actual: (actual) => deriveRates(actual).cp_mess ?? 0,
-    target: (target) =>
-      Number(target?.mess_target ?? 0) > 0
-        ? Number(target?.ads_target ?? 0) / Number(target?.mess_target ?? 1)
-        : null,
-  },
-  {
-    key: "cps",
-    label: "CPS",
-    kind: "money",
-    lowerIsBetter: true,
-    actual: (actual) => (actual.closed_orders > 0 ? actual.ads_cost / actual.closed_orders : 0),
-    target: (target) =>
-      Number(target?.orders_target ?? 0) > 0
-        ? Number(target?.ads_target ?? 0) / Number(target?.orders_target ?? 1)
-        : null,
-  },
-  {
-    key: "roi",
-    label: "ROI",
-    kind: "ratio",
-    actual: (actual) => deriveRates(actual).roas ?? 0,
-    target: (target) => Number(target?.roas_target ?? 0),
   },
 ];
 

@@ -24,8 +24,8 @@ import {
 } from "@/lib/analytics";
 import { kpiPercent, kpiStatus } from "@/lib/kpi";
 import { formatKpiMetricValue, marketingMetrics, metricProgress } from "@/lib/kpiMetrics";
-import { filterVisibleProfiles } from "@/lib/profileVisibility";
 import { fmtVndDong, formatDateVN } from "@/lib/reports";
+import { APP_ROLES, MARKETING_ROLES } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -70,12 +70,8 @@ type KpiFormState = {
   period_start: string;
   period_end: string;
   revenue_target: string;
-  ads_target: string;
-  mess_target: string;
+  cost_percent: string;
   data_target: string;
-  orders_target: string;
-  roas_target: string;
-  note: string;
 };
 
 type MemberKpiRow = {
@@ -103,13 +99,28 @@ function createDefaultForm(teamId = ""): KpiFormState {
     period_start: range.from,
     period_end: range.to,
     revenue_target: "",
-    ads_target: "",
-    mess_target: "",
+    cost_percent: "",
     data_target: "",
-    orders_target: "",
-    roas_target: "",
-    note: "",
   };
+}
+
+const COMPANY_SCOPE_VALUE = "__company__";
+
+function parseNumberInput(value: string) {
+  return Number(value.replace(/[^\d]/g, "")) || 0;
+}
+
+function formatVndInput(value: string) {
+  const numeric = value.replace(/[^\d]/g, "");
+  if (!numeric) return "";
+  return new Intl.NumberFormat("vi-VN").format(Number(numeric));
+}
+
+function sanitizePercentInput(value: string) {
+  const normalized = value.replace(",", ".").replace(/[^\d.]/g, "");
+  const [integer = "", ...decimalParts] = normalized.split(".");
+  const decimal = decimalParts.join("");
+  return decimalParts.length ? `${integer}.${decimal.slice(0, 2)}` : integer;
 }
 
 function createKpiRange(preset: KpiRangePreset = "month"): KpiRangeState {
@@ -237,66 +248,69 @@ export function KpiWorkspace() {
       if (teamIds?.length) teamsQuery = teamsQuery.in("id", teamIds);
       const { data: teams, error: teamsError } = await teamsQuery;
       if (teamsError) throw teamsError;
-      const visibleTeamIds =
-        role === "admin" ? (teams ?? []).map((team) => team.id) : (teamIds ?? []);
+      const visibleTeamIds = (teams ?? []).map((team) => team.id);
 
-      const memberships = teamIds?.length
+      const memberships = visibleTeamIds.length
         ? await supabase
             .from("team_memberships")
             .select("user_id, team_id, role_in_team")
-            .in("team_id", teamIds)
+            .in("team_id", visibleTeamIds)
             .eq("is_active", true)
-        : await supabase
-            .from("team_memberships")
-            .select("user_id, team_id, role_in_team")
-            .eq("is_active", true);
+        : { data: [], error: null };
       if (memberships.error) throw memberships.error;
 
       const userIds = Array.from(
         new Set((memberships.data ?? []).map((m: { user_id: string }) => m.user_id)),
       );
-      if (profile?.id && !userIds.includes(profile.id)) userIds.push(profile.id);
+      if (
+        profile?.id &&
+        (role === APP_ROLES.MARKETING_EMPLOYEE || role === APP_ROLES.MARKETING_LEADER) &&
+        !userIds.includes(profile.id)
+      ) {
+        userIds.push(profile.id);
+      }
 
       const { data: operationalRoles, error: rolesError } = userIds.length
         ? await supabase.from("user_roles").select("user_id, role").in("user_id", userIds)
         : { data: [], error: null };
       if (rolesError) throw rolesError;
 
-      const operationalRoleByUserId = new Map(
-        (operationalRoles ?? [])
-          .filter((row) => row.role === "employee" || row.role === "leader")
-          .map((row) => [row.user_id, row.role as OperationalRole]),
+      const explicitRoleByUserId = new Map(
+        (operationalRoles ?? []).map((row) => [row.user_id, row.role as string]),
       );
+      const marketingRoleSet = new Set<string>(MARKETING_ROLES);
+      const operationalRoleByUserId = new Map<string, OperationalRole>();
+      for (const row of operationalRoles ?? []) {
+        if (marketingRoleSet.has(row.role)) {
+          operationalRoleByUserId.set(row.user_id, row.role as OperationalRole);
+        }
+      }
       for (const membership of memberships.data ?? []) {
         if (
+          !explicitRoleByUserId.has(membership.user_id) &&
           !operationalRoleByUserId.has(membership.user_id) &&
           (membership.role_in_team === "employee" || membership.role_in_team === "leader")
         ) {
           operationalRoleByUserId.set(membership.user_id, membership.role_in_team);
         }
       }
-      const nonOperationalUserIds = new Set(
-        (operationalRoles ?? [])
-          .filter((row) => row.role === "admin" || row.role === "manager")
-          .map((row) => row.user_id),
-      );
-      const operationalUserIds = userIds.filter(
-        (userId) => operationalRoleByUserId.has(userId) && !nonOperationalUserIds.has(userId),
-      );
+      const operationalUserIds = userIds.filter((userId) => operationalRoleByUserId.has(userId));
 
       const { data: users, error: usersError } = operationalUserIds.length
         ? await supabase
             .from("profiles")
             .select("id, full_name, username, status")
             .in("id", operationalUserIds)
+            .eq("status", "active")
             .order("full_name")
         : { data: [], error: null };
       if (usersError) throw usersError;
-      const visibleUsers = filterVisibleProfiles(users ?? [], role);
+      const visibleUsers = users ?? [];
       const visibleUserIds = new Set(visibleUsers.map((user) => user.id));
       for (const userId of Array.from(operationalRoleByUserId.keys())) {
         if (!visibleUserIds.has(userId)) operationalRoleByUserId.delete(userId);
       }
+      const activeMarketingUserIds = new Set(Array.from(operationalRoleByUserId.keys()));
 
       const { data: kpis, error: kpisError } = await supabase
         .from("kpi_targets")
@@ -305,9 +319,14 @@ export function KpiWorkspace() {
         .gte("period_end", currentPeriod.from)
         .order("updated_at", { ascending: false });
       if (kpisError) throw kpisError;
+      const scopedKpis = ((kpis ?? []) as KpiTargetRow[]).filter((kpi) => {
+        if (kpi.user_id) return activeMarketingUserIds.has(kpi.user_id);
+        if (kpi.team_id) return visibleTeamIds.includes(kpi.team_id);
+        return role === "admin" || role === "manager";
+      });
 
       const personalReports =
-        role === "employee" || role === "leader"
+        (role === "employee" || role === "leader") && activeMarketingUserIds.has(profile!.id)
           ? await getVisibleReports({
               from: currentPeriod.from,
               to: currentPeriod.to,
@@ -316,13 +335,18 @@ export function KpiWorkspace() {
           : [];
 
       const scopedTeamIds =
-        teamIds?.length || role === "leader" || role === "manager" ? teamIds : undefined;
-      const teamReports =
+        role === "admin" || visibleTeamIds.length || role === "leader" || role === "manager"
+          ? visibleTeamIds
+          : undefined;
+      const rawTeamReports =
         role === "admin"
-          ? await getVisibleReports({
-              from: currentPeriod.from,
-              to: currentPeriod.to,
-            })
+          ? scopedTeamIds?.length
+            ? await getVisibleReports({
+                from: currentPeriod.from,
+                to: currentPeriod.to,
+                teamIds: scopedTeamIds,
+              })
+            : []
           : scopedTeamIds?.length
             ? await getVisibleReports({
                 from: currentPeriod.from,
@@ -330,12 +354,17 @@ export function KpiWorkspace() {
                 teamIds: scopedTeamIds,
               })
             : [];
+      const teamReports = rawTeamReports.filter(
+        (report) =>
+          activeMarketingUserIds.has(report.user_id) &&
+          (!report.team_id || visibleTeamIds.includes(report.team_id)),
+      );
 
       return {
         teams: teams ?? [],
         users: visibleUsers as ProfileRow[],
         operationalRoleByUserId,
-        kpis: (kpis ?? []) as KpiTargetRow[],
+        kpis: scopedKpis,
         memberships: (memberships.data ?? []) as MembershipRow[],
         teamIds: visibleTeamIds,
         personalActual: sumReportMetrics(personalReports),
@@ -357,23 +386,26 @@ export function KpiWorkspace() {
   const personalKpi = useMemo(() => pickLatestKpi(personalKpis), [personalKpis]);
 
   const teamKpis = useMemo(() => {
-    if (!data?.teamIds.length) return [];
+    if (!data) return [];
     return (data.kpis ?? []).filter(
       (kpi) =>
         !kpi.user_id &&
-        kpi.team_id &&
-        data.teamIds.includes(kpi.team_id) &&
-        (teamFilter === "all" || kpi.team_id === teamFilter),
+        ((teamFilter === "all" && (!kpi.team_id || data.teamIds.includes(kpi.team_id))) ||
+          (teamFilter !== "all" && kpi.team_id === teamFilter)),
     );
-  }, [data?.kpis, data?.teamIds, teamFilter]);
+  }, [data, teamFilter]);
+
+  const activeTeamKpis = useMemo(() => {
+    if (teamFilter !== "all") return teamKpis;
+    const companyKpis = teamKpis.filter((kpi) => !kpi.team_id);
+    return companyKpis.length
+      ? [pickLatestKpi(companyKpis)]
+      : teamKpis.filter((kpi) => kpi.team_id);
+  }, [teamFilter, teamKpis]);
 
   const teamTarget = useMemo(
-    () => teamKpis.reduce((sum, kpi) => sum + Number(kpi.revenue_target ?? 0), 0),
-    [teamKpis],
-  );
-  const teamAdsTarget = useMemo(
-    () => teamKpis.reduce((sum, kpi) => sum + Number(kpi.ads_target ?? 0), 0),
-    [teamKpis],
+    () => activeTeamKpis.reduce((sum, kpi) => sum + Number(kpi.revenue_target ?? 0), 0),
+    [activeTeamKpis],
   );
   const filteredTeamReports = useMemo(() => {
     if (teamFilter === "all") return data?.teamReports ?? [];
@@ -452,6 +484,7 @@ export function KpiWorkspace() {
   }, [data?.memberships, data?.users, teamFilter]);
 
   const usersForForm = useMemo(() => {
+    if (form.team_id === COMPANY_SCOPE_VALUE) return [];
     if (!form.team_id) return data?.users ?? [];
     const teamUserIds = new Set(
       (data?.memberships ?? [])
@@ -465,23 +498,26 @@ export function KpiWorkspace() {
 
   const save = async () => {
     if (!form.team_id || !form.period_start || !form.period_end) {
-      toast.error("Chọn team và kỳ KPI");
+      toast.error("Chọn phạm vi và kỳ KPI");
       return;
     }
+    const revenueTarget = parseNumberInput(form.revenue_target);
+    const costPercent = Number(form.cost_percent || 0);
+    const adsTarget = Math.round((revenueTarget * costPercent) / 100);
     const payload: TablesInsert<"kpi_targets"> = {
-      team_id: form.team_id,
+      team_id: form.team_id === COMPANY_SCOPE_VALUE ? null : form.team_id,
       user_id: form.user_id === "team" ? null : form.user_id,
       period_type: form.period_type,
       period_start: form.period_start,
       period_end: form.period_end,
-      revenue_target: Number(form.revenue_target || 0),
-      ads_target: Number(form.ads_target || 0),
-      mess_target: Number(form.mess_target || 0),
-      data_target: Number(form.data_target || 0),
-      orders_target: Number(form.orders_target || 0),
-      roas_target: Number(form.roas_target || 0),
+      revenue_target: revenueTarget,
+      ads_target: adsTarget,
+      mess_target: 0,
+      data_target: parseNumberInput(form.data_target),
+      orders_target: 0,
+      roas_target: 0,
       created_by: profile?.id,
-      note: form.note || null,
+      note: null,
     };
     const { error } = await supabase.from("kpi_targets").insert(payload);
     if (error) {
@@ -531,6 +567,7 @@ export function KpiWorkspace() {
                   role={role}
                   teams={data?.teams ?? []}
                   users={usersForForm}
+                  memberships={data?.memberships ?? []}
                   onSave={save}
                 />
               </Dialog>
@@ -583,13 +620,21 @@ export function KpiWorkspace() {
                   teamName={teamSummaryName}
                   target={teamTarget}
                   actual={role === "leader" ? data?.teamActual : filteredTeamActual}
-                  adsTarget={teamAdsTarget}
                 />
               </>
             )}
 
             {role !== "employee" && (
-              <MemberKpiTable rows={memberRows} search={memberSearch} onSearch={setMemberSearch} />
+              <MemberKpiTable
+                emptyMessage={
+                  data?.users.length
+                    ? "Chưa có KPI trong kỳ này"
+                    : "Chưa có nhân sự Marketing đang hoạt động"
+                }
+                rows={memberRows}
+                search={memberSearch}
+                onSearch={setMemberSearch}
+              />
             )}
           </div>
         )}
@@ -703,6 +748,7 @@ function KpiCreateDialog({
   role,
   teams,
   users,
+  memberships,
   onSave,
 }: {
   form: KpiFormState;
@@ -710,8 +756,17 @@ function KpiCreateDialog({
   role: string | null;
   teams: TeamRow[];
   users: ProfileRow[];
+  memberships: MembershipRow[];
   onSave: () => void;
 }) {
+  const teamByUserId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const membership of memberships) {
+      if (!map.has(membership.user_id)) map.set(membership.user_id, membership.team_id);
+    }
+    return map;
+  }, [memberships]);
+
   return (
     <DialogContent className="max-w-3xl">
       <DialogHeader>
@@ -726,15 +781,16 @@ function KpiCreateDialog({
             </p>
           </div>
         ) : (
-          <Field label="Team">
+          <Field label="Phạm vi">
             <Select
               value={form.team_id}
               onValueChange={(v) => setForm({ ...form, team_id: v, user_id: "team" })}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Chọn team" />
+                <SelectValue placeholder="Chọn tổng công ty hoặc team" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value={COMPANY_SCOPE_VALUE}>Tổng công ty</SelectItem>
                 {teams.map((team) => (
                   <SelectItem key={team.id} value={team.id}>
                     {team.name}
@@ -745,12 +801,24 @@ function KpiCreateDialog({
           </Field>
         )}
         <Field label="Đối tượng">
-          <Select value={form.user_id} onValueChange={(v) => setForm({ ...form, user_id: v })}>
+          <Select
+            value={form.user_id}
+            onValueChange={(value) => {
+              const userTeamId = value === "team" ? null : teamByUserId.get(value);
+              setForm({
+                ...form,
+                user_id: value,
+                team_id: userTeamId ?? form.team_id,
+              });
+            }}
+          >
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="team">KPI Team</SelectItem>
+              <SelectItem value="team">
+                {form.team_id === COMPANY_SCOPE_VALUE ? "KPI Tổng công ty" : "KPI Team"}
+              </SelectItem>
               {users.map((user) => (
                 <SelectItem key={user.id} value={user.id}>
                   {user.full_name}
@@ -776,12 +844,14 @@ function KpiCreateDialog({
             </SelectContent>
           </Select>
         </Field>
-        <Field label="Doanh thu target">
+        <Field label="Doanh thu">
           <Input
             value={form.revenue_target}
             onChange={(event) =>
-              setForm({ ...form, revenue_target: event.target.value.replace(/[^\d]/g, "") })
+              setForm({ ...form, revenue_target: formatVndInput(event.target.value) })
             }
+            inputMode="numeric"
+            placeholder="1.200.000.000"
           />
         </Field>
         <Field label="Từ ngày">
@@ -798,50 +868,29 @@ function KpiCreateDialog({
             onChange={(event) => setForm({ ...form, period_end: event.target.value })}
           />
         </Field>
-        <Field label="Chi phí target">
-          <Input
-            value={form.ads_target}
-            onChange={(event) =>
-              setForm({ ...form, ads_target: event.target.value.replace(/[^\d]/g, "") })
-            }
-          />
+        <Field label="% chi phí">
+          <div className="relative">
+            <Input
+              className="pr-10"
+              value={form.cost_percent}
+              onChange={(event) =>
+                setForm({ ...form, cost_percent: sanitizePercentInput(event.target.value) })
+              }
+              inputMode="decimal"
+              placeholder="30"
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground">
+              %
+            </span>
+          </div>
         </Field>
-        <Field label="MESS target">
-          <Input
-            value={form.mess_target}
-            onChange={(event) =>
-              setForm({ ...form, mess_target: event.target.value.replace(/[^\d]/g, "") })
-            }
-          />
-        </Field>
-        <Field label="DATA target">
+        <Field label="DATA">
           <Input
             value={form.data_target}
             onChange={(event) =>
-              setForm({ ...form, data_target: event.target.value.replace(/[^\d]/g, "") })
+              setForm({ ...form, data_target: formatVndInput(event.target.value) })
             }
-          />
-        </Field>
-        <Field label="Đơn target">
-          <Input
-            value={form.orders_target}
-            onChange={(event) =>
-              setForm({ ...form, orders_target: event.target.value.replace(/[^\d]/g, "") })
-            }
-          />
-        </Field>
-        <Field label="ROI target">
-          <Input
-            value={form.roas_target}
-            onChange={(event) =>
-              setForm({ ...form, roas_target: event.target.value.replace(/[^\d.]/g, "") })
-            }
-          />
-        </Field>
-        <Field label="Ghi chú">
-          <Input
-            value={form.note}
-            onChange={(event) => setForm({ ...form, note: event.target.value })}
+            inputMode="numeric"
           />
         </Field>
         <div className="flex justify-end md:col-span-2">
@@ -942,12 +991,10 @@ function TeamKpiPanel({
   teamName,
   target,
   actual,
-  adsTarget,
 }: {
   teamName: string;
   target: number;
   actual?: ReportMetricTotals;
-  adsTarget: number;
 }) {
   const actualTotals = actual ?? emptyMetricTotals();
   const percent = kpiPercent(actualTotals.total_revenue, target);
@@ -963,18 +1010,15 @@ function TeamKpiPanel({
         </div>
         <Badge className={statusClass(status)}>{statusLabel(status)}</Badge>
       </div>
-      <div className="mt-5 grid gap-3 md:grid-cols-4 xl:grid-cols-8">
+      <div className="mt-5 grid gap-3 md:grid-cols-3 xl:grid-cols-5">
         <LightMetric label="Tổng KPI doanh thu team" value={fmtVndDong(target)} />
         <LightMetric
           label="Tổng doanh thu thực tế team"
           value={fmtVndDong(actualTotals.total_revenue)}
         />
         <LightMetric label="% hoàn thành team" value={percent == null ? "0%" : `${percent}%`} />
-        <LightMetric label="Tổng chi phí mục tiêu" value={fmtVndDong(adsTarget)} />
         {marketingMetrics
-          .filter((metric) =>
-            ["mess", "data", "cost_per_data", "cpl", "cps", "roi"].includes(metric.key),
-          )
+          .filter((metric) => ["data", "cost_per_data"].includes(metric.key))
           .map((metric) => (
             <LightMetric
               key={metric.key}
@@ -1025,7 +1069,10 @@ function KpiHistory({ kpis }: { kpis: KpiTargetRow[] }) {
                   Doanh thu mục tiêu: {fmtVndDong(kpi.revenue_target)}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Chi phí mục tiêu: {fmtVndDong(kpi.ads_target)}
+                  % chi phí:{" "}
+                  {Number(kpi.revenue_target ?? 0) > 0
+                    ? `${Math.round((Number(kpi.ads_target ?? 0) / Number(kpi.revenue_target)) * 1000) / 10}%`
+                    : "—"}
                 </p>
               </div>
             </div>
@@ -1041,10 +1088,12 @@ function KpiHistory({ kpis }: { kpis: KpiTargetRow[] }) {
 }
 
 function MemberKpiTable({
+  emptyMessage,
   rows,
   search,
   onSearch,
 }: {
+  emptyMessage: string;
   rows: MemberKpiRow[];
   search: string;
   onSearch: (value: string) => void;
@@ -1111,7 +1160,7 @@ function MemberKpiTable({
             ) : (
               <tr>
                 <td colSpan={8} className="px-4 py-10 text-center text-muted-foreground">
-                  Chưa có KPI trong kỳ này
+                  {emptyMessage}
                 </td>
               </tr>
             )}

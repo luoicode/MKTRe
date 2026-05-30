@@ -69,6 +69,7 @@ type SaleProfile = {
 type SaleTeam = Pick<Tables<"teams">, "id" | "name">;
 type SaleKpiTarget = Tables<"sale_kpi_targets">;
 type SaleKpiPeriod = Enums<"kpi_period">;
+type SaleTeamMembership = Pick<Tables<"team_memberships">, "team_id" | "user_id" | "role_in_team">;
 
 type SaleKpiForm = {
   id?: string;
@@ -78,11 +79,8 @@ type SaleKpiForm = {
   periodType: SaleKpiPeriod;
   periodStart: string;
   periodEnd: string;
-  revenueTarget: string;
-  ordersTarget: string;
   closeRateTarget: string;
   averageOrderTarget: string;
-  note: string;
 };
 
 type AdminFloatingLeadStatus =
@@ -117,6 +115,8 @@ type AdminLeadEditForm = {
   claimCount: number;
 };
 
+const COMPANY_SCOPE_VALUE = "__company__";
+
 function createSaleKpiForm(target?: SaleKpiTarget): SaleKpiForm {
   const range = initialDateRange("month");
   return {
@@ -127,11 +127,8 @@ function createSaleKpiForm(target?: SaleKpiTarget): SaleKpiForm {
     periodType: target?.period_type ?? "month",
     periodStart: target?.period_start ?? range.from,
     periodEnd: target?.period_end ?? range.to,
-    revenueTarget: String(target?.revenue_target ?? ""),
-    ordersTarget: String(target?.orders_target ?? ""),
     closeRateTarget: String(target?.close_rate_target ?? ""),
     averageOrderTarget: String(target?.average_order_target ?? ""),
-    note: target?.note ?? "",
   };
 }
 
@@ -472,7 +469,8 @@ export function AdminSaleKpi() {
         fetchSaleTeams(),
         fetchSaleKpiTargets(normalizedRange.from, normalizedRange.to),
       ]);
-      return { reports, sales, teams, targets };
+      const memberships = await fetchSaleTeamMemberships(teams.map((team) => team.id));
+      return { reports, sales, teams, targets, memberships };
     },
   });
   const saveTarget = useMutation({
@@ -512,9 +510,16 @@ export function AdminSaleKpi() {
     return map;
   }, [data?.targets]);
   const teamTargets = useMemo(
-    () => (data?.targets ?? []).filter((target) => target.team_id && !target.user_id),
+    () => (data?.targets ?? []).filter((target) => !target.user_id),
     [data?.targets],
   );
+  const teamBySaleId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const membership of data?.memberships ?? []) {
+      if (!map.has(membership.user_id)) map.set(membership.user_id, membership.team_id);
+    }
+    return map;
+  }, [data?.memberships]);
 
   const openCreate = () => {
     setForm(createSaleKpiForm());
@@ -560,7 +565,7 @@ export function AdminSaleKpi() {
                     <div>
                       <p className="text-sm font-black">
                         {data?.teams.find((team) => team.id === target.team_id)?.name ??
-                          "Team Sale"}
+                          "Tổng công ty"}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {formatDateShort(target.period_start)} -{" "}
@@ -667,6 +672,7 @@ export function AdminSaleKpi() {
                                     ...createSaleKpiForm(),
                                     scope: "user",
                                     userId: row.saleId,
+                                    teamId: teamBySaleId.get(row.saleId) ?? "",
                                   });
                                   setFormOpen(true);
                                 }}
@@ -691,6 +697,7 @@ export function AdminSaleKpi() {
         form={form}
         teams={data?.teams ?? []}
         sales={data?.sales ?? []}
+        memberships={data?.memberships ?? []}
         isSaving={saveTarget.isPending}
         onOpenChange={setFormOpen}
         onChange={setForm}
@@ -721,6 +728,7 @@ function SaleKpiTargetDialog({
   form,
   teams,
   sales,
+  memberships,
   isSaving,
   onOpenChange,
   onChange,
@@ -730,6 +738,7 @@ function SaleKpiTargetDialog({
   form: SaleKpiForm;
   teams: SaleTeam[];
   sales: SaleProfile[];
+  memberships: SaleTeamMembership[];
   isSaving: boolean;
   onOpenChange: (open: boolean) => void;
   onChange: (form: SaleKpiForm) => void;
@@ -738,6 +747,13 @@ function SaleKpiTargetDialog({
   const setNumber = (field: keyof SaleKpiForm, value: string, allowDecimal = false) => {
     onChange({ ...form, [field]: value.replace(allowDecimal ? /[^\d.]/g : /[^\d]/g, "") });
   };
+  const teamBySaleId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const membership of memberships) {
+      if (!map.has(membership.user_id)) map.set(membership.user_id, membership.team_id);
+    }
+    return map;
+  }, [memberships]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -750,7 +766,12 @@ function SaleKpiTargetDialog({
             <Select
               value={form.scope}
               onValueChange={(value) =>
-                onChange({ ...form, scope: value as "team" | "user", userId: "" })
+                onChange({
+                  ...form,
+                  scope: value as "team" | "user",
+                  userId: "",
+                  teamId: value === "team" ? form.teamId : "",
+                })
               }
             >
               <SelectTrigger>
@@ -765,9 +786,12 @@ function SaleKpiTargetDialog({
           <Field label="Team Sale">
             <Select value={form.teamId} onValueChange={(teamId) => onChange({ ...form, teamId })}>
               <SelectTrigger>
-                <SelectValue placeholder="Chọn team Sale" />
+                <SelectValue placeholder="Chọn tổng công ty hoặc team Sale" />
               </SelectTrigger>
               <SelectContent>
+                {form.scope === "team" && (
+                  <SelectItem value={COMPANY_SCOPE_VALUE}>Tổng công ty</SelectItem>
+                )}
                 {teams.map((team) => (
                   <SelectItem key={team.id} value={team.id}>
                     {team.name}
@@ -778,7 +802,16 @@ function SaleKpiTargetDialog({
           </Field>
           {form.scope === "user" && (
             <Field label="Nhân viên Sale">
-              <Select value={form.userId} onValueChange={(userId) => onChange({ ...form, userId })}>
+              <Select
+                value={form.userId}
+                onValueChange={(userId) =>
+                  onChange({
+                    ...form,
+                    userId,
+                    teamId: teamBySaleId.get(userId) ?? form.teamId,
+                  })
+                }
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Chọn nhân viên Sale" />
                 </SelectTrigger>
@@ -823,18 +856,6 @@ function SaleKpiTargetDialog({
               onChange={(event) => onChange({ ...form, periodEnd: event.target.value })}
             />
           </Field>
-          <Field label="Target doanh thu">
-            <Input
-              value={form.revenueTarget}
-              onChange={(event) => setNumber("revenueTarget", event.target.value)}
-            />
-          </Field>
-          <Field label="Target số đơn">
-            <Input
-              value={form.ordersTarget}
-              onChange={(event) => setNumber("ordersTarget", event.target.value)}
-            />
-          </Field>
           <Field label="Target tỉ lệ chốt (%)">
             <Input
               value={form.closeRateTarget}
@@ -845,12 +866,6 @@ function SaleKpiTargetDialog({
             <Input
               value={form.averageOrderTarget}
               onChange={(event) => setNumber("averageOrderTarget", event.target.value)}
-            />
-          </Field>
-          <Field label="Ghi chú">
-            <Input
-              value={form.note}
-              onChange={(event) => onChange({ ...form, note: event.target.value })}
             />
           </Field>
         </div>
@@ -1646,6 +1661,17 @@ async function fetchSaleTeams() {
   return (data ?? []) as SaleTeam[];
 }
 
+async function fetchSaleTeamMemberships(teamIds: string[]) {
+  if (!teamIds.length) return [] as SaleTeamMembership[];
+  const { data, error } = await supabase
+    .from("team_memberships")
+    .select("team_id, user_id, role_in_team")
+    .in("team_id", teamIds)
+    .eq("is_active", true);
+  if (error) throw error;
+  return (data ?? []) as SaleTeamMembership[];
+}
+
 async function fetchSaleKpiTargets(from: string, to: string) {
   const { data, error } = await supabase
     .from("sale_kpi_targets")
@@ -1658,21 +1684,21 @@ async function fetchSaleKpiTargets(from: string, to: string) {
 }
 
 async function upsertSaleKpiTarget(form: SaleKpiForm) {
-  if (form.scope === "team" && !form.teamId) throw new Error("Chọn Team Sale");
+  if (form.scope === "team" && !form.teamId) throw new Error("Chọn phạm vi KPI Sale");
   if (form.scope === "user" && !form.userId) throw new Error("Chọn nhân viên Sale");
   if (!form.periodStart || !form.periodEnd) throw new Error("Chọn kỳ KPI");
 
   const payload: TablesInsert<"sale_kpi_targets"> = {
-    team_id: form.teamId || null,
+    team_id: form.teamId === COMPANY_SCOPE_VALUE ? null : form.teamId || null,
     user_id: form.scope === "user" ? form.userId : null,
     period_type: form.periodType,
     period_start: form.periodStart,
     period_end: form.periodEnd,
-    revenue_target: Number(form.revenueTarget || 0),
-    orders_target: Number(form.ordersTarget || 0),
+    revenue_target: 0,
+    orders_target: 0,
     close_rate_target: Number(form.closeRateTarget || 0),
     average_order_target: Number(form.averageOrderTarget || 0),
-    note: form.note.trim() || null,
+    note: null,
   };
 
   if (form.id) {
