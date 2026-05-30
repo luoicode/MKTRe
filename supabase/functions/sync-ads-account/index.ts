@@ -466,13 +466,10 @@ function sumMapValues(values: Map<string, number>) {
 function getResultCount(campaignName: string, actions: MetaAction[]) {
   const normalizedName = normalizeVietnamese(campaignName);
   if (normalizedName.includes("mess")) {
-    return sumActions(actions, [
+    return getFirstActionValue(actions, [
       "onsite_conversion.messaging_conversation_started_7d",
       "onsite_conversion.messaging_first_reply",
       "onsite_conversion.messaging_user_subscribed",
-      "lead",
-      "onsite_conversion.lead_grouped",
-      "offsite_conversion.fb_pixel_lead",
     ]);
   }
 
@@ -481,13 +478,7 @@ function getResultCount(campaignName: string, actions: MetaAction[]) {
     normalizedName.includes("cd") ||
     normalizedName.includes("cđ")
   ) {
-    return sumActions(actions, [
-      "complete_registration",
-      "offsite_conversion.fb_pixel_complete_registration",
-      "onsite_conversion.complete_registration",
-      "lead",
-      "offsite_conversion.fb_pixel_lead",
-    ]);
+    return getActionValueByPrefix(actions, "offsite_complete_registration_add_meta");
   }
 
   return 0;
@@ -509,6 +500,30 @@ function sumActions(actions: MetaAction[], preferredTypes: string[]) {
     if (!type || !preferred.has(type)) return total;
     return total + toNumber(action.value);
   }, 0);
+}
+
+function getFirstActionValue(actions: MetaAction[], preferredTypes: string[]) {
+  const actionByType = new Map(
+    actions
+      .filter((action) => action.action_type)
+      .map((action) => [action.action_type!.toLowerCase(), action]),
+  );
+
+  for (const preferredType of preferredTypes) {
+    const action = actionByType.get(preferredType.toLowerCase());
+    if (action) return toNumber(action.value);
+  }
+
+  return 0;
+}
+
+function getActionValueByPrefix(actions: MetaAction[], actionTypePrefix: string) {
+  const normalizedPrefix = actionTypePrefix.toLowerCase();
+  const action = actions.find((item) =>
+    item.action_type?.toLowerCase().startsWith(normalizedPrefix),
+  );
+
+  return action ? toNumber(action.value) : 0;
 }
 
 function normalizeDelivery(status?: string): Delivery {
