@@ -198,7 +198,7 @@ export function NotificationsBell() {
 
   useEffect(() => {
     if (typeof document === "undefined") return;
-    document.title = unread > 0 ? `(${unread}) 🔔 ${APP_TITLE}` : APP_TITLE;
+    document.title = unread > 0 ? `(${unread}) ${APP_TITLE}` : APP_TITLE;
     return () => {
       document.title = APP_TITLE;
     };
