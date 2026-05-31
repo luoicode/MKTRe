@@ -56,6 +56,7 @@ function AdminMarketingReports() {
   const [now, setNow] = useState(new Date().toISOString());
   const ref = useRef<HTMLDivElement>(null);
   const normalizedRange = normalizeDateRange(range);
+  const shouldIncludeInactiveWithReports = !["today", "yesterday"].includes(range.preset);
   const dateLabel =
     normalizedRange.from === normalizedRange.to
       ? formatDateVN(normalizedRange.from)
@@ -85,15 +86,18 @@ function AdminMarketingReports() {
         teamIds: selectedTeamIds,
         from: normalizedRange.from,
         to: normalizedRange.to,
-        includeInactive: true,
+        includeInactive: shouldIncludeInactiveWithReports,
       });
+      const rows = shouldIncludeInactiveWithReports
+        ? agg.rows.filter((row) => row.profile_status === "active" || row.hasReport)
+        : agg.rows;
 
       const leaderNames = await getLeaderNamesByTeam(selectedTeamIds);
       setNow(new Date().toISOString());
       return {
         teams: allTeams,
         selectedTeams,
-        rows: agg.rows,
+        rows,
         leaderNames,
       };
     },

@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { FloatingLeadLifecycleDashboard } from "@/components/FloatingLeadLifecycleDashboard";
+import { TablePagination } from "@/components/TablePagination";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,6 +60,7 @@ import {
 } from "@/lib/saleReportUtils";
 import { summarizeSaleReports, type SaleReportRow } from "@/lib/saleReports";
 import { cn } from "@/lib/utils";
+import { usePagination } from "@/lib/usePagination";
 
 type SaleProfile = {
   id: string;
@@ -973,6 +975,10 @@ export function AdminFloatingLeadsWorkspace() {
     }),
     [visibleLeads],
   );
+  const leadPagination = usePagination({
+    items: visibleLeads,
+    resetKey: `${normalizedRange.from}|${normalizedRange.to}|${search}|${status}|${marketingId}|${saleId}`,
+  });
   const openCreateDialog = () => {
     setCreateForm((current) => ({
       ...current,
@@ -1152,12 +1158,12 @@ export function AdminFloatingLeadsWorkspace() {
                 </tr>
               </thead>
               <tbody>
-                {visibleLeads.map((lead, index) => {
+                {leadPagination.paginatedItems.map((lead, index) => {
                   const statusLabel = getFloatingLeadDisplayStatus(lead);
                   return (
                     <tr key={lead.id} className="border-t border-slate-100 hover:bg-slate-50/70">
                       <td className="px-3 py-2.5 text-center font-semibold text-slate-500">
-                        {index + 1}
+                        {(leadPagination.page - 1) * leadPagination.pageSize + index + 1}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">
                         {formatDate(lead.lead_date)}
@@ -1221,10 +1227,20 @@ export function AdminFloatingLeadsWorkspace() {
                     </tr>
                   );
                 })}
+                {Array.from({ length: leadPagination.emptyRowsCount }).map((_, index) => (
+                  <tr key={`empty-${index}`} className="h-[52px] border-t border-slate-100">
+                    <td colSpan={10} />
+                  </tr>
+                ))}
                 {!visibleLeads.length && <EmptyTableRow colSpan={10} />}
               </tbody>
             </table>
           </CardContent>
+          <TablePagination
+            page={leadPagination.page}
+            totalPages={leadPagination.totalPages}
+            onPageChange={leadPagination.setPage}
+          />
         </Card>
       )}
 

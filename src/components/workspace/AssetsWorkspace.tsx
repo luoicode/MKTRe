@@ -54,6 +54,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { PageShell, ScrollArea } from "@/components/layout/PageShell";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { RefreshButton } from "@/components/RefreshButton";
+import { TablePagination } from "@/components/TablePagination";
+import { usePagination } from "@/lib/usePagination";
 import { toast } from "sonner";
 
 type Asset = Tables<"assets">;
@@ -299,6 +301,10 @@ export function AssetsWorkspace() {
       .join(" ")
       .toLowerCase();
     return haystack.includes(query.trim().toLowerCase());
+  });
+  const assetPagination = usePagination({
+    items: filteredAssets,
+    resetKey: `${query}|${groupFilter}|${teamFilter}|${userFilter}|${typeFilter}|${statusFilter}`,
   });
 
   const allowedGroups = getAllowedGroups(role);
@@ -570,19 +576,27 @@ export function AssetsWorkspace() {
             <Loader2 className="h-6 w-6 animate-spin" />
           </div>
         ) : filteredAssets.length ? (
-          <AssetTable
-            assets={filteredAssets}
-            teamMap={teamMap}
-            profileMap={profileMap}
-            role={role}
-            profileId={profile?.id}
-            visibleSecretIds={visibleSecretIds}
-            onToggleSecret={toggleSecretVisible}
-            onCopy={copyText}
-            onDetail={setDetailAsset}
-            onEdit={openEdit}
-            onDelete={deleteAsset}
-          />
+          <>
+            <AssetTable
+              assets={assetPagination.paginatedItems}
+              emptyRowsCount={assetPagination.emptyRowsCount}
+              teamMap={teamMap}
+              profileMap={profileMap}
+              role={role}
+              profileId={profile?.id}
+              visibleSecretIds={visibleSecretIds}
+              onToggleSecret={toggleSecretVisible}
+              onCopy={copyText}
+              onDetail={setDetailAsset}
+              onEdit={openEdit}
+              onDelete={deleteAsset}
+            />
+            <TablePagination
+              page={assetPagination.page}
+              totalPages={assetPagination.totalPages}
+              onPageChange={assetPagination.setPage}
+            />
+          </>
         ) : (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
@@ -939,6 +953,7 @@ async function getMemberships(role: AppRole, teamIds: string[]) {
 
 function AssetTable({
   assets,
+  emptyRowsCount = 0,
   teamMap,
   profileMap,
   role,
@@ -951,6 +966,7 @@ function AssetTable({
   onDelete,
 }: {
   assets: Asset[];
+  emptyRowsCount?: number;
   teamMap: Map<string, string>;
   profileMap: Map<string, ProfileRow>;
   role: AppRole | null;
@@ -1000,6 +1016,11 @@ function AssetTable({
                   />
                 );
               })}
+              {Array.from({ length: emptyRowsCount }).map((_, index) => (
+                <TableRow key={`empty-${index}`} className="h-[60px] bg-white hover:bg-white">
+                  <TableCell colSpan={9} />
+                </TableRow>
+              ))}
             </TableBody>
           </table>
         </div>

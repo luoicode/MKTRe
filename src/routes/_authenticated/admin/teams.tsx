@@ -56,6 +56,8 @@ interface TeamWithMembershipLeader {
   memberCount: number;
 }
 
+type TeamMemberProfile = { full_name: string; username: string; status?: string | null };
+
 function AdminTeams() {
   const qc = useQueryClient();
   const [department, setDepartment] = useState<TeamDepartment>("marketing");
@@ -76,20 +78,21 @@ function AdminTeams() {
       const { data: memberships } = teamIds.length
         ? await supabase
             .from("team_memberships")
-            .select("team_id, user_id, role_in_team, profiles(full_name, username)")
+            .select("team_id, user_id, role_in_team, profiles(full_name, username, status)")
             .in("team_id", teamIds)
             .eq("is_active", true)
         : { data: [] };
       const leaderByTeam = new Map<string, { full_name: string; username: string }>();
       const memberCountByTeam = new Map<string, number>();
       for (const membership of memberships ?? []) {
+        const profile = membership.profiles as TeamMemberProfile | null;
+        if (!profile || profile.status !== "active") continue;
         memberCountByTeam.set(
           membership.team_id,
           (memberCountByTeam.get(membership.team_id) ?? 0) + 1,
         );
         if (membership.role_in_team !== "leader") continue;
-        const profile = membership.profiles as { full_name: string; username: string } | null;
-        if (profile && !leaderByTeam.has(membership.team_id)) {
+        if (!leaderByTeam.has(membership.team_id)) {
           leaderByTeam.set(membership.team_id, profile);
         }
       }
@@ -498,10 +501,13 @@ function MembersDialog({
     queryFn: async () => {
       const { data } = await supabase
         .from("team_memberships")
-        .select("*, profiles(full_name, username)")
+        .select("*, profiles(full_name, username, status)")
         .eq("team_id", teamId)
         .eq("is_active", true);
-      return data ?? [];
+      return (data ?? []).filter((membership) => {
+        const profile = membership.profiles as TeamMemberProfile | null;
+        return profile?.status === "active";
+      });
     },
   });
 
@@ -795,7 +801,7 @@ function MembersDialog({
 
         <div className="space-y-2 max-h-64 overflow-y-auto">
           {(members ?? []).map((m) => {
-            const p = m.profiles as { full_name: string; username: string } | null;
+            const p = m.profiles as TeamMemberProfile | null;
             const isLeader = m.role_in_team === "leader";
             return (
               <div key={m.id} className="flex items-center justify-between rounded-md border p-2">

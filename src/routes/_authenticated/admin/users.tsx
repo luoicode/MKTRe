@@ -34,8 +34,10 @@ import {
 import { Edit, Loader2, Megaphone, Plus, ShieldCheck, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
 import { RefreshButton } from "@/components/RefreshButton";
+import { TablePagination } from "@/components/TablePagination";
 import { UserAvatar } from "@/components/UserAvatar";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
+import { usePagination } from "@/lib/usePagination";
 import { APP_ROLES, ROLE_LABELS, isSaleRole, type AppRole } from "@/lib/roles";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({ component: AdminUsers });
@@ -271,6 +273,10 @@ function AdminUsers() {
       (u.activeTeamName ?? "").toLowerCase().includes(s)
     );
   });
+  const userPagination = usePagination({
+    items: filtered,
+    resetKey: search,
+  });
 
   return (
     <div className="space-y-6">
@@ -328,7 +334,7 @@ function AdminUsers() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((u) => (
+                  {userPagination.paginatedItems.map((u) => (
                     <TableRow key={u.id}>
                       <TableCell>
                         <div className="flex min-w-[220px] items-center gap-3">
@@ -356,6 +362,11 @@ function AdminUsers() {
                       </TableCell>
                     </TableRow>
                   ))}
+                  {Array.from({ length: userPagination.emptyRowsCount }).map((_, index) => (
+                    <TableRow key={`empty-${index}`} className="h-[65px] hover:bg-transparent">
+                      <TableCell colSpan={6} />
+                    </TableRow>
+                  ))}
                   {filtered.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
@@ -365,6 +376,11 @@ function AdminUsers() {
                   )}
                 </TableBody>
               </Table>
+              <TablePagination
+                page={userPagination.page}
+                totalPages={userPagination.totalPages}
+                onPageChange={userPagination.setPage}
+              />
             </div>
           )}
         </CardContent>

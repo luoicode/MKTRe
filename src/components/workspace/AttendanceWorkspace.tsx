@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { PageShell, ScrollArea } from "@/components/layout/PageShell";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { RefreshButton } from "@/components/RefreshButton";
+import { TablePagination } from "@/components/TablePagination";
 import { UserAvatar } from "@/components/UserAvatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
+import { usePagination } from "@/lib/usePagination";
 
 type AttendanceRecord = Tables<"attendance_records">;
 type DailyTemplate = Tables<"daily_task_templates">;
@@ -1252,6 +1254,10 @@ function ManagementAttendanceView({
           ),
         );
   const calendarProfileId = userFilter !== "all" ? userFilter : null;
+  const profilePagination = usePagination({
+    items: filteredProfiles,
+    resetKey: `${selectedDate}|${teamFilter}|${userFilter}|${statusFilter}`,
+  });
 
   return (
     <ScrollArea className="space-y-4 md:pr-2">
@@ -1360,7 +1366,7 @@ function ManagementAttendanceView({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredProfiles.map((user) => {
+              {profilePagination.paginatedItems.map((user) => {
                 const record = records.find(
                   (item) => item.user_id === user.id && getRecordDateKey(item) === selectedDate,
                 );
@@ -1463,6 +1469,11 @@ function ManagementAttendanceView({
                   </TableRow>
                 );
               })}
+              {Array.from({ length: profilePagination.emptyRowsCount }).map((_, index) => (
+                <TableRow key={`empty-${index}`} className="h-[64px] hover:bg-transparent">
+                  <TableCell colSpan={isSaleTeamAttendance ? 5 : 7} />
+                </TableRow>
+              ))}
               {!filteredProfiles.length ? (
                 <TableRow>
                   <TableCell colSpan={7}>
@@ -1472,6 +1483,11 @@ function ManagementAttendanceView({
               ) : null}
             </TableBody>
           </Table>
+          <TablePagination
+            page={profilePagination.page}
+            totalPages={profilePagination.totalPages}
+            onPageChange={profilePagination.setPage}
+          />
         </CardContent>
       </Card>
     </ScrollArea>

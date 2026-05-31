@@ -11,6 +11,7 @@ export interface EmployeeLatest {
   user_id: string;
   full_name: string;
   username: string;
+  profile_status: "active" | "inactive" | string;
   team_id: string;
   // latest report (only counted if status submitted/approved). may be null when no report
   report_id: string | null;
@@ -55,6 +56,8 @@ export interface TeamTotals {
 
 const COUNT_STATUSES = new Set(["submitted", "approved"]);
 const TEAM_MEMBER_REPORT_ROLES = new Set(["leader", "employee", "member"]);
+const MARKETING_APP_ROLE_VALUES = ["leader", "employee"] as const;
+const MARKETING_APP_ROLES = new Set<string>(MARKETING_APP_ROLE_VALUES);
 
 export function emptyTotals(totalEmployees = 0): TeamTotals {
   return {
@@ -130,7 +133,15 @@ export async function getLatestDailyReportPerEmployee(params: {
     TEAM_MEMBER_REPORT_ROLES.has(String(membership.role_in_team)),
   );
   const rawUserIds = Array.from(new Set(membershipRows.map((m) => m.user_id)));
-  const userIds = rawUserIds;
+  const { data: appRoles } = rawUserIds.length
+    ? await supabase
+        .from("user_roles")
+        .select("user_id, role")
+        .in("user_id", rawUserIds)
+        .in("role", MARKETING_APP_ROLE_VALUES)
+    : { data: [] as { user_id: string; role: string }[] };
+  const marketingUserIds = new Set((appRoles ?? []).map((role) => role.user_id));
+  const userIds = rawUserIds.filter((userId) => marketingUserIds.has(userId));
   const teamByUser = new Map(membershipRows.map((m) => [m.user_id, m.team_id]));
 
   const reportFilters = [`team_id.in.(${teamIds.join(",")})`];
@@ -179,6 +190,7 @@ export async function getLatestDailyReportPerEmployee(params: {
       user_id: p.id,
       full_name: p.full_name,
       username: p.username,
+      profile_status: p.status,
       team_id: teamByUser.get(p.id) ?? "",
       report_id: r?.id ?? null,
       slot_id: r?.slot_id ?? null,

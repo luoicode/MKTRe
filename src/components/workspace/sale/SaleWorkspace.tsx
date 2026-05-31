@@ -1205,12 +1205,16 @@ export function LeaderSaleTeamWorkspace() {
     },
   });
   const members = useMemo(() => data?.teamData.members ?? [], [data?.teamData.members]);
+  const activeMembers = useMemo(
+    () => members.filter((member) => member.status === "active"),
+    [members],
+  );
   const leaderTeams = useMemo(() => data?.teamData.teams ?? [], [data?.teamData.teams]);
   const teamLeads = useMemo(() => data?.teamData.leads ?? [], [data?.teamData.leads]);
   const teamReports = useMemo(() => data?.reports ?? [], [data?.reports]);
   const memberPerformance = useMemo(
-    () => buildSaleMemberPerformance(members, teamLeads, teamReports),
-    [members, teamLeads, teamReports],
+    () => buildSaleMemberPerformance(activeMembers, teamLeads, teamReports),
+    [activeMembers, teamLeads, teamReports],
   );
   const performanceById = useMemo(
     () => new Map(memberPerformance.map((item) => [item.id, item])),
@@ -1280,7 +1284,7 @@ export function LeaderSaleTeamWorkspace() {
                   </tr>
                 </thead>
                 <tbody>
-                  {members.map((member) => {
+                  {activeMembers.map((member) => {
                     const performance = performanceById.get(member.id);
                     return (
                       <tr key={member.id} className="border-t border-slate-100 hover:bg-slate-50">
@@ -1328,7 +1332,7 @@ export function LeaderSaleTeamWorkspace() {
                       </tr>
                     );
                   })}
-                  {!members.length && (
+                  {!activeMembers.length && (
                     <tr>
                       <td colSpan={8} className="px-4 py-10 text-center text-muted-foreground">
                         Chưa có thành viên team.
