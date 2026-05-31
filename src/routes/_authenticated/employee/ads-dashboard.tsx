@@ -736,105 +736,128 @@ export function AdsCampaignTable({
         </div>
       </div>
 
-      <div className="max-h-[min(58vh,620px)] overflow-auto">
-        <table className="w-full min-w-[960px] text-sm">
-          <thead className="text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">
-            <tr>
-              <SortableTh sortKey="name" sortState={sortState} onSort={toggleSort}>
-                Tên Campaign
-              </SortableTh>
-              <SortableTh sortKey="delivery" sortState={sortState} onSort={toggleSort}>
-                Phân phối
-              </SortableTh>
-              <SortableTh align="right" sortKey="budget" sortState={sortState} onSort={toggleSort}>
-                Ngân sách
-              </SortableTh>
-              <SortableTh align="right" sortKey="spent" sortState={sortState} onSort={toggleSort}>
-                Đã tiêu
-              </SortableTh>
-              <SortableTh align="right" sortKey="result" sortState={sortState} onSort={toggleSort}>
-                Kết quả
-              </SortableTh>
-              <SortableTh
-                align="right"
-                sortKey="purchase"
-                sortState={sortState}
-                onSort={toggleSort}
-              >
-                Lượt mua
-              </SortableTh>
-              <SortableTh
-                align="right"
-                sortKey="costPerResult"
-                sortState={sortState}
-                onSort={toggleSort}
-              >
-                Chi phí / KQ
-              </SortableTh>
-            </tr>
-          </thead>
-          <tbody>
-            {displayedCampaigns.length ? (
-              displayedCampaigns.map((campaign) => (
-                <tr
-                  key={campaign.campaignId}
-                  className="border-b border-slate-100 transition-colors hover:bg-slate-50/70"
-                >
-                  <td className="px-3.5 py-2.5">
-                    <div className="max-w-[360px] font-medium leading-snug text-blue-950/90">
-                      {campaign.name}
-                    </div>
-                  </td>
-                  <td className="px-3.5 py-2.5">
-                    <DeliveryStatus campaign={campaign} />
-                  </td>
-                  <td className="whitespace-nowrap px-3.5 py-2.5 text-right">
-                    {formatMoney(campaign.budget)}
-                  </td>
-                  <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-semibold text-orange-700">
-                    {formatMoney(campaign.spent)}
-                  </td>
-                  <td className="px-3.5 py-2.5 text-right">
-                    <ResultMetric campaign={campaign} />
-                  </td>
-                  <td className="px-3.5 py-2.5 text-right">
-                    <PurchaseMetric purchase={campaign.purchase} />
-                  </td>
-                  <td className="whitespace-nowrap px-3.5 py-2.5 text-right">
-                    {formatCostPerResult(campaign.spent, campaign.result)}
-                  </td>
-                </tr>
-              ))
-            ) : (
+      <div className="overflow-x-auto">
+        <div className="min-w-[960px]">
+          <table className="w-full table-fixed text-sm">
+            <CampaignTableColgroup />
+            <thead className="text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">
               <tr>
-                <td colSpan={7} className="px-3.5 py-10 text-center text-sm text-slate-500">
-                  {emptyMessage}
+                <SortableTh sortKey="name" sortState={sortState} onSort={toggleSort}>
+                  Tên Campaign
+                </SortableTh>
+                <SortableTh sortKey="delivery" sortState={sortState} onSort={toggleSort}>
+                  Phân phối
+                </SortableTh>
+                <SortableTh
+                  align="right"
+                  sortKey="budget"
+                  sortState={sortState}
+                  onSort={toggleSort}
+                >
+                  Ngân sách
+                </SortableTh>
+                <SortableTh align="right" sortKey="spent" sortState={sortState} onSort={toggleSort}>
+                  Đã tiêu
+                </SortableTh>
+                <SortableTh
+                  align="right"
+                  sortKey="result"
+                  sortState={sortState}
+                  onSort={toggleSort}
+                >
+                  Kết quả
+                </SortableTh>
+                <SortableTh
+                  align="right"
+                  sortKey="purchase"
+                  sortState={sortState}
+                  onSort={toggleSort}
+                >
+                  Lượt mua
+                </SortableTh>
+                <SortableTh
+                  align="right"
+                  sortKey="costPerResult"
+                  sortState={sortState}
+                  onSort={toggleSort}
+                >
+                  Chi phí / KQ
+                </SortableTh>
+              </tr>
+            </thead>
+          </table>
+
+          <div className="max-h-[min(48vh,520px)] overflow-y-auto border-y border-slate-100">
+            <table className="w-full table-fixed text-sm">
+              <CampaignTableColgroup />
+              <tbody>
+                {displayedCampaigns.length ? (
+                  displayedCampaigns.map((campaign) => (
+                    <tr
+                      key={campaign.campaignId}
+                      className="border-b border-slate-100 transition-colors hover:bg-slate-50/70"
+                    >
+                      <td className="px-3.5 py-2.5">
+                        <div className="max-w-[360px] font-medium leading-snug text-blue-950/90">
+                          {campaign.name}
+                        </div>
+                      </td>
+                      <td className="px-3.5 py-2.5">
+                        <DeliveryStatus campaign={campaign} />
+                      </td>
+                      <td className="whitespace-nowrap px-3.5 py-2.5 text-right">
+                        {formatMoney(campaign.budget)}
+                      </td>
+                      <td className="whitespace-nowrap px-3.5 py-2.5 text-right font-semibold text-orange-700">
+                        {formatMoney(campaign.spent)}
+                      </td>
+                      <td className="px-3.5 py-2.5 text-right">
+                        <ResultMetric campaign={campaign} />
+                      </td>
+                      <td className="px-3.5 py-2.5 text-right">
+                        <PurchaseMetric purchase={campaign.purchase} />
+                      </td>
+                      <td className="whitespace-nowrap px-3.5 py-2.5 text-right">
+                        {formatCostPerResult(campaign.spent, campaign.result)}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={7} className="px-3.5 py-10 text-center text-sm text-slate-500">
+                      {emptyMessage}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <table className="w-full table-fixed text-sm">
+            <CampaignTableColgroup />
+            <tbody>
+              <tr className="bg-blue-50/40 font-semibold">
+                <td className="px-3.5 py-2.5">Kết quả từ {visibleCampaigns.length} chiến dịch</td>
+                <td className="px-3.5 py-2.5" />
+                <td className="whitespace-nowrap px-3.5 py-2.5 text-right">
+                  {formatMoney(totals.budget)}
+                </td>
+                <td className="whitespace-nowrap px-3.5 py-2.5 text-right text-orange-700">
+                  {formatMoney(totals.spent)}
+                </td>
+                <td className="px-3.5 py-2.5 text-right">
+                  {totals.result ? formatNumber(totals.result) : "—"}
+                </td>
+                <td className="px-3.5 py-2.5 text-right">
+                  {totals.purchase ? `${formatNumber(totals.purchase)} đơn` : "—"}
+                </td>
+                <td className="whitespace-nowrap px-3.5 py-2.5 text-right">
+                  {formatCostPerResult(totals.spent, totals.result)}
                 </td>
               </tr>
-            )}
-            <tr className="bg-blue-50/40 font-semibold">
-              <td className="border-t border-slate-300 px-3.5 py-2.5">
-                Kết quả từ {visibleCampaigns.length} chiến dịch
-              </td>
-              <td className="border-t border-slate-300 px-3.5 py-2.5" />
-              <td className="whitespace-nowrap border-t border-slate-300 px-3.5 py-2.5 text-right">
-                {formatMoney(totals.budget)}
-              </td>
-              <td className="whitespace-nowrap border-t border-slate-300 px-3.5 py-2.5 text-right text-orange-700">
-                {formatMoney(totals.spent)}
-              </td>
-              <td className="border-t border-slate-300 px-3.5 py-2.5 text-right">
-                {totals.result ? formatNumber(totals.result) : "—"}
-              </td>
-              <td className="border-t border-slate-300 px-3.5 py-2.5 text-right">
-                {totals.purchase ? `${formatNumber(totals.purchase)} đơn` : "—"}
-              </td>
-              <td className="whitespace-nowrap border-t border-slate-300 px-3.5 py-2.5 text-right">
-                {formatCostPerResult(totals.spent, totals.result)}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        </div>
       </div>
       {visibleCampaigns.length > ALL_CAMPAIGNS_PAGE_SIZE ? (
         <div className="flex flex-wrap items-center justify-end gap-1.5 border-t border-slate-100 px-4 py-3">
@@ -1122,6 +1145,20 @@ function AccountSpendLimitCard({
         Đồng bộ lần cuối: {formatAdsDateTime(lastSyncedAt)}
       </div>
     </article>
+  );
+}
+
+function CampaignTableColgroup() {
+  return (
+    <colgroup>
+      <col className="w-[31%]" />
+      <col className="w-[17%]" />
+      <col className="w-[12%]" />
+      <col className="w-[12%]" />
+      <col className="w-[11%]" />
+      <col className="w-[8%]" />
+      <col className="w-[9%]" />
+    </colgroup>
   );
 }
 
