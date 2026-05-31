@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 
-export type CampaignDelivery = "ACTIVE" | "PAUSED" | "WARNING";
+export type CampaignDelivery = "ACTIVE" | "PAUSED" | "WARNING" | "SCHEDULED";
 
 export interface AdsCampaign {
   campaignId: string;
@@ -439,10 +439,17 @@ function getLatestSyncTime(accounts: AdsAccountPublicRow[], snapshots: AdsCampai
 
 function normalizeCampaignDelivery(delivery: string): CampaignDelivery {
   const normalized = delivery.toUpperCase();
-  if (normalized === "ACTIVE" || normalized === "PAUSED" || normalized === "WARNING") {
+  if (
+    normalized === "ACTIVE" ||
+    normalized === "PAUSED" ||
+    normalized === "WARNING" ||
+    normalized === "SCHEDULED"
+  ) {
     return normalized;
   }
   if (normalized === "CAMPAIGN_PAUSED" || normalized === "ADSET_PAUSED") return "PAUSED";
+  if (normalized === "PENDING_REVIEW" || normalized === "IN_PROCESS" || normalized === "PENDING")
+    return "SCHEDULED";
   if (normalized === "WITH_ISSUES" || normalized === "DISAPPROVED") return "WARNING";
   return "PAUSED";
 }

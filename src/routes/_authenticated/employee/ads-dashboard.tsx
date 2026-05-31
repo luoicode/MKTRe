@@ -1,6 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { KeyRound, Loader2, Plus, RefreshCw, Square } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronsUpDown,
+  KeyRound,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Square,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,6 +39,15 @@ export const Route = createFileRoute("/_authenticated/employee/ads-dashboard")({
 });
 
 type CampaignFilter = "active" | "all";
+type CampaignSortKey =
+  | "name"
+  | "delivery"
+  | "budget"
+  | "spent"
+  | "result"
+  | "purchase"
+  | "costPerResult";
+type CampaignSortState = { key: CampaignSortKey; direction: "asc" | "desc" } | null;
 
 interface NewAccountForm {
   accountName: string;
@@ -594,7 +612,8 @@ function AdsAccountTabs({
 
 export function AdsKpiCards({ account }: { account: AdsAccount | null }) {
   const activeCampaignCount =
-    account?.campaigns.filter((campaign) => campaign.delivery === "ACTIVE").length ?? 0;
+    account?.campaigns.filter((campaign) => getCampaignDeliveryState(campaign).key === "active")
+      .length ?? 0;
   const remainingBudget = Math.max((account?.spendLimit ?? 0) - (account?.amountSpent ?? 0), 0);
   const spendPercent =
     account && account.spendLimit > 0
@@ -627,23 +646,26 @@ export function AdsCampaignTable({
 }) {
   const [campaignFilter, setCampaignFilter] = useState<CampaignFilter>("active");
   const [currentPage, setCurrentPage] = useState(1);
+  const [sortState, setSortState] = useState<CampaignSortState>(null);
   const activeAdsetTotal =
     account?.campaigns.reduce((total, campaign) => total + campaign.activeAdsetCount, 0) ?? 0;
   const visibleCampaigns = useMemo(() => {
     const campaigns = account?.campaigns ?? [];
-    if (campaignFilter === "all") return campaigns;
-    return campaigns.filter((campaign) => campaign.activeAdsetCount > 0);
-  }, [account, campaignFilter]);
+    const filtered =
+      campaignFilter === "all"
+        ? campaigns
+        : campaigns.filter((campaign) => getCampaignDeliveryState(campaign).key === "active");
+    return sortCampaigns(filtered, sortState);
+  }, [account, campaignFilter, sortState]);
   const totals = useMemo(() => calculateCampaignTotals(visibleCampaigns), [visibleCampaigns]);
-  const totalPages =
-    campaignFilter === "all"
-      ? Math.min(Math.ceil(visibleCampaigns.length / ALL_CAMPAIGNS_PAGE_SIZE), MAX_CAMPAIGN_PAGES)
-      : 1;
+  const totalPages = Math.min(
+    Math.ceil(visibleCampaigns.length / ALL_CAMPAIGNS_PAGE_SIZE),
+    MAX_CAMPAIGN_PAGES,
+  );
   const displayedCampaigns = useMemo(() => {
-    if (campaignFilter !== "all") return visibleCampaigns;
     const startIndex = (currentPage - 1) * ALL_CAMPAIGNS_PAGE_SIZE;
     return visibleCampaigns.slice(startIndex, startIndex + ALL_CAMPAIGNS_PAGE_SIZE);
-  }, [campaignFilter, currentPage, visibleCampaigns]);
+  }, [currentPage, visibleCampaigns]);
   const emptyMessage =
     campaignFilter === "active"
       ? "Không có campaign nào có nhóm quảng cáo đang hoạt động"
@@ -658,6 +680,15 @@ export function AdsCampaignTable({
       setCurrentPage(Math.max(totalPages, 1));
     }
   }, [currentPage, totalPages]);
+
+  const toggleSort = (key: CampaignSortKey) => {
+    setCurrentPage(1);
+    setSortState((current) => {
+      if (!current || current.key !== key) return { key, direction: "asc" };
+      if (current.direction === "asc") return { key, direction: "desc" };
+      return null;
+    });
+  };
 
   return (
     <section className="overflow-hidden rounded-[18px] border border-slate-200/80 bg-white shadow-sm">
@@ -707,15 +738,39 @@ export function AdsCampaignTable({
 
       <div className="max-h-[min(58vh,620px)] overflow-auto">
         <table className="w-full min-w-[960px] text-sm">
-          <thead className="bg-slate-50/80 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">
+          <thead className="text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-3.5 py-2.5">Tên Campaign</th>
-              <th className="px-3.5 py-2.5">Phân phối</th>
-              <th className="px-3.5 py-2.5 text-right">Ngân sách</th>
-              <th className="px-3.5 py-2.5 text-right">Đã tiêu</th>
-              <th className="px-3.5 py-2.5 text-right">Kết quả</th>
-              <th className="px-3.5 py-2.5 text-right">Lượt mua</th>
-              <th className="px-3.5 py-2.5 text-right">Chi phí / KQ</th>
+              <SortableTh sortKey="name" sortState={sortState} onSort={toggleSort}>
+                Tên Campaign
+              </SortableTh>
+              <SortableTh sortKey="delivery" sortState={sortState} onSort={toggleSort}>
+                Phân phối
+              </SortableTh>
+              <SortableTh align="right" sortKey="budget" sortState={sortState} onSort={toggleSort}>
+                Ngân sách
+              </SortableTh>
+              <SortableTh align="right" sortKey="spent" sortState={sortState} onSort={toggleSort}>
+                Đã tiêu
+              </SortableTh>
+              <SortableTh align="right" sortKey="result" sortState={sortState} onSort={toggleSort}>
+                Kết quả
+              </SortableTh>
+              <SortableTh
+                align="right"
+                sortKey="purchase"
+                sortState={sortState}
+                onSort={toggleSort}
+              >
+                Lượt mua
+              </SortableTh>
+              <SortableTh
+                align="right"
+                sortKey="costPerResult"
+                sortState={sortState}
+                onSort={toggleSort}
+              >
+                Chi phí / KQ
+              </SortableTh>
             </tr>
           </thead>
           <tbody>
@@ -731,7 +786,7 @@ export function AdsCampaignTable({
                     </div>
                   </td>
                   <td className="px-3.5 py-2.5">
-                    <DeliveryStatus activeAdsetCount={campaign.activeAdsetCount} />
+                    <DeliveryStatus campaign={campaign} />
                   </td>
                   <td className="whitespace-nowrap px-3.5 py-2.5 text-right">
                     {formatMoney(campaign.budget)}
@@ -781,7 +836,7 @@ export function AdsCampaignTable({
           </tbody>
         </table>
       </div>
-      {campaignFilter === "all" && visibleCampaigns.length > ALL_CAMPAIGNS_PAGE_SIZE ? (
+      {visibleCampaigns.length > ALL_CAMPAIGNS_PAGE_SIZE ? (
         <div className="flex flex-wrap items-center justify-end gap-1.5 border-t border-slate-100 px-4 py-3">
           <Button
             type="button"
@@ -1070,11 +1125,41 @@ function AccountSpendLimitCard({
   );
 }
 
-function DeliveryStatus({ activeAdsetCount }: { activeAdsetCount: number }) {
-  const item =
-    activeAdsetCount > 0
-      ? { label: "Đang hoạt động", dot: "bg-emerald-500", text: "text-emerald-700" }
-      : { label: "Nhóm quảng cáo: Tắt", dot: "bg-slate-400", text: "text-slate-500" };
+function SortableTh({
+  align = "left",
+  children,
+  onSort,
+  sortKey,
+  sortState,
+}: {
+  align?: "left" | "right";
+  children: string;
+  onSort: (key: CampaignSortKey) => void;
+  sortKey: CampaignSortKey;
+  sortState: CampaignSortState;
+}) {
+  const isActive = sortState?.key === sortKey;
+  const Icon = !isActive ? ChevronsUpDown : sortState.direction === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <th className="sticky top-0 z-10 bg-slate-50 px-3.5 py-2.5">
+      <button
+        type="button"
+        className={cn(
+          "inline-flex w-full items-center gap-1.5 text-xs font-bold uppercase tracking-wide transition-colors hover:text-slate-900",
+          align === "right" ? "justify-end text-right" : "justify-start text-left",
+          isActive ? "text-slate-950" : "text-slate-500",
+        )}
+        onClick={() => onSort(sortKey)}
+      >
+        <span>{children}</span>
+        <Icon className={cn("h-3.5 w-3.5", isActive ? "opacity-100" : "opacity-45")} />
+      </button>
+    </th>
+  );
+}
+
+function DeliveryStatus({ campaign }: { campaign: AdsCampaign }) {
+  const item = getCampaignDeliveryState(campaign);
   return (
     <span
       className={cn(
@@ -1086,6 +1171,78 @@ function DeliveryStatus({ activeAdsetCount }: { activeAdsetCount: number }) {
       {item.label}
     </span>
   );
+}
+
+function getCampaignDeliveryState(campaign: AdsCampaign) {
+  if (campaign.delivery === "SCHEDULED") {
+    return {
+      key: "scheduled" as const,
+      rank: 2,
+      label: "Đã lên lịch",
+      dot: "bg-amber-500",
+      text: "text-amber-700",
+    };
+  }
+  if (campaign.delivery === "ACTIVE" && campaign.activeAdsetCount > 0) {
+    return {
+      key: "active" as const,
+      rank: 1,
+      label: "Đang hoạt động",
+      dot: "bg-emerald-500",
+      text: "text-emerald-700",
+    };
+  }
+  if (campaign.activeAdsetCount === 0 || campaign.delivery === "PAUSED") {
+    return {
+      key: "adsets_off" as const,
+      rank: 3,
+      label: "Nhóm quảng cáo: Tắt",
+      dot: "bg-slate-400",
+      text: "text-slate-500",
+    };
+  }
+  return {
+    key: "other" as const,
+    rank: 4,
+    label: "Trạng thái khác",
+    dot: "bg-slate-400",
+    text: "text-slate-500",
+  };
+}
+
+function sortCampaigns(campaigns: AdsCampaign[], sortState: CampaignSortState) {
+  const direction = sortState?.direction === "desc" ? -1 : 1;
+  return [...campaigns].sort((a, b) => {
+    if (!sortState) {
+      return (
+        getCampaignDeliveryState(a).rank - getCampaignDeliveryState(b).rank ||
+        a.name.localeCompare(b.name, "vi")
+      );
+    }
+
+    const compared = compareCampaignValue(a, b, sortState.key);
+    return compared * direction;
+  });
+}
+
+function compareCampaignValue(a: AdsCampaign, b: AdsCampaign, key: CampaignSortKey) {
+  if (key === "name") return a.name.localeCompare(b.name, "vi");
+  if (key === "delivery") {
+    return (
+      getCampaignDeliveryState(a).rank - getCampaignDeliveryState(b).rank ||
+      a.name.localeCompare(b.name, "vi")
+    );
+  }
+  if (key === "budget") return a.budget - b.budget;
+  if (key === "spent") return a.spent - b.spent;
+  if (key === "result") return (a.result ?? 0) - (b.result ?? 0);
+  if (key === "purchase") return (a.purchase ?? 0) - (b.purchase ?? 0);
+  return getCostPerResultValue(a) - getCostPerResultValue(b);
+}
+
+function getCostPerResultValue(campaign: AdsCampaign) {
+  if (!campaign.result) return Number.POSITIVE_INFINITY;
+  return campaign.spent / campaign.result;
 }
 
 function ResultMetric({ campaign }: { campaign: AdsCampaign }) {

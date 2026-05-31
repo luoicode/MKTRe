@@ -9,7 +9,7 @@ const corsHeaders = {
 };
 
 type DatePreset = "today" | "yesterday" | "this_week" | "this_month" | "custom";
-type Delivery = "ACTIVE" | "PAUSED" | "WARNING";
+type Delivery = "ACTIVE" | "PAUSED" | "WARNING" | "SCHEDULED";
 
 type SyncAdsRequest = {
   adsAccountId?: string;
@@ -41,6 +41,8 @@ type MetaCampaign = {
   name: string;
   status?: string;
   effective_status?: string;
+  start_time?: string;
+  stop_time?: string;
   daily_budget?: string;
   lifetime_budget?: string;
 };
@@ -55,6 +57,8 @@ type MetaAdset = {
   campaign_id?: string;
   effective_status?: string;
   status?: string;
+  start_time?: string;
+  end_time?: string;
 };
 
 type MetaAdsetsResponse = MetaError & {
@@ -211,8 +215,8 @@ Deno.serve(async (req: Request) => {
       fetchMetaAdsets({ accountPath, accessToken, metaApiVersion }),
     ]);
 
-    const activeAdsetCountByCampaignId = countActiveAdsetsByCampaignId(adsets);
-    const activeAdsetCount = sumMapValues(activeAdsetCountByCampaignId);
+    const adsetStatusCounts = countAdsetsByCampaignId(adsets);
+    const activeAdsetCount = sumMapValues(adsetStatusCounts.active);
     const insightsByCampaignId = new Map(
       insights
         .filter((insight) => insight.campaign_id)
@@ -225,7 +229,8 @@ Deno.serve(async (req: Request) => {
         accountId: account.id,
         campaign,
         insight,
-        activeAdsetCount: activeAdsetCountByCampaignId.get(campaign.id) ?? 0,
+        activeAdsetCount: adsetStatusCounts.active.get(campaign.id) ?? 0,
+        scheduledAdsetCount: adsetStatusCounts.scheduled.get(campaign.id) ?? 0,
         datePreset,
         dateStart: datePreset === "custom" ? dateRange.since : null,
         dateEnd: datePreset === "custom" ? dateRange.until : null,
@@ -310,7 +315,7 @@ async function fetchMetaCampaigns({
   metaApiVersion: string;
 }) {
   const params = new URLSearchParams({
-    fields: "id,name,status,effective_status,daily_budget,lifetime_budget",
+    fields: "id,name,status,effective_status,start_time,stop_time,daily_budget,lifetime_budget",
     limit: "500",
     access_token: accessToken,
   });
@@ -330,7 +335,7 @@ async function fetchMetaAdsets({
   metaApiVersion: string;
 }) {
   const params = new URLSearchParams({
-    fields: "id,campaign_id,status,effective_status",
+    fields: "id,campaign_id,status,effective_status,start_time,end_time",
     limit: "500",
     access_token: accessToken,
   });
@@ -400,6 +405,7 @@ function mapMetaCampaignToSnapshot({
   campaign,
   insight,
   activeAdsetCount,
+  scheduledAdsetCount,
   datePreset,
   dateStart,
   dateEnd,
@@ -409,6 +415,7 @@ function mapMetaCampaignToSnapshot({
   campaign: MetaCampaign;
   insight?: MetaInsight;
   activeAdsetCount: number;
+  scheduledAdsetCount: number;
   datePreset: DatePreset;
   dateStart: string | null;
   dateEnd: string | null;
@@ -423,7 +430,11 @@ function mapMetaCampaignToSnapshot({
     ads_account_id: accountId,
     campaign_id: campaign.id,
     campaign_name: campaign.name,
-    delivery: normalizeDelivery(campaign.effective_status ?? campaign.status),
+    delivery: normalizeDelivery(
+      campaign.effective_status ?? campaign.status,
+      campaign.start_time,
+      scheduledAdsetCount,
+    ),
     budget: getCampaignBudget(campaign),
     spent,
     result_count: resultCount,
@@ -441,18 +452,26 @@ function mapMetaCampaignToSnapshot({
   };
 }
 
-function countActiveAdsetsByCampaignId(adsets: MetaAdset[]) {
-  const counts = new Map<string, number>();
+function countAdsetsByCampaignId(adsets: MetaAdset[]) {
+  const active = new Map<string, number>();
+  const scheduled = new Map<string, number>();
 
   for (const adset of adsets) {
-    if (!adset.campaign_id || !isMetaActiveStatus(adset.effective_status ?? adset.status)) {
+    if (!adset.campaign_id) {
       continue;
     }
 
-    counts.set(adset.campaign_id, (counts.get(adset.campaign_id) ?? 0) + 1);
+    if (isFutureMetaTime(adset.start_time)) {
+      scheduled.set(adset.campaign_id, (scheduled.get(adset.campaign_id) ?? 0) + 1);
+      continue;
+    }
+
+    if (isMetaActiveStatus(adset.effective_status ?? adset.status)) {
+      active.set(adset.campaign_id, (active.get(adset.campaign_id) ?? 0) + 1);
+    }
   }
 
-  return counts;
+  return { active, scheduled };
 }
 
 function sumMapValues(values: Map<string, number>) {
@@ -526,9 +545,14 @@ function getActionValueByPrefix(actions: MetaAction[], actionTypePrefix: string)
   return action ? toNumber(action.value) : 0;
 }
 
-function normalizeDelivery(status?: string): Delivery {
+function normalizeDelivery(status?: string, startTime?: string, scheduledAdsetCount = 0): Delivery {
+  if (isFutureMetaTime(startTime)) return "SCHEDULED";
+  if (scheduledAdsetCount > 0) return "SCHEDULED";
   const normalized = status?.toUpperCase();
   if (normalized === "ACTIVE") return "ACTIVE";
+  if (normalized === "PENDING_REVIEW" || normalized === "IN_PROCESS" || normalized === "PENDING") {
+    return "SCHEDULED";
+  }
   if (
     normalized === "PAUSED" ||
     normalized === "CAMPAIGN_PAUSED" ||
@@ -541,6 +565,12 @@ function normalizeDelivery(status?: string): Delivery {
 
 function isMetaActiveStatus(status?: string) {
   return status?.toUpperCase() === "ACTIVE";
+}
+
+function isFutureMetaTime(value?: string) {
+  if (!value) return false;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) && timestamp > Date.now();
 }
 
 function getCampaignBudget(campaign: MetaCampaign) {
