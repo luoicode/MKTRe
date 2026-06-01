@@ -2,7 +2,10 @@ import { useState, type MouseEvent } from "react";
 import { CheckCircle2, Eye, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import {
+  approvalNotificationStatusClass,
+  approvalNotificationStatusLabel,
   approvalNotificationDetails,
+  getApprovalNotificationStatus,
   isApprovalNotificationProcessed,
   reviewApprovalNotification,
   type ApprovalNotificationLike,
@@ -33,6 +36,7 @@ export function ApprovalNotificationActions({
   const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState(false);
   const processed = isApprovalNotificationProcessed(notification);
+  const approvalStatus = getApprovalNotificationStatus(notification);
   const details = approvalNotificationDetails(notification);
 
   const stop = (event: MouseEvent) => event.stopPropagation();
@@ -65,8 +69,10 @@ export function ApprovalNotificationActions({
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2" onClick={stop}>
       {processed ? (
-        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-          Đã xử lý
+        <span
+          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${approvalNotificationStatusClass(approvalStatus)}`}
+        >
+          {approvalNotificationStatusLabel(approvalStatus)}
         </span>
       ) : (
         <>

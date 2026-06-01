@@ -15,7 +15,10 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Json, TablesInsert } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
 import { getLeaderTeamIds, getManagerTeamIds } from "@/lib/dailyAggregates";
-import { isApprovalNotification } from "@/lib/approvalNotifications";
+import {
+  isApprovalNotification,
+  syncResolvedApprovalNotifications,
+} from "@/lib/approvalNotifications";
 import { notificationTypeBadgeClass, notificationTypeLabel } from "@/lib/notifications";
 import { insertNotificationsWithTelegram, sendGroupAnnouncement } from "@/lib/telegram";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -169,7 +172,12 @@ export function NotificationsWorkspace({ mode = "auto" }: { mode?: "auto" | "his
         .select("id, status")
         .eq("status", "active");
 
-      const fetchedNotifications = (notificationsResult.data ?? []) as NotificationRow[];
+      const fetchedNotifications = isHistoryMode
+        ? ((notificationsResult.data ?? []) as NotificationRow[])
+        : await syncResolvedApprovalNotifications(
+            (notificationsResult.data ?? []) as NotificationRow[],
+            profile!.id,
+          );
       const teamNameById = new Map((teams ?? []).map((team) => [team.id, team.name]));
       const historyNotifications = buildSentHistory(fetchedNotifications, teamNameById);
       if (isHistoryMode) {

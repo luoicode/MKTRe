@@ -15,7 +15,10 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
 import { notificationTypeBadgeClass, notificationTypeLabel } from "@/lib/notifications";
-import { isApprovalNotification } from "@/lib/approvalNotifications";
+import {
+  isApprovalNotification,
+  syncResolvedApprovalNotifications,
+} from "@/lib/approvalNotifications";
 import { todayStr } from "@/lib/reports";
 import { sendTelegramForNotification } from "@/lib/telegram";
 import { playNotification } from "@/utils/playNotification";
@@ -62,6 +65,10 @@ export function NotificationsBell() {
         .order("created_at", { ascending: false })
         .limit(15);
       if (error) throw error;
+      const syncedNotifications = await syncResolvedApprovalNotifications(
+        notifications ?? [],
+        profileId,
+      );
       const { count: unreadCount, error: unreadError } = await supabase
         .from("notifications")
         .select("id", { count: "exact", head: true })
@@ -70,10 +77,10 @@ export function NotificationsBell() {
       if (unreadError) throw unreadError;
       const virtualNotifications =
         role === "employee" || role === "leader"
-          ? await buildEmployeeReminderNotifications(profileId!, notifications ?? [])
+          ? await buildEmployeeReminderNotifications(profileId!, syncedNotifications)
           : [];
       return {
-        notifications: notifications ?? [],
+        notifications: syncedNotifications,
         virtualNotifications,
         unreadCount: unreadCount ?? 0,
       };

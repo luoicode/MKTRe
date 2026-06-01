@@ -1284,15 +1284,7 @@ function getCostPerResultValue(campaign: AdsCampaign) {
 
 function ResultMetric({ campaign }: { campaign: AdsCampaign }) {
   if (!campaign.result) return <span className="text-slate-400">—</span>;
-  const type = getCampaignType(campaign.name);
-  const label =
-    type === "MESS" ? "khách hàng tiềm năng" : type === "CONVERSION" ? "lượt hoàn tất đăng ký" : "";
-  return (
-    <span className="inline-grid justify-items-end leading-tight">
-      <span className="font-bold text-slate-950">{formatNumber(campaign.result)}</span>
-      {label ? <span className="text-[11.5px] text-slate-500">{label}</span> : null}
-    </span>
-  );
+  return <span className="font-bold text-slate-950">{formatNumber(campaign.result)}</span>;
 }
 
 function PurchaseMetric({ purchase }: { purchase: number | null }) {
@@ -1316,13 +1308,6 @@ function calculateCampaignTotals(campaigns: AdsCampaign[]) {
     },
     { budget: 0, spent: 0, result: 0, purchase: 0 },
   );
-}
-
-function getCampaignType(name: string) {
-  const normalized = name.toUpperCase();
-  if (normalized.includes("MESS")) return "MESS";
-  if (normalized.includes("CĐ") || normalized.includes("CD")) return "CONVERSION";
-  return "OTHER";
 }
 
 function formatCostPerResult(spent: number, result: number | null) {

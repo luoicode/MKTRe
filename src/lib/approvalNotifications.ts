@@ -20,6 +20,8 @@ export type ApprovalDetail = {
   value: string;
 };
 
+export type ApprovalResolutionStatus = "pending" | "approved" | "rejected" | "completed";
+
 const APPROVAL_TYPES = new Set([
   "onboarding_pending_review",
   "onboarding_review",
@@ -82,9 +84,34 @@ export function isApprovalNotification(notification: ApprovalNotificationLike) {
   return APPROVAL_TYPES.has(type);
 }
 
-export function isApprovalNotificationProcessed(notification: ApprovalNotificationLike) {
+export function getApprovalNotificationStatus(
+  notification: ApprovalNotificationLike,
+): ApprovalResolutionStatus {
   const metadata = metadataRecord(notification.metadata);
-  return Boolean(stringValue(metadata.approval_status));
+  const status = firstString(metadata, ["action_status", "approval_status", "resolution_status"]);
+  if (status === "approved") return "approved";
+  if (status === "rejected") return "rejected";
+  if (status === "completed" || status === "done" || status === "resolved") return "completed";
+  return "pending";
+}
+
+export function isApprovalNotificationProcessed(notification: ApprovalNotificationLike) {
+  return getApprovalNotificationStatus(notification) !== "pending";
+}
+
+export function approvalNotificationStatusLabel(status: ApprovalResolutionStatus) {
+  if (status === "approved") return "Đã duyệt";
+  if (status === "rejected") return "Đã từ chối";
+  if (status === "completed") return "Đã hoàn thành";
+  return "Chờ duyệt";
+}
+
+export function approvalNotificationStatusClass(status: ApprovalResolutionStatus) {
+  if (status === "approved" || status === "completed") {
+    return "bg-emerald-50 text-emerald-700";
+  }
+  if (status === "rejected") return "bg-red-50 text-red-700";
+  return "bg-amber-50 text-amber-700";
 }
 
 export function approvalNotificationDetails(notification: ApprovalNotificationLike) {
@@ -212,13 +239,145 @@ export async function reviewApprovalNotification(params: {
       is_read: true,
       metadata: {
         ...metadata,
+        action_status: approved ? "approved" : "rejected",
         approval_status: approved ? "approved" : "rejected",
         approval_feedback: feedback,
         approved,
+        resolved_at: now,
+        resolved_by: reviewerProfileId,
         reviewed_by: reviewerProfileId,
         reviewed_at: now,
       } as Json,
     })
     .eq("id", notification.id);
   if (notificationError) throw notificationError;
+}
+
+export async function syncResolvedApprovalNotifications<T extends ApprovalNotificationLike>(
+  notifications: T[],
+  reviewerProfileId?: string | null,
+): Promise<T[]> {
+  const candidates = notifications.filter(
+    (notification) =>
+      isApprovalNotification(notification) &&
+      !isApprovalNotificationProcessed(notification) &&
+      notification.entity_type &&
+      notification.entity_id,
+  );
+  if (!candidates.length) return notifications;
+
+  const resolvedPairs = await Promise.all(
+    candidates.map(async (notification) => {
+      const status = await detectEntityResolutionStatus(notification);
+      return status === "pending" ? null : ({ notification, status } as const);
+    }),
+  );
+  const resolved = resolvedPairs.filter(Boolean) as Array<{
+    notification: T;
+    status: Exclude<ApprovalResolutionStatus, "pending">;
+  }>;
+  if (!resolved.length) return notifications;
+
+  const now = new Date().toISOString();
+  const updateResults = await Promise.all(
+    resolved.map(({ notification, status }) => {
+      const metadata = metadataRecord(notification.metadata);
+      const reviewedAt = stringValue(metadata.reviewed_at) ?? now;
+      const reviewedBy = stringValue(metadata.reviewed_by) ?? reviewerProfileId ?? null;
+      const nextMetadata = {
+        ...metadata,
+        action_status: status,
+        approval_status: status,
+        approved: status === "approved" || status === "completed",
+        resolved_at: now,
+        resolved_by: reviewerProfileId ?? null,
+        reviewed_at: reviewedAt,
+        reviewed_by: reviewedBy,
+      } as unknown as Json;
+      return supabase
+        .from("notifications")
+        .update({
+          is_read: true,
+          metadata: nextMetadata,
+        })
+        .eq("id", notification.id);
+    }),
+  );
+
+  const syncedResolved = resolved.filter((_, index) => !updateResults[index]?.error);
+  const resolvedStatusById = new Map(
+    syncedResolved.map((row) => [row.notification.id, row.status]),
+  );
+  return notifications.map((notification) => {
+    const status = resolvedStatusById.get(notification.id);
+    if (!status) return notification;
+    const metadata = metadataRecord(notification.metadata);
+    const reviewedAt = stringValue(metadata.reviewed_at) ?? now;
+    const reviewedBy = stringValue(metadata.reviewed_by) ?? reviewerProfileId ?? null;
+    return {
+      ...notification,
+      is_read: true,
+      metadata: {
+        ...metadata,
+        action_status: status,
+        approval_status: status,
+        approved: status === "approved" || status === "completed",
+        resolved_at: now,
+        resolved_by: reviewerProfileId ?? null,
+        reviewed_at: reviewedAt,
+        reviewed_by: reviewedBy,
+      } as unknown as Json,
+    };
+  });
+}
+
+async function detectEntityResolutionStatus(
+  notification: ApprovalNotificationLike,
+): Promise<ApprovalResolutionStatus> {
+  const entityType = notification.entity_type;
+  const entityId = notification.entity_id;
+  if (!entityType || !entityId) return "pending";
+
+  if (entityType === "task") {
+    const { data } = await supabase.from("tasks").select("status").eq("id", entityId).maybeSingle();
+    return statusToApprovalResolution(data?.status);
+  }
+
+  if (entityType === "task_completion") {
+    const { data } = await supabase
+      .from("task_completions")
+      .select("status, completed")
+      .eq("id", entityId)
+      .maybeSingle();
+    if (data?.completed) return "completed";
+    return statusToApprovalResolution(data?.status);
+  }
+
+  if (entityType === "leave_request") {
+    const { data } = await supabase
+      .from("leave_requests")
+      .select("status")
+      .eq("id", entityId)
+      .maybeSingle();
+    return statusToApprovalResolution(data?.status);
+  }
+
+  if (entityType === "onboarding_answer") {
+    const { data } = await supabase
+      .from("onboarding_answers")
+      .select("status")
+      .eq("id", entityId)
+      .maybeSingle();
+    return statusToApprovalResolution(data?.status);
+  }
+
+  return "pending";
+}
+
+function statusToApprovalResolution(status: string | null | undefined): ApprovalResolutionStatus {
+  if (!status) return "pending";
+  if (status === "approved") return "approved";
+  if (status === "rejected") return "rejected";
+  if (status === "done" || status === "completed") return "completed";
+  return "pending";
 }
