@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
-import { FloatingLeadLifecycleDashboard } from "@/components/FloatingLeadLifecycleDashboard";
 import { TablePagination } from "@/components/TablePagination";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { Button } from "@/components/ui/button";
@@ -198,8 +197,8 @@ export function AdminSaleOverview() {
     <div className="space-y-4">
       <WorkspacePageHeader
         icon={<TrendingUp className="h-5 w-5" />}
-        title="Tổng quan Sale"
-        subtitle="Dữ liệu Sale tách riêng từ báo cáo Sale và kho lead thả nổi"
+        title="Dasboard Sale"
+        subtitle="Dữ liệu nhân viên kinh doanh"
         actions={<DateRangeFilter value={range} onChange={setRange} hideLabel />}
       />
 
@@ -276,17 +275,6 @@ export function AdminSaleOverview() {
               </table>
             </CardContent>
           </Card>
-
-          <FloatingLeadLifecycleDashboard
-            leads={data?.leads ?? []}
-            people={(data?.sales ?? []).map((sale) => ({
-              id: sale.id,
-              name: displayProfileName(sale),
-            }))}
-            personRole="sale"
-            title="Analytics lifecycle lead Sale"
-            subtitle="Funnel lead theo lifecycle, conversion và drop rate toàn hệ Sale trong khoảng lọc."
-          />
         </>
       )}
     </div>

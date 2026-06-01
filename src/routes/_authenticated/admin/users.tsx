@@ -44,6 +44,7 @@ export const Route = createFileRoute("/_authenticated/admin/users")({ component:
 
 type Department = "marketing" | "sale" | "admin";
 type UserStatus = "active" | "inactive";
+type UserStatusFilter = "all" | UserStatus;
 type FixedAssetType = "hotline" | "odoo";
 type FixedAssetForm = Record<FixedAssetType, string>;
 
@@ -257,11 +258,13 @@ function AdminUsers() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<UserStatusFilter>("all");
   const refreshData = async () => {
     await refetch();
     toast.success("Đã làm mới dữ liệu");
   };
   const filtered = users.filter((u) => {
+    if (statusFilter !== "all" && u.status !== statusFilter) return false;
     const s = search.trim().toLowerCase();
     if (!s) return true;
     return (
@@ -275,7 +278,7 @@ function AdminUsers() {
   });
   const userPagination = usePagination({
     items: filtered,
-    resetKey: search,
+    resetKey: `${search}|${statusFilter}`,
   });
 
   return (
@@ -308,12 +311,27 @@ function AdminUsers() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle>Danh sách</CardTitle>
-          <Input
-            placeholder="Tìm theo tên, tài khoản đăng nhập, vai trò..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="max-w-xs"
-          />
+          <div className="flex flex-wrap justify-end gap-2">
+            <Select
+              value={statusFilter}
+              onValueChange={(value) => setStatusFilter(value as UserStatusFilter)}
+            >
+              <SelectTrigger className="w-[150px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tất cả trạng thái</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              placeholder="Tìm theo tên, tài khoản đăng nhập, vai trò..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-[320px] max-w-full"
+            />
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (

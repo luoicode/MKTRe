@@ -44,6 +44,13 @@ import {
   type SalaryRule,
 } from "@/lib/salary";
 
+type DashboardKpiTarget = Pick<
+  Tables<"kpi_targets">,
+  "created_at" | "period_start" | "revenue_target" | "team_id" | "updated_at" | "user_id"
+> & {
+  team_id: string | null;
+};
+
 export function AnalyticsDashboard({
   scope,
 }: {
@@ -87,7 +94,7 @@ export function AnalyticsDashboard({
 
       let kpiQuery = supabase
         .from("kpi_targets")
-        .select("revenue_target, ads_target, data_target, orders_target, team_id, user_id")
+        .select("revenue_target, team_id, user_id, period_start, created_at, updated_at")
         .lte("period_start", to)
         .gte("period_end", from);
       if (scope === "employee") kpiQuery = kpiQuery.eq("user_id", profile!.id);
@@ -142,7 +149,7 @@ export function AnalyticsDashboard({
       return {
         reports: visibleReports,
         leaderPersonalReports: visibleLeaderPersonalReports,
-        kpis: kpis ?? [],
+        kpis: (kpis ?? []) as DashboardKpiTarget[],
         leaderPersonalKpis,
         teamIds: teamIds ?? [],
         salaryRules,
@@ -163,11 +170,16 @@ export function AnalyticsDashboard({
     [leaderPersonalTotals],
   );
   const daily = useMemo(() => groupMetricsByDate(data?.reports ?? []), [data]);
-  const kpiRevenueTarget = (data?.kpis ?? []).reduce(
-    (sum: number, k: Pick<Tables<"kpi_targets">, "revenue_target">) =>
-      sum + Number(k.revenue_target ?? 0),
-    0,
+  const dashboardKpis = data?.kpis ?? [];
+  const systemStrategicKpi = pickLatestDashboardKpi(
+    dashboardKpis.filter((kpi) => !kpi.user_id && !kpi.team_id),
   );
+  const operationalKpiRevenueTarget = dashboardKpis
+    .filter((kpi) => kpi.user_id || kpi.team_id)
+    .reduce((sum, kpi) => sum + Number(kpi.revenue_target ?? 0), 0);
+  const systemStrategicKpiRevenueTarget = Number(systemStrategicKpi?.revenue_target ?? 0);
+  const kpiRevenueTarget =
+    scope === "admin" ? systemStrategicKpiRevenueTarget : operationalKpiRevenueTarget;
   const leaderPersonalKpiRevenueTarget = (data?.leaderPersonalKpis ?? []).reduce(
     (sum: number, k: Pick<Tables<"kpi_targets">, "revenue_target">) =>
       sum + Number(k.revenue_target ?? 0),
@@ -490,6 +502,16 @@ function Mini({ label, value }: { label: string; value: string }) {
       <p className="mt-1 text-base font-semibold leading-tight">{value}</p>
     </div>
   );
+}
+
+function pickLatestDashboardKpi(kpis: DashboardKpiTarget[]) {
+  return [...kpis].sort((a, b) => {
+    const periodDiff = b.period_start.localeCompare(a.period_start);
+    if (periodDiff !== 0) return periodDiff;
+    const updatedDiff = b.updated_at.localeCompare(a.updated_at);
+    if (updatedDiff !== 0) return updatedDiff;
+    return b.created_at.localeCompare(a.created_at);
+  })[0];
 }
 
 function SalaryEstimateCard({ estimate }: { estimate: SalaryEstimate | null }) {

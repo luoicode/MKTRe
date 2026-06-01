@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, UserPlus, AlertTriangle, ArrowRightLeft, Crown } from "lucide-react";
+import { Crown, Loader2, Plus, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import { SearchableSelect, SearchableMultiSelect } from "@/components/SearchableSelect";
 import { RefreshButton } from "@/components/RefreshButton";
@@ -48,7 +48,9 @@ interface ProfileWithRole {
 interface TeamWithMembershipLeader {
   id: string;
   name: string;
+  description: string | null;
   department: string;
+  leader_id: string | null;
   status: string;
   created_at: string;
   profiles: { full_name: string; username: string } | null;
@@ -152,7 +154,7 @@ function AdminTeams() {
   });
 
   const [open, setOpen] = useState(false);
-  const [memberOf, setMemberOf] = useState<string | null>(null);
+  const [teamManager, setTeamManager] = useState<TeamWithMembershipLeader | null>(null);
 
   const visibleTeams = (teams ?? []).filter((team) => team.department === department);
   const leaders = (profiles ?? []).filter((p) =>
@@ -212,7 +214,7 @@ function AdminTeams() {
             teams={visibleTeams}
             isLoading={isLoading}
             emptyText="Chưa có Team Marketing."
-            onOpenMembers={setMemberOf}
+            onManageTeam={setTeamManager}
           />
         </TabsContent>
         <TabsContent value="sale" className="mt-4 space-y-4">
@@ -220,18 +222,19 @@ function AdminTeams() {
             teams={visibleTeams}
             isLoading={isLoading}
             emptyText="Chưa có Team Sale."
-            onOpenMembers={setMemberOf}
+            onManageTeam={setTeamManager}
           />
         </TabsContent>
       </Tabs>
 
-      <Dialog open={!!memberOf} onOpenChange={(o) => !o && setMemberOf(null)}>
-        {memberOf && (
-          <MembersDialog
-            teamId={memberOf}
+      <Dialog open={!!teamManager} onOpenChange={(open) => !open && setTeamManager(null)}>
+        {teamManager && (
+          <TeamManagementDialog
+            team={teamManager}
             department={department}
+            leaders={leaders}
             employees={employees}
-            onClose={() => setMemberOf(null)}
+            onClose={() => setTeamManager(null)}
             onChanged={() => {
               qc.invalidateQueries({ queryKey: ["teams-full"] });
               qc.invalidateQueries({ queryKey: ["all-profiles-with-role"] });
@@ -247,12 +250,12 @@ function TeamsTable({
   teams,
   isLoading,
   emptyText,
-  onOpenMembers,
+  onManageTeam,
 }: {
   teams: TeamWithMembershipLeader[];
   isLoading: boolean;
   emptyText: string;
-  onOpenMembers: (teamId: string) => void;
+  onManageTeam: (team: TeamWithMembershipLeader) => void;
 }) {
   return (
     <Card>
@@ -290,9 +293,9 @@ function TeamsTable({
                         {t.status}
                       </Badge>
                     </TableCell>
-                    <TableCell>
-                      <Button size="sm" variant="ghost" onClick={() => onOpenMembers(t.id)}>
-                        <UserPlus className="h-4 w-4 mr-1" /> Thành viên
+                    <TableCell className="text-right">
+                      <Button size="sm" variant="ghost" onClick={() => onManageTeam(t)}>
+                        <Settings2 className="mr-1 h-4 w-4" /> Quản lý
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -483,26 +486,28 @@ function CreateTeamDialog({
   );
 }
 
-function MembersDialog({
-  teamId,
+function TeamManagementDialog({
+  team,
   department,
+  leaders,
   employees,
   onClose,
   onChanged,
 }: {
-  teamId: string;
+  team: TeamWithMembershipLeader;
   department: TeamDepartment;
+  leaders: ProfileWithRole[];
   employees: ProfileWithRole[];
   onClose: () => void;
   onChanged: () => void;
 }) {
   const { data: members, refetch } = useQuery({
-    queryKey: ["team-members", teamId],
+    queryKey: ["team-members", team.id],
     queryFn: async () => {
       const { data } = await supabase
         .from("team_memberships")
         .select("*, profiles(full_name, username, status)")
-        .eq("team_id", teamId)
+        .eq("team_id", team.id)
         .eq("is_active", true);
       return (data ?? []).filter((membership) => {
         const profile = membership.profiles as TeamMemberProfile | null;
@@ -511,25 +516,131 @@ function MembersDialog({
     },
   });
 
-  const { data: team } = useQuery({
-    queryKey: ["team-summary", teamId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("teams")
-        .select("id, name")
-        .eq("id", teamId)
-        .maybeSingle();
-      return data;
-    },
-  });
-
+  const [name, setName] = useState(team.name);
+  const [desc, setDesc] = useState(team.description ?? "");
+  const [leaderId, setLeaderId] = useState(team.leader_id ?? "");
+  const [status, setStatus] = useState<"active" | "inactive">(
+    team.status === "inactive" ? "inactive" : "active",
+  );
+  const [loading, setLoading] = useState(false);
   const [userIds, setUserIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (!name.trim()) {
+      toast.error("Nhập tên team");
+      return;
+    }
+    const selectedLeader = leaders.find((leader) => leader.id === leaderId);
+    if (selectedLeader?.activeTeamId && selectedLeader.activeTeamId !== team.id) {
+      toast.error("Leader đang thuộc team khác. Cần chuyển team trước khi đặt leader.");
+      return;
+    }
+
+    setLoading(true);
+    let previousLeaderIds: string[] = [];
+    try {
+      previousLeaderIds = await getCurrentLeaderIds(team.id);
+    } catch (error) {
+      setLoading(false);
+      toast.error(error instanceof Error ? error.message : "Không tải được leader hiện tại");
+      return;
+    }
+    const updateTeam = await supabase
+      .from("teams")
+      .update({
+        name: name.trim(),
+        description: desc.trim() || null,
+        leader_id: leaderId || null,
+        status,
+      })
+      .eq("id", team.id);
+    if (updateTeam.error) {
+      setLoading(false);
+      toast.error(updateTeam.error.message);
+      return;
+    }
+
+    const demoteLeaders = await supabase
+      .from("team_memberships")
+      .update({ role_in_team: "employee" })
+      .eq("team_id", team.id)
+      .eq("is_active", true)
+      .eq("role_in_team", "leader");
+    if (demoteLeaders.error) {
+      setLoading(false);
+      toast.error(demoteLeaders.error.message);
+      return;
+    }
+
+    if (leaderId) {
+      const { data: existingLeaderMembership, error: existingError } = await supabase
+        .from("team_memberships")
+        .select("id")
+        .eq("team_id", team.id)
+        .eq("user_id", leaderId)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (existingError) {
+        setLoading(false);
+        toast.error(existingError.message);
+        return;
+      }
+      const leaderResult = existingLeaderMembership
+        ? await supabase
+            .from("team_memberships")
+            .update({ role_in_team: "leader" })
+            .eq("id", existingLeaderMembership.id)
+        : await supabase.from("team_memberships").insert({
+            team_id: team.id,
+            user_id: leaderId,
+            role_in_team: "leader",
+            is_active: true,
+          });
+      if (leaderResult.error) {
+        setLoading(false);
+        toast.error(leaderResult.error.message);
+        return;
+      }
+    }
+
+    if (department === "sale") {
+      const demotedSaleLeaders = previousLeaderIds.filter((id) => id !== leaderId);
+      if (demotedSaleLeaders.length) {
+        const demoteRoles = await supabase
+          .from("user_roles")
+          .update({ role: APP_ROLES.SALE })
+          .in("user_id", demotedSaleLeaders)
+          .eq("role", APP_ROLES.SALE_LEADER);
+        if (demoteRoles.error) {
+          setLoading(false);
+          toast.error(demoteRoles.error.message);
+          return;
+        }
+      }
+      if (leaderId) {
+        const promoteRole = await supabase
+          .from("user_roles")
+          .update({ role: APP_ROLES.SALE_LEADER })
+          .eq("user_id", leaderId);
+        if (promoteRole.error) {
+          setLoading(false);
+          toast.error(promoteRole.error.message);
+          return;
+        }
+      }
+    }
+
+    setLoading(false);
+    toast.success("Đã cập nhật team");
+    onChanged();
+    await refetch();
+  };
 
   const addMembers = async () => {
     if (userIds.length === 0) return;
     const blocked = employees.filter(
-      (p) => userIds.includes(p.id) && p.activeTeamId && p.activeTeamId !== teamId,
+      (p) => userIds.includes(p.id) && p.activeTeamId && p.activeTeamId !== team.id,
     );
     if (blocked.length) {
       toast.error("Nhân viên này đang thuộc team khác. Cần chuyển team trước khi thêm.");
@@ -537,7 +648,7 @@ function MembersDialog({
     }
     setBusy(true);
     const rows = userIds.map((uid) => ({
-      team_id: teamId,
+      team_id: team.id,
       user_id: uid,
       role_in_team: "employee" as const,
     }));
@@ -582,7 +693,7 @@ function MembersDialog({
       const { error: leaderError } = await supabase
         .from("teams")
         .update({ leader_id: null })
-        .eq("id", teamId)
+        .eq("id", team.id)
         .eq("leader_id", member.user_id);
       if (leaderError) {
         toast.error(leaderError.message);
@@ -612,7 +723,7 @@ function MembersDialog({
     const demote = await supabase
       .from("team_memberships")
       .update({ role_in_team: "employee" })
-      .eq("team_id", teamId)
+      .eq("team_id", team.id)
       .eq("is_active", true);
     if (demote.error) {
       setBusy(false);
@@ -630,7 +741,7 @@ function MembersDialog({
       return;
     }
 
-    const updateTeam = await supabase.from("teams").update({ leader_id: userId }).eq("id", teamId);
+    const updateTeam = await supabase.from("teams").update({ leader_id: userId }).eq("id", team.id);
     if (updateTeam.error) {
       setBusy(false);
       toast.error(updateTeam.error.message);
@@ -663,190 +774,157 @@ function MembersDialog({
     }
 
     setBusy(false);
-
+    setLeaderId(userId);
     toast.success(department === "sale" ? "Đã đặt Leader Sale" : "Đã đặt Leader Marketing");
     await refetch();
     onChanged();
   };
 
-  const transferMember = async (userId: string) => {
-    setBusy(true);
-    const today = new Date().toISOString().slice(0, 10);
-    const closeExisting = await supabase
-      .from("team_memberships")
-      .update({ is_active: false, end_date: today })
-      .eq("user_id", userId)
-      .eq("is_active", true);
-    if (closeExisting.error) {
-      setBusy(false);
-      toast.error(closeExisting.error.message);
-      return;
-    }
-    if (department === "sale") {
-      const demoteRole = await supabase
-        .from("user_roles")
-        .update({ role: APP_ROLES.SALE })
-        .eq("user_id", userId)
-        .eq("role", APP_ROLES.SALE_LEADER);
-      if (demoteRole.error) {
-        setBusy(false);
-        toast.error(demoteRole.error.message);
-        return;
-      }
-    }
-    const clearOldLeader = await supabase
-      .from("teams")
-      .update({ leader_id: null })
-      .eq("leader_id", userId);
-    if (clearOldLeader.error) {
-      setBusy(false);
-      toast.error(clearOldLeader.error.message);
-      return;
-    }
-    const addNew = await supabase.from("team_memberships").insert({
-      team_id: teamId,
-      user_id: userId,
-      role_in_team: "employee",
-      start_date: today,
-      is_active: true,
-    });
-    setBusy(false);
-    if (addNew.error) {
-      toast.error(addNew.error.message);
-      return;
-    }
-    toast.success("Đã chuyển nhân viên sang team này");
-    await refetch();
-    onChanged();
-  };
-
-  const memberIds = new Set((members ?? []).map((m) => m.user_id));
-  const available = employees.filter((p) => !memberIds.has(p.id) && !p.activeTeamId);
-  const assignedElsewhere = employees.filter(
-    (p) => !memberIds.has(p.id) && p.activeTeamId && p.activeTeamId !== teamId,
+  const memberIds = new Set((members ?? []).map((member) => member.user_id));
+  const available = employees.filter(
+    (employee) => !memberIds.has(employee.id) && !employee.activeTeamId,
   );
 
   return (
-    <DialogContent className="max-w-2xl">
+    <DialogContent className="max-w-3xl">
       <DialogHeader>
-        <DialogTitle>Thành viên team{team?.name ? `: ${team.name}` : ""}</DialogTitle>
+        <DialogTitle>Quản lý team{team?.name ? `: ${team.name}` : ""}</DialogTitle>
       </DialogHeader>
-      <div className="space-y-4">
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-          <div className="flex gap-2">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <p>
-              Một nhân viên chỉ được thuộc về 1 team tại một thời điểm. Nhân viên đang thuộc team
-              {department === "marketing" ? " Marketing" : " Sale"} khác sẽ không xuất hiện trong
-              danh sách thêm mới.
+      <div className="max-h-[72vh] space-y-5 overflow-y-auto pr-1">
+        <div className="rounded-2xl border bg-muted/20 p-4">
+          <div className="grid gap-3 lg:grid-cols-3">
+            <div>
+              <Label>Tên team</Label>
+              <Input value={name} onChange={(event) => setName(event.target.value)} />
+            </div>
+            <div>
+              <Label>Trạng thái</Label>
+              <select
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                value={status}
+                onChange={(event) => setStatus(event.target.value as "active" | "inactive")}
+              >
+                <option value="active">active</option>
+                <option value="inactive">inactive</option>
+              </select>
+            </div>
+            <div>
+              <Label>{department === "marketing" ? "Leader Marketing" : "Leader Sale"}</Label>
+              <SearchableSelect
+                value={leaderId}
+                onChange={setLeaderId}
+                options={leaders
+                  .filter((leader) => !leader.activeTeamId || leader.activeTeamId === team.id)
+                  .map((leader) => ({
+                    value: leader.id,
+                    label: leader.full_name,
+                    sub: `@${leader.username}`,
+                  }))}
+                placeholder={
+                  department === "marketing" ? "Chọn Leader Marketing" : "Chọn Leader Sale"
+                }
+                emptyText="Không có leader khả dụng"
+              />
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <Button onClick={submit} disabled={loading}>
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Lưu thông tin team
+            </Button>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border p-4">
+          <div className="mb-3">
+            <h3 className="font-semibold">Thành viên</h3>
+            <p className="text-xs text-muted-foreground">
+              Một nhân viên chỉ được thuộc về 1 team tại một thời điểm.
             </p>
           </div>
-        </div>
-
-        <div className="flex gap-2">
-          <div className="flex-1">
-            <SearchableMultiSelect
-              values={userIds}
-              onChange={setUserIds}
-              options={available.map((p) => ({
-                value: p.id,
-                label: p.full_name,
-                sub: `@${p.username}`,
-              }))}
-              placeholder="Chọn nhân viên chưa thuộc team"
-              emptyText="Không có nhân viên khả dụng"
-            />
-          </div>
-          <Button onClick={addMembers} disabled={!userIds.length || busy}>
-            {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Thêm{userIds.length ? ` (${userIds.length})` : ""}
-          </Button>
-        </div>
-
-        {assignedElsewhere.length > 0 && (
-          <div className="space-y-2">
-            <div>
-              <p className="text-sm font-medium">Nhân viên đang thuộc team khác</p>
-              <p className="text-xs text-muted-foreground">
-                Nhân viên này đang thuộc team khác. Cần chuyển team trước khi thêm.
-              </p>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <SearchableMultiSelect
+                values={userIds}
+                onChange={setUserIds}
+                options={available.map((profile) => ({
+                  value: profile.id,
+                  label: profile.full_name,
+                  sub: `@${profile.username}`,
+                }))}
+                placeholder="Chọn nhân viên chưa thuộc team"
+                emptyText="Không có nhân viên khả dụng"
+              />
             </div>
-            <div className="max-h-48 space-y-2 overflow-y-auto">
-              {assignedElsewhere.map((p) => (
+            <Button onClick={addMembers} disabled={!userIds.length || busy}>
+              {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Thêm{userIds.length ? ` (${userIds.length})` : ""}
+            </Button>
+          </div>
+
+          <div className="mt-4 max-h-64 space-y-2 overflow-y-auto">
+            {(members ?? []).map((membership) => {
+              const profile = membership.profiles as TeamMemberProfile | null;
+              const isLeader = membership.role_in_team === "leader";
+              return (
                 <div
-                  key={p.id}
-                  className="flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50/70 p-2"
+                  key={membership.id}
+                  className="flex items-center justify-between rounded-md border p-2"
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
-                      {p.full_name}{" "}
-                      <span className="text-xs text-muted-foreground">@{p.username}</span>
-                    </p>
-                    <p className="text-xs text-amber-800">Đang thuộc: {p.activeTeamName}</p>
+                    <span>
+                      {profile?.full_name}{" "}
+                      <span className="text-xs text-muted-foreground">@{profile?.username}</span>
+                    </span>
+                    {isLeader ? (
+                      <Badge className="ml-2 bg-amber-50 text-amber-700 hover:bg-amber-50">
+                        {department === "sale" ? "Leader Sale" : "Leader Marketing"}
+                      </Badge>
+                    ) : null}
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => transferMember(p.id)}
-                    disabled={busy}
-                  >
-                    <ArrowRightLeft className="mr-2 h-4 w-4" />
-                    Chuyển team
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-2 max-h-64 overflow-y-auto">
-          {(members ?? []).map((m) => {
-            const p = m.profiles as TeamMemberProfile | null;
-            const isLeader = m.role_in_team === "leader";
-            return (
-              <div key={m.id} className="flex items-center justify-between rounded-md border p-2">
-                <div className="min-w-0">
-                  <span>
-                    {p?.full_name}{" "}
-                    <span className="text-muted-foreground text-xs">@{p?.username}</span>
-                  </span>
-                  {isLeader ? (
-                    <Badge className="ml-2 bg-amber-50 text-amber-700 hover:bg-amber-50">
-                      {department === "sale" ? "Leader Sale" : "Leader Marketing"}
-                    </Badge>
-                  ) : null}
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  {!isLeader ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => setTeamLeader(m.id, m.user_id)}
-                    >
-                      <Crown className="mr-2 h-4 w-4" />
-                      Đặt leader
+                  <div className="flex shrink-0 items-center gap-1">
+                    {!isLeader ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => setTeamLeader(membership.id, membership.user_id)}
+                      >
+                        <Crown className="mr-2 h-4 w-4" />
+                        Đặt leader
+                      </Button>
+                    ) : null}
+                    <Button size="sm" variant="ghost" onClick={() => removeMember(membership.id)}>
+                      Xóa
                     </Button>
-                  ) : null}
-                  <Button size="sm" variant="ghost" onClick={() => removeMember(m.id)}>
-                    Xóa
-                  </Button>
+                  </div>
                 </div>
+              );
+            })}
+            {members && members.length === 0 && (
+              <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+                Team chưa có thành viên.
               </div>
-            );
-          })}
-          {members && members.length === 0 && (
-            <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-              Team chưa có thành viên.
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
       <DialogFooter>
-        <Button variant="secondary" onClick={onClose}>
+        <Button variant="secondary" onClick={onClose} disabled={loading}>
           Đóng
         </Button>
       </DialogFooter>
     </DialogContent>
   );
+}
+
+async function getCurrentLeaderIds(teamId: string) {
+  const { data, error } = await supabase
+    .from("team_memberships")
+    .select("user_id")
+    .eq("team_id", teamId)
+    .eq("is_active", true)
+    .eq("role_in_team", "leader");
+  if (error) throw error;
+  return (data ?? []).map((row) => row.user_id);
 }
