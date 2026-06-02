@@ -150,6 +150,7 @@ const NAV: NavItem[] = [
     icon: Warehouse,
     roles: [...SALE_ROLES],
   },
+  { to: "/sale/products", label: "Sản phẩm", icon: Package, roles: [...SALE_ROLES] },
   { to: "/sale/invoices", label: "Hoá đơn", icon: Receipt, roles: [...SALE_ROLES] },
   {
     to: "/sale/team",

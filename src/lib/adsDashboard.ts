@@ -55,6 +55,8 @@ export interface AdsDashboardActionResult {
   message: string;
   account?: AdsAccount | null;
   pausedCount?: number;
+  failedCount?: number;
+  errors?: { adsetId: string; message: string }[];
 }
 
 export interface UpsertAdsAccountTestInput {
@@ -265,11 +267,30 @@ export async function syncAdsAccountData(
   };
 }
 
-export async function pauseAllActiveAdsets(_accountId: string): Promise<AdsDashboardActionResult> {
+export async function pauseAllActiveAdsets(accountId: string): Promise<AdsDashboardActionResult> {
+  const { data, error } = await supabase.functions.invoke<{
+    success: boolean;
+    message: string;
+    successCount?: number;
+    failedCount?: number;
+    errors?: { adsetId: string; message: string }[];
+  }>("pause-adsets", {
+    body: {
+      accountId,
+      adsetIds: [],
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
   return {
-    ok: false,
-    message: "Meta pause adsets endpoint chưa được kết nối",
-    pausedCount: 0,
+    ok: Boolean(data?.success),
+    message: data?.message ?? "Không thể tắt nhóm quảng cáo",
+    pausedCount: data?.successCount ?? 0,
+    failedCount: data?.failedCount ?? 0,
+    errors: data?.errors ?? [],
   };
 }
 

@@ -1,6 +1,17 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
   Database,
   FileText,
   Loader2,
@@ -55,6 +66,7 @@ import {
   saleReportSlots,
   formatSaleInteger,
   formatSalePercent,
+  formatSaleRatioCurrency,
   formatSaleVnd,
 } from "@/lib/saleReportUtils";
 import { summarizeSaleReports, type SaleReportRow } from "@/lib/saleReports";
@@ -170,12 +182,13 @@ export function AdminSaleOverview() {
   const { data, isLoading } = useQuery({
     queryKey: ["admin-sale-overview", normalizedRange.from, normalizedRange.to],
     queryFn: async () => {
-      const [reports, leads, sales] = await Promise.all([
-        fetchAdminSaleReports(normalizedRange.from, normalizedRange.to),
-        fetchAdminFloatingLeads(normalizedRange.from, normalizedRange.to),
-        fetchSaleProfiles(),
-      ]);
-      return { reports, leads, sales };
+      const sales = await fetchSaleProfiles();
+      const reports = await fetchAdminSaleReportsForUsers(
+        sales.map((sale) => sale.id),
+        normalizedRange.from,
+        normalizedRange.to,
+      );
+      return { reports, sales };
     },
   });
 
@@ -185,13 +198,27 @@ export function AdminSaleOverview() {
   );
   const summary = useMemo(() => summarizeSaleReports(submittedReports), [submittedReports]);
   const performance = useMemo(
-    () => buildSalePerformance(submittedReports, data?.sales ?? [], data?.leads ?? []),
-    [data?.leads, data?.sales, submittedReports],
+    () => buildSalePerformance(submittedReports, data?.sales ?? []),
+    [data?.sales, submittedReports],
   );
-  const activeLeads = (data?.leads ?? []).filter(
-    (lead) => lead.assigned_sale_id && !lead.is_closed,
+  const dailyRevenue = useMemo(
+    () => buildAdminSaleDailyRevenue(submittedReports),
+    [submittedReports],
   );
-  const closedLeads = (data?.leads ?? []).filter((lead) => lead.is_closed);
+  const dailyData = useMemo(() => buildAdminSaleDailyData(submittedReports), [submittedReports]);
+  const topRevenueRows = useMemo(
+    () =>
+      [...performance].sort((a, b) => b.summary.totalRevenue - a.summary.totalRevenue).slice(0, 5),
+    [performance],
+  );
+  const topCloseRateRows = useMemo(
+    () =>
+      [...performance]
+        .filter((row) => row.summary.totalDataReceived > 0)
+        .sort((a, b) => (b.summary.closeRate ?? 0) - (a.summary.closeRate ?? 0))
+        .slice(0, 5),
+    [performance],
+  );
 
   return (
     <div className="space-y-4">
@@ -208,14 +235,9 @@ export function AdminSaleOverview() {
         <>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <AdminSaleMetric
-              title="Tổng doanh số Sale"
+              title="Tổng doanh số"
               value={formatSaleVnd(summary.totalRevenue)}
               tone="green"
-            />
-            <AdminSaleMetric
-              title="Tỷ lệ chốt"
-              value={formatSalePercent(summary.closeRate)}
-              tone="blue"
             />
             <AdminSaleMetric
               title="Tổng data nhận"
@@ -226,14 +248,70 @@ export function AdminSaleOverview() {
               value={formatSaleInteger(summary.totalDataClosed)}
             />
             <AdminSaleMetric
-              title="Lead đang xử lý"
-              value={formatSaleInteger(activeLeads.length)}
+              title="Tỷ lệ chốt toàn bộ"
+              value={formatSalePercent(summary.closeRate)}
+              tone="blue"
+            />
+            <AdminSaleMetric
+              title="TB doanh số / data"
+              value={formatSaleRatioCurrency(
+                summary.totalDataReceived ? summary.totalRevenue / summary.totalDataReceived : null,
+              )}
               tone="amber"
             />
             <AdminSaleMetric
-              title="Lead đã chốt"
-              value={formatSaleInteger(closedLeads.length)}
-              tone="green"
+              title="TB doanh số / đơn"
+              value={formatSaleRatioCurrency(summary.averageOrder)}
+            />
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <AdminSaleChartCard title="Doanh số theo ngày">
+              {dailyRevenue.length ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={dailyRevenue}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="dateLabel" tickLine={false} axisLine={false} />
+                    <YAxis hide />
+                    <Tooltip formatter={(value) => formatSaleVnd(Number(value))} />
+                    <Line
+                      type="monotone"
+                      dataKey="revenue"
+                      stroke="#2563eb"
+                      strokeWidth={3}
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <AdminSaleEmptyChart />
+              )}
+            </AdminSaleChartCard>
+
+            <AdminSaleChartCard title="Data nhận vs Data chốt">
+              {dailyData.length ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={dailyData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="dateLabel" tickLine={false} axisLine={false} />
+                    <YAxis hide />
+                    <Tooltip formatter={(value) => formatSaleInteger(Number(value))} />
+                    <Bar dataKey="received" name="Data nhận" fill="#60a5fa" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="closed" name="Data chốt" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <AdminSaleEmptyChart />
+              )}
+            </AdminSaleChartCard>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <AdminSaleRankingCard title="Top doanh số" rows={topRevenueRows} metric="revenue" />
+            <AdminSaleRankingCard
+              title="Top tỷ lệ chốt"
+              rows={topCloseRateRows}
+              metric="closeRate"
             />
           </div>
 
@@ -247,11 +325,10 @@ export function AdminSaleOverview() {
                   <tr>
                     <th className="px-4 py-3">Sale</th>
                     <th className="px-3 py-3">Doanh số</th>
-                    <th className="px-3 py-3">Tỷ lệ chốt</th>
                     <th className="px-3 py-3">Data nhận</th>
                     <th className="px-3 py-3">Data chốt</th>
-                    <th className="px-3 py-3">Lead đang xử lý</th>
-                    <th className="px-3 py-3">Lead đã chốt</th>
+                    <th className="px-3 py-3">Tỷ lệ chốt</th>
+                    <th className="px-3 py-3">TB đơn</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -259,18 +336,19 @@ export function AdminSaleOverview() {
                     <tr key={row.saleId} className="border-t">
                       <td className="px-4 py-3 font-semibold">{row.name}</td>
                       <td className="px-3 py-3">{formatSaleVnd(row.summary.totalRevenue)}</td>
-                      <td className="px-3 py-3">{formatSalePercent(row.summary.closeRate)}</td>
                       <td className="px-3 py-3">
                         {formatSaleInteger(row.summary.totalDataReceived)}
                       </td>
                       <td className="px-3 py-3">
                         {formatSaleInteger(row.summary.totalDataClosed)}
                       </td>
-                      <td className="px-3 py-3">{formatSaleInteger(row.activeLeads)}</td>
-                      <td className="px-3 py-3">{formatSaleInteger(row.closedLeads)}</td>
+                      <td className="px-3 py-3">{formatSalePercent(row.summary.closeRate)}</td>
+                      <td className="px-3 py-3">
+                        {formatSaleRatioCurrency(row.summary.averageOrder)}
+                      </td>
                     </tr>
                   ))}
-                  {!performance.length && <EmptyTableRow colSpan={7} />}
+                  {!performance.length && <EmptyTableRow colSpan={6} />}
                 </tbody>
               </table>
             </CardContent>
@@ -486,7 +564,6 @@ export function AdminSaleKpi() {
       buildSalePerformance(
         (data?.reports ?? []).filter((row) => row.status === "submitted"),
         data?.sales ?? [],
-        [],
       ),
     [data?.reports, data?.sales],
   ).sort((a, b) => b.summary.totalRevenue - a.summary.totalRevenue);
@@ -1655,6 +1732,20 @@ async function fetchAdminSaleReports(from: string, to: string) {
   return (data ?? []) as SaleReportRow[];
 }
 
+async function fetchAdminSaleReportsForUsers(userIds: string[], from: string, to: string) {
+  if (!userIds.length) return [] as SaleReportRow[];
+  const { data, error } = await supabase
+    .from("sale_reports")
+    .select("*")
+    .in("user_id", userIds)
+    .gte("report_date", from)
+    .lte("report_date", to)
+    .order("report_date", { ascending: true })
+    .order("slot_time", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as SaleReportRow[];
+}
+
 async function fetchSaleTeams() {
   const { data, error } = await supabase
     .from("teams")
@@ -1737,7 +1828,10 @@ async function fetchSaleProfiles() {
     .select("user_id")
     .in("role", [...SALE_ROLES]);
   if (rolesError) throw rolesError;
-  return fetchProfilesByIds((roles ?? []).map((item) => item.user_id));
+  return fetchProfilesByIds(
+    (roles ?? []).map((item) => item.user_id),
+    { activeOnly: true },
+  );
 }
 
 async function fetchMarketingProfiles() {
@@ -1759,33 +1853,64 @@ async function fetchProfilesByRole(role: AppRole) {
   return fetchProfilesByIds((roles ?? []).map((item) => item.user_id));
 }
 
-async function fetchProfilesByIds(ids: string[]) {
+async function fetchProfilesByIds(ids: string[], options?: { activeOnly?: boolean }) {
   if (!ids.length) return [] as SaleProfile[];
-  const { data, error } = await supabase
+  let query = supabase
     .from("profiles")
     .select("id, full_name, username")
     .in("id", ids)
     .order("full_name");
+  if (options?.activeOnly) {
+    query = query.eq("status", "active");
+  }
+  const { data, error } = await query;
   if (error) throw error;
   return (data ?? []) as SaleProfile[];
 }
 
-function buildSalePerformance(
-  reports: SaleReportRow[],
-  sales: SaleProfile[],
-  leads: FloatingLeadRow[],
-) {
+function buildSalePerformance(reports: SaleReportRow[], sales: SaleProfile[]) {
   return sales.map((sale) => {
     const saleReports = reports.filter((row) => row.user_id === sale.id);
     return {
       saleId: sale.id,
       name: displayProfileName(sale),
       summary: summarizeSaleReports(saleReports),
-      activeLeads: leads.filter((lead) => lead.assigned_sale_id === sale.id && !lead.is_closed)
-        .length,
-      closedLeads: leads.filter((lead) => lead.closed_by === sale.id).length,
     };
   });
+}
+
+type AdminSalePerformanceRow = ReturnType<typeof buildSalePerformance>[number];
+
+function buildAdminSaleDailyRevenue(reports: SaleReportRow[]) {
+  return buildAdminSaleDailySummary(reports).map((row) => ({
+    date: row.date,
+    dateLabel: formatShortSaleDate(row.date),
+    revenue: row.summary.totalRevenue,
+  }));
+}
+
+function buildAdminSaleDailyData(reports: SaleReportRow[]) {
+  return buildAdminSaleDailySummary(reports).map((row) => ({
+    date: row.date,
+    dateLabel: formatShortSaleDate(row.date),
+    received: row.summary.totalDataReceived,
+    closed: row.summary.totalDataClosed,
+  }));
+}
+
+function buildAdminSaleDailySummary(reports: SaleReportRow[]) {
+  const grouped = new Map<string, SaleReportRow[]>();
+  for (const row of reports.filter((report) => report.status === "submitted")) {
+    grouped.set(row.report_date, [...(grouped.get(row.report_date) ?? []), row]);
+  }
+  return Array.from(grouped.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([date, rows]) => ({ date, summary: summarizeSaleReports(rows) }));
+}
+
+function formatShortSaleDate(value: string) {
+  const [, month = "", day = ""] = value.split("-");
+  return `${day}/${month}`;
 }
 
 function matchesLeadStatusFilter(lead: FloatingLeadRow, status: AdminFloatingLeadStatus) {
@@ -1824,6 +1949,123 @@ function AdminSaleMetric({
       </CardContent>
     </Card>
   );
+}
+
+function AdminSaleChartCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Card className="rounded-2xl border-slate-200 shadow-sm">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="h-56">{children}</div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AdminSaleEmptyChart() {
+  return (
+    <div className="flex h-full items-center justify-center rounded-xl border border-dashed bg-slate-50 text-sm font-medium text-muted-foreground">
+      Chưa có dữ liệu trong khoảng này.
+    </div>
+  );
+}
+
+function AdminSaleRankingCard({
+  title,
+  rows,
+  metric,
+}: {
+  title: string;
+  rows: AdminSalePerformanceRow[];
+  metric: "revenue" | "closeRate";
+}) {
+  return (
+    <Card className="rounded-2xl border-slate-200 shadow-sm">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <TrendingUp className="h-4 w-4 text-primary" />
+          {title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {rows.map((row, index) => (
+          <div
+            key={row.saleId}
+            className="flex items-center justify-between gap-3 rounded-xl border bg-white px-3 py-2"
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <SaleRankBadge rank={index + 1} />
+              <p className="truncate font-semibold text-slate-900">{row.name}</p>
+            </div>
+            <p className="shrink-0 font-black text-slate-900">
+              {metric === "revenue"
+                ? formatSaleVnd(row.summary.totalRevenue)
+                : formatSalePercent(row.summary.closeRate)}
+            </p>
+          </div>
+        ))}
+        {!rows.length && (
+          <div className="rounded-xl border border-dashed bg-slate-50 px-3 py-6 text-center text-sm font-medium text-muted-foreground">
+            Chưa có dữ liệu xếp hạng trong khoảng này.
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SaleRankBadge({ rank }: { rank: number }) {
+  const badge = getSaleRankBadge(rank);
+  return (
+    <span
+      title={`Hạng ${rank}`}
+      className={cn(
+        "inline-flex h-8 min-w-[54px] shrink-0 items-center justify-center gap-1 rounded-full px-2 text-xs font-extrabold shadow-sm ring-1",
+        badge.className,
+      )}
+    >
+      <span aria-hidden="true" className="text-sm leading-none">
+        {badge.icon}
+      </span>
+      <span>{rank}</span>
+    </span>
+  );
+}
+
+function getSaleRankBadge(rank: number) {
+  if (rank === 1) {
+    return {
+      icon: "👑",
+      className: "bg-amber-100 text-amber-800 ring-amber-200 shadow-amber-100",
+    };
+  }
+  if (rank === 2) {
+    return {
+      icon: "🥈",
+      className: "bg-slate-100 text-slate-700 ring-slate-200",
+    };
+  }
+  if (rank === 3) {
+    return {
+      icon: "🥉",
+      className: "bg-orange-100 text-orange-800 ring-orange-200",
+    };
+  }
+
+  const topTenIcons = ["🔥", "⚡", "🚀", "😎", "🎯", "💎", "✨"];
+  if (rank <= 10) {
+    return {
+      icon: topTenIcons[(rank - 4) % topTenIcons.length],
+      className: "bg-sky-50 text-sky-700 ring-sky-100",
+    };
+  }
+
+  return {
+    icon: "🌱",
+    className: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+  };
 }
 
 function AdminLeadStatCard({

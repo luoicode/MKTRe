@@ -304,22 +304,17 @@ export function AdsDashboardPage() {
     try {
       const pauseResult = await pauseAllActiveAdsets(activeAccount.id);
       if (pauseResult.ok) {
-        setDashboardData((current) => ({
-          ...current,
-          accounts: current.accounts.map((account) =>
-            account.accountId === activeAccount.accountId
-              ? {
-                  ...account,
-                  campaigns: account.campaigns.map((campaign) =>
-                    campaign.activeAdsetCount > 0 ? { ...campaign, activeAdsetCount: 0 } : campaign,
-                  ),
-                }
-              : account,
-          ),
-        }));
+        await syncAdsAccountData(activeAccount.id, currentDateFilter);
+        await loadAdsAccounts();
         toast.success(pauseResult.message);
       } else {
-        toast.info(pauseResult.message);
+        if ((pauseResult.pausedCount ?? 0) > 0) {
+          await syncAdsAccountData(activeAccount.id, currentDateFilter);
+          await loadAdsAccounts();
+          toast.warning(pauseResult.message);
+        } else {
+          toast.info(pauseResult.message);
+        }
       }
       setPauseConfirmOpen(false);
     } catch {

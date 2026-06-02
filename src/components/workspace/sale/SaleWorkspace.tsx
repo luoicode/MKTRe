@@ -5,6 +5,7 @@ import {
   CalendarCheck,
   CheckCircle2,
   ClipboardList,
+  Clock3,
   Database,
   Loader2,
   Lock,
@@ -28,10 +29,11 @@ import {
   YAxis,
 } from "recharts";
 import { toast } from "sonner";
+import { useNavigate } from "@tanstack/react-router";
 import { useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -51,6 +53,7 @@ import { cn } from "@/lib/utils";
 import { SaleReportForm } from "@/components/workspace/sale/SaleReportForm";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib/dateRange";
+import { todayStr } from "@/lib/reports";
 import { formatKpiMetricValue, metricProgress, saleMetrics } from "@/lib/kpiMetrics";
 import { APP_ROLES } from "@/lib/roles";
 import {
@@ -301,7 +304,12 @@ function LeaderSaleDashboardWorkspace() {
 
 export function SaleReportWorkspace() {
   const { role } = useAuth();
-  if (role !== APP_ROLES.SALE_LEADER) return <SaleReportForm />;
+  if (role !== APP_ROLES.SALE_LEADER)
+    return (
+      <SaleReportAttendanceGate>
+        <SaleReportForm />
+      </SaleReportAttendanceGate>
+    );
   return (
     <Tabs defaultValue="personal" className="space-y-4">
       <TabsList className="rounded-xl">
@@ -309,12 +317,129 @@ export function SaleReportWorkspace() {
         <TabsTrigger value="team">Báo cáo team</TabsTrigger>
       </TabsList>
       <TabsContent value="personal">
-        <SaleReportForm />
+        <SaleReportAttendanceGate>
+          <SaleReportForm />
+        </SaleReportAttendanceGate>
       </TabsContent>
       <TabsContent value="team">
         <LeaderSaleTeamReportsWorkspace />
       </TabsContent>
     </Tabs>
+  );
+}
+
+function SaleReportAttendanceGate({ children }: { children: ReactNode }) {
+  const { profile } = useAuth();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [checkingIn, setCheckingIn] = useState(false);
+  const today = todayStr();
+
+  const {
+    data: attendanceGate,
+    isLoading,
+    refetch,
+  } = useQuery({
+    queryKey: ["sale-report-attendance-gate", profile?.id, today],
+    enabled: !!profile?.id,
+    queryFn: async () => {
+      const [attendanceResult, leaveResult] = await Promise.all([
+        supabase
+          .from("attendance_records")
+          .select("status")
+          .eq("user_id", profile!.id)
+          .eq("attendance_date", today)
+          .maybeSingle(),
+        supabase
+          .from("leave_requests")
+          .select("id")
+          .eq("user_id", profile!.id)
+          .eq("status", "approved")
+          .lte("start_date", today)
+          .gte("end_date", today)
+          .limit(1),
+      ]);
+
+      if (attendanceResult.error) throw attendanceResult.error;
+      if (leaveResult.error) throw leaveResult.error;
+
+      const attendanceStatus = attendanceResult.data?.status;
+      const hasApprovedLeave =
+        attendanceStatus === "approved_leave" || (leaveResult.data ?? []).length > 0;
+
+      return {
+        unlocked: attendanceStatus === "present" || hasApprovedLeave,
+      };
+    },
+  });
+
+  const locked = attendanceGate?.unlocked !== true;
+
+  const handleCheckInNow = async () => {
+    if (!profile) return;
+    setCheckingIn(true);
+    const { error } = await supabase.from("attendance_records").upsert(
+      {
+        user_id: profile.id,
+        attendance_date: today,
+        status: "present",
+        checked_in_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,attendance_date" },
+    );
+    setCheckingIn(false);
+
+    if (error) {
+      toast.error(`Không thể điểm danh: ${error.message}`);
+      return;
+    }
+
+    toast.success("Đã điểm danh hôm nay");
+    await refetch();
+    qc.invalidateQueries({ queryKey: ["attendance"] });
+    qc.invalidateQueries({ queryKey: ["attendance-workspace"] });
+  };
+
+  const openLeaveRequest = () => {
+    void navigate({ to: "/sale/attendance" });
+  };
+
+  return (
+    <div className="relative">
+      <div
+        className={cn("transition", locked ? "pointer-events-none select-none blur-sm" : "blur-0")}
+        aria-hidden={locked}
+      >
+        {children}
+      </div>
+
+      {locked ? (
+        <div className="absolute inset-0 z-30 flex min-h-[520px] items-center justify-center bg-background/50 p-4 backdrop-blur-[2px]">
+          <Card className="w-full max-w-md border-primary/20 shadow-xl">
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-1 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                {isLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Clock3 className="h-5 w-5" />
+                )}
+              </div>
+              <CardTitle>Bạn cần điểm danh trước khi nhập báo cáo.</CardTitle>
+              <CardDescription>Vui lòng điểm danh hôm nay để mở khóa báo cáo Sale.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2 sm:flex-row">
+              <Button className="flex-1" onClick={handleCheckInNow} disabled={checkingIn}>
+                {checkingIn ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Điểm danh
+              </Button>
+              <Button variant="outline" className="flex-1" onClick={openLeaveRequest}>
+                Xin nghỉ phép
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

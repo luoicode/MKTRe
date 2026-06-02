@@ -17,6 +17,7 @@ import { Route as AuthenticatedSaleTeamRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedSaleResourcesRouteImport } from './routes/_authenticated/sale/resources'
 import { Route as AuthenticatedSaleReportRouteImport } from './routes/_authenticated/sale/report'
 import { Route as AuthenticatedSaleProfileRouteImport } from './routes/_authenticated/sale/profile'
+import { Route as AuthenticatedSaleProductsRouteImport } from './routes/_authenticated/sale/products'
 import { Route as AuthenticatedSaleKpiRouteImport } from './routes/_authenticated/sale/kpi'
 import { Route as AuthenticatedSaleInvoicesRouteImport } from './routes/_authenticated/sale/invoices'
 import { Route as AuthenticatedSaleFloatingPoolRouteImport } from './routes/_authenticated/sale/floating-pool'
@@ -124,6 +125,12 @@ const AuthenticatedSaleProfileRoute =
   AuthenticatedSaleProfileRouteImport.update({
     id: '/sale/profile',
     path: '/sale/profile',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedSaleProductsRoute =
+  AuthenticatedSaleProductsRouteImport.update({
+    id: '/sale/products',
+    path: '/sale/products',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedSaleKpiRoute = AuthenticatedSaleKpiRouteImport.update({
@@ -586,6 +593,7 @@ export interface FileRoutesByFullPath {
   '/sale/floating-pool': typeof AuthenticatedSaleFloatingPoolRoute
   '/sale/invoices': typeof AuthenticatedSaleInvoicesRoute
   '/sale/kpi': typeof AuthenticatedSaleKpiRoute
+  '/sale/products': typeof AuthenticatedSaleProductsRoute
   '/sale/profile': typeof AuthenticatedSaleProfileRoute
   '/sale/report': typeof AuthenticatedSaleReportRoute
   '/sale/resources': typeof AuthenticatedSaleResourcesRoute
@@ -661,6 +669,7 @@ export interface FileRoutesByTo {
   '/sale/floating-pool': typeof AuthenticatedSaleFloatingPoolRoute
   '/sale/invoices': typeof AuthenticatedSaleInvoicesRoute
   '/sale/kpi': typeof AuthenticatedSaleKpiRoute
+  '/sale/products': typeof AuthenticatedSaleProductsRoute
   '/sale/profile': typeof AuthenticatedSaleProfileRoute
   '/sale/report': typeof AuthenticatedSaleReportRoute
   '/sale/resources': typeof AuthenticatedSaleResourcesRoute
@@ -738,6 +747,7 @@ export interface FileRoutesById {
   '/_authenticated/sale/floating-pool': typeof AuthenticatedSaleFloatingPoolRoute
   '/_authenticated/sale/invoices': typeof AuthenticatedSaleInvoicesRoute
   '/_authenticated/sale/kpi': typeof AuthenticatedSaleKpiRoute
+  '/_authenticated/sale/products': typeof AuthenticatedSaleProductsRoute
   '/_authenticated/sale/profile': typeof AuthenticatedSaleProfileRoute
   '/_authenticated/sale/report': typeof AuthenticatedSaleReportRoute
   '/_authenticated/sale/resources': typeof AuthenticatedSaleResourcesRoute
@@ -815,6 +825,7 @@ export interface FileRouteTypes {
     | '/sale/floating-pool'
     | '/sale/invoices'
     | '/sale/kpi'
+    | '/sale/products'
     | '/sale/profile'
     | '/sale/report'
     | '/sale/resources'
@@ -890,6 +901,7 @@ export interface FileRouteTypes {
     | '/sale/floating-pool'
     | '/sale/invoices'
     | '/sale/kpi'
+    | '/sale/products'
     | '/sale/profile'
     | '/sale/report'
     | '/sale/resources'
@@ -966,6 +978,7 @@ export interface FileRouteTypes {
     | '/_authenticated/sale/floating-pool'
     | '/_authenticated/sale/invoices'
     | '/_authenticated/sale/kpi'
+    | '/_authenticated/sale/products'
     | '/_authenticated/sale/profile'
     | '/_authenticated/sale/report'
     | '/_authenticated/sale/resources'
@@ -1034,6 +1047,13 @@ declare module '@tanstack/react-router' {
       path: '/sale/profile'
       fullPath: '/sale/profile'
       preLoaderRoute: typeof AuthenticatedSaleProfileRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/sale/products': {
+      id: '/_authenticated/sale/products'
+      path: '/sale/products'
+      fullPath: '/sale/products'
+      preLoaderRoute: typeof AuthenticatedSaleProductsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/sale/kpi': {
@@ -1569,6 +1589,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSaleFloatingPoolRoute: typeof AuthenticatedSaleFloatingPoolRoute
   AuthenticatedSaleInvoicesRoute: typeof AuthenticatedSaleInvoicesRoute
   AuthenticatedSaleKpiRoute: typeof AuthenticatedSaleKpiRoute
+  AuthenticatedSaleProductsRoute: typeof AuthenticatedSaleProductsRoute
   AuthenticatedSaleProfileRoute: typeof AuthenticatedSaleProfileRoute
   AuthenticatedSaleReportRoute: typeof AuthenticatedSaleReportRoute
   AuthenticatedSaleResourcesRoute: typeof AuthenticatedSaleResourcesRoute
@@ -1647,6 +1668,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSaleFloatingPoolRoute: AuthenticatedSaleFloatingPoolRoute,
   AuthenticatedSaleInvoicesRoute: AuthenticatedSaleInvoicesRoute,
   AuthenticatedSaleKpiRoute: AuthenticatedSaleKpiRoute,
+  AuthenticatedSaleProductsRoute: AuthenticatedSaleProductsRoute,
   AuthenticatedSaleProfileRoute: AuthenticatedSaleProfileRoute,
   AuthenticatedSaleReportRoute: AuthenticatedSaleReportRoute,
   AuthenticatedSaleResourcesRoute: AuthenticatedSaleResourcesRoute,

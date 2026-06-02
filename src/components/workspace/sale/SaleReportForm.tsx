@@ -621,43 +621,56 @@ function buildExportRows(
   const integer = (value: string) => formatSheetNumber(parseSaleNumber(value));
   const money = integer;
   const percent = (numerator: number, denominator: number) =>
-    denominator ? `${Math.round((numerator / denominator) * 100)}%` : "#DIV/0!";
+    denominator ? `${Math.round((numerator / denominator) * 100)}%` : "0%";
   const average = (revenue: number, orders: number) =>
-    orders ? formatSheetNumber(Math.round(revenue / orders)) : "#DIV/0!";
+    orders ? formatSheetNumber(Math.round(revenue / orders)) : "0";
+  const totalDataReceived = (value: SaleReportFormValues) =>
+    parseSaleNumber(value.newDataReceived) + parseSaleNumber(value.floatingDataReceived);
+  const totalCloseRate = (value: SaleReportFormValues) =>
+    percent(
+      parseSaleNumber(value.newDataClosed) + parseSaleNumber(value.floatingDataClosed),
+      totalDataReceived(value),
+    );
 
   const rows: Array<Omit<SaleExportRow, "values"> & { values: string[] }> = [
     {
       stt: 1,
-      label: "Tổng Data mới nhận",
+      label: "Data mới nhận",
       values: slotValues.map((value) => integer(value.newDataReceived)),
       tone: "data",
     },
     {
       stt: 2,
-      label: "Tổng Data mới chốt",
+      label: "Data mới chốt",
       values: slotValues.map((value) => integer(value.newDataClosed)),
       tone: "data",
     },
     {
       stt: 3,
-      label: "Tổng Data thả nổi chốt",
+      label: "Data thả nổi chốt",
       values: slotValues.map((value) => integer(value.floatingDataClosed)),
       tone: "data",
     },
     {
       stt: 4,
-      label: "Tổng Data Thả Nổi Nhận",
+      label: "Data Thả Nổi Nhận",
       values: slotValues.map((value) => integer(value.floatingDataReceived)),
       tone: "data",
     },
     {
       stt: 5,
+      label: "Tổng Data nhận",
+      values: slotValues.map((value) => formatSheetNumber(totalDataReceived(value))),
+      tone: "data",
+    },
+    {
+      stt: 6,
       label: "Doanh số khách mới",
       values: slotValues.map((value) => money(value.newCustomerRevenue)),
       tone: "calc",
     },
     {
-      stt: 6,
+      stt: 7,
       label: "Tỷ lệ chốt mới",
       values: slotValues.map((value) =>
         percent(parseSaleNumber(value.newDataClosed), parseSaleNumber(value.newDataReceived)),
@@ -665,8 +678,8 @@ function buildExportRows(
       tone: "calc",
     },
     {
-      stt: 7,
-      label: "TB đơn data mới",
+      stt: 8,
+      label: "TB đơn Data mới",
       values: slotValues.map((value) => {
         const revenue = parseSaleNumber(value.newCustomerRevenue);
         const closed = parseSaleNumber(value.newDataClosed);
@@ -675,13 +688,19 @@ function buildExportRows(
       tone: "calc",
     },
     {
-      stt: 8,
+      stt: 9,
       label: "Doanh Số Thả Nổi",
       values: slotValues.map((value) => money(value.floatingRevenue)),
       tone: "calc",
     },
     {
-      stt: 9,
+      stt: 10,
+      label: "Tổng tỷ lệ chốt",
+      values: slotValues.map((value) => totalCloseRate(value)),
+      tone: "calc",
+    },
+    {
+      stt: 11,
       label: "Tổng doanh số",
       values: slotValues.map((value) =>
         formatSheetNumber(
@@ -691,7 +710,7 @@ function buildExportRows(
       tone: "calc",
     },
     {
-      stt: 10,
+      stt: 12,
       label: "Khách Cũ",
       values: slotValues.map((value) => integer(value.oldCustomers)),
       tone: "calc",
@@ -735,16 +754,20 @@ function getDailyExportValue(
     case 4:
       return formatSheetNumber(floatingDataReceived);
     case 5:
-      return formatSheetNumber(newCustomerRevenue);
+      return formatSheetNumber(newDataReceived + floatingDataReceived);
     case 6:
-      return percent(newDataClosed, newDataReceived);
+      return formatSheetNumber(newCustomerRevenue);
     case 7:
-      return average(newCustomerRevenue, newDataClosed);
+      return percent(newDataClosed, newDataReceived);
     case 8:
-      return formatSheetNumber(floatingRevenue);
+      return average(newCustomerRevenue, newDataClosed);
     case 9:
-      return formatSheetNumber(newCustomerRevenue + floatingRevenue);
+      return formatSheetNumber(floatingRevenue);
     case 10:
+      return percent(newDataClosed + floatingDataClosed, newDataReceived + floatingDataReceived);
+    case 11:
+      return formatSheetNumber(newCustomerRevenue + floatingRevenue);
+    case 12:
       return formatSheetNumber(oldCustomers);
     default:
       return "";
