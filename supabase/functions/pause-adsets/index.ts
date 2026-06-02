@@ -121,12 +121,19 @@ Deno.serve(async (req: Request) => {
     if (!account || !account.is_active) {
       return json({ success: false, message: "Tài khoản quảng cáo không khả dụng" }, 404);
     }
-    if (!account.access_token_encrypted) {
-      return json({ success: false, message: "Tài khoản quảng cáo chưa có token" }, 400);
+    const accessToken = await getAdsAccessToken(admin, account.access_token_encrypted);
+    if (!accessToken) {
+      return json(
+        {
+          success: false,
+          message: "Chưa cấu hình token hệ thống Meta. Vui lòng liên hệ Admin.",
+          successCount: 0,
+          failedCount: 0,
+          errors: [],
+        },
+        400,
+      );
     }
-
-    // TODO: replace direct token read with encryption/decryption before production rollout.
-    const accessToken = account.access_token_encrypted;
     const accountPath = normalizeMetaAdAccountPath(account.ad_account_id);
     const adsetIds = requestedAdsetIds.length
       ? requestedAdsetIds
@@ -205,6 +212,23 @@ async function fetchActiveAdsetIds({
     .filter((adset) => !isFutureMetaTime(adset.start_time))
     .filter((adset) => isMetaActiveStatus(adset.effective_status ?? adset.status))
     .map((adset) => adset.id);
+}
+
+async function getAdsAccessToken(
+  admin: ReturnType<typeof createClient>,
+  fallbackToken?: string | null,
+) {
+  const { data: systemToken, error } = await admin
+    .from("marketing_ads_system_tokens")
+    .select("access_token_encrypted")
+    .eq("is_active", true)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+
+  // TODO: decrypt the system token before production rollout.
+  return systemToken?.access_token_encrypted ?? fallbackToken ?? "";
 }
 
 async function pauseMetaAdset({

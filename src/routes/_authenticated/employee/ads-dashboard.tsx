@@ -1,15 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ArrowDown,
-  ArrowUp,
-  ChevronsUpDown,
-  KeyRound,
-  Loader2,
-  Plus,
-  RefreshCw,
-  Square,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, Loader2, Plus, RefreshCw, Square } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,8 +19,8 @@ import {
   type AdsDashboardData,
   fetchEmployeeAdsAccounts,
   pauseAllActiveAdsets,
+  stripMetaAdAccountPrefix,
   syncAdsAccountData,
-  updateAdsAccountToken,
   upsertAdsAccountTest,
 } from "@/lib/adsDashboard";
 import { cn } from "@/lib/utils";
@@ -52,7 +43,6 @@ type CampaignSortState = { key: CampaignSortKey; direction: "asc" | "desc" } | n
 interface NewAccountForm {
   accountName: string;
   accountId: string;
-  accessToken: string;
 }
 
 const EMPTY_DASHBOARD_DATA: AdsDashboardData = {
@@ -83,15 +73,11 @@ export function AdsDashboardPage() {
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isPausingAdsets, setIsPausingAdsets] = useState(false);
-  const [isUpdatingToken, setIsUpdatingToken] = useState(false);
   const [addAccountOpen, setAddAccountOpen] = useState(false);
-  const [updateTokenOpen, setUpdateTokenOpen] = useState(false);
   const [pauseConfirmOpen, setPauseConfirmOpen] = useState(false);
-  const [newAccessToken, setNewAccessToken] = useState("");
   const [newAccountForm, setNewAccountForm] = useState<NewAccountForm>({
     accountName: "",
     accountId: "",
-    accessToken: "",
   });
   const successfulSyncCacheRef = useRef(new Map<string, number>());
 
@@ -265,10 +251,13 @@ export function AdsDashboardPage() {
   const handleAddAccount = async () => {
     const accountName = newAccountForm.accountName.trim();
     const accountId = newAccountForm.accountId.trim();
-    const accessToken = newAccountForm.accessToken.trim();
 
-    if (!accountName || !accountId || !accessToken) {
+    if (!accountName || !accountId) {
       toast.error("Nhập đủ thông tin tài khoản quảng cáo");
+      return;
+    }
+    if (!/^\d+$/.test(accountId)) {
+      toast.error("ID tài khoản quảng cáo chỉ gồm phần số");
       return;
     }
 
@@ -276,7 +265,6 @@ export function AdsDashboardPage() {
       const result = await upsertAdsAccountTest({
         accountName,
         adAccountId: accountId,
-        accessToken,
       });
       if (!result.success) {
         toast.error(result.message);
@@ -289,7 +277,7 @@ export function AdsDashboardPage() {
         (account) => account.id === result.accountId,
       );
       setActiveAccountId(createdAccount?.accountId ?? refreshedData.accounts[0]?.accountId ?? "");
-      setNewAccountForm({ accountName: "", accountId: "", accessToken: "" });
+      setNewAccountForm({ accountName: "", accountId: "" });
       setAddAccountOpen(false);
       toast.success(result.message);
     } catch {
@@ -324,37 +312,6 @@ export function AdsDashboardPage() {
     }
   };
 
-  const handleUpdateToken = async () => {
-    if (!activeAccount) return;
-    const accessToken = newAccessToken.trim();
-    if (!accessToken) {
-      toast.error("Nhập access token mới");
-      return;
-    }
-
-    setIsUpdatingToken(true);
-    try {
-      const result = await updateAdsAccountToken({
-        adsAccountId: activeAccount.id,
-        accessToken,
-      });
-      if (!result.success) {
-        toast.error(result.message);
-        return;
-      }
-
-      const refreshedData = await fetchEmployeeAdsAccounts(currentDateFilter);
-      setDashboardData(refreshedData);
-      setNewAccessToken("");
-      setUpdateTokenOpen(false);
-      toast.success(result.message);
-    } catch {
-      toast.error("Không thể cập nhật token.");
-    } finally {
-      setIsUpdatingToken(false);
-    }
-  };
-
   return (
     <main className="mx-auto w-full max-w-6xl space-y-2.5 p-3 text-slate-950 md:p-4">
       <AdsDashboardHeader
@@ -382,7 +339,6 @@ export function AdsDashboardPage() {
             activeAccountId={activeAccount?.accountId ?? ""}
             onAddAccount={() => setAddAccountOpen(true)}
             onSelectAccount={handleSelectAccount}
-            onUpdateToken={() => setUpdateTokenOpen(true)}
           />
 
           <AdsKpiCards account={activeAccount} />
@@ -399,19 +355,6 @@ export function AdsDashboardPage() {
         onOpenChange={setAddAccountOpen}
         onFormChange={setNewAccountForm}
         onSubmit={handleAddAccount}
-      />
-
-      <UpdateAdsAccountTokenModal
-        account={activeAccount}
-        accessToken={newAccessToken}
-        isSubmitting={isUpdatingToken}
-        open={updateTokenOpen}
-        onAccessTokenChange={setNewAccessToken}
-        onOpenChange={(open) => {
-          setUpdateTokenOpen(open);
-          if (!open) setNewAccessToken("");
-        }}
-        onSubmit={handleUpdateToken}
       />
 
       <PauseAllAdsetsModal
@@ -543,7 +486,7 @@ function AdsEmptyState({ onAddTestAccount }: { onAddTestAccount: () => void }) {
         onClick={onAddTestAccount}
       >
         <Plus className="h-4 w-4" />
-        Thêm tài khoản test
+        Thêm tài khoản
       </Button>
     </section>
   );
@@ -554,13 +497,11 @@ function AdsAccountTabs({
   activeAccountId,
   onAddAccount,
   onSelectAccount,
-  onUpdateToken,
 }: {
   accounts: AdsAccount[];
   activeAccountId: string;
   onAddAccount: () => void;
   onSelectAccount: (accountId: string) => void;
-  onUpdateToken: () => void;
 }) {
   return (
     <section className="flex items-center gap-2 overflow-hidden rounded-[18px] border border-slate-200/80 bg-white p-1.5 shadow-sm">
@@ -591,15 +532,6 @@ function AdsAccountTabs({
       >
         <Plus className="h-4 w-4" />
         Thêm tài khoản
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        className="h-8 shrink-0 gap-1.5 rounded-xl border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 hover:bg-slate-50"
-        onClick={onUpdateToken}
-      >
-        <KeyRound className="h-4 w-4" />
-        Cập nhật token
       </Button>
     </section>
   );
@@ -929,24 +861,15 @@ function AddAdsAccountModal({
             <Input
               value={form.accountId}
               className="rounded-xl"
-              placeholder="act_2407288503067302"
-              onChange={(event) => onFormChange({ ...form, accountId: event.target.value })}
+              placeholder="VD: 2407288503067302"
+              onChange={(event) =>
+                onFormChange({
+                  ...form,
+                  accountId: stripMetaAdAccountPrefix(event.target.value),
+                })
+              }
             />
           </div>
-          <div className="space-y-1.5">
-            <Label>Access token</Label>
-            <Input
-              value={form.accessToken}
-              type="password"
-              className="rounded-xl"
-              placeholder="EAAB..."
-              onChange={(event) => onFormChange({ ...form, accessToken: event.target.value })}
-            />
-          </div>
-          <p className="text-sm leading-6 text-slate-500">
-            Token chỉ dùng để test hiển thị dữ liệu. Giai đoạn sau Leader Marketing sẽ quản lý tài
-            khoản quảng cáo và gán cho nhân viên.
-          </p>
         </div>
         <DialogFooter>
           <Button variant="outline" className="rounded-xl" onClick={() => onOpenChange(false)}>
@@ -961,7 +884,7 @@ function AddAdsAccountModal({
   );
 }
 
-function PauseAllAdsetsModal({
+export function PauseAllAdsetsModal({
   account,
   isSubmitting,
   open,
@@ -1015,71 +938,6 @@ function PauseAllAdsetsModal({
           >
             {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Xác nhận tắt tất cả nhóm
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function UpdateAdsAccountTokenModal({
-  account,
-  accessToken,
-  isSubmitting,
-  open,
-  onAccessTokenChange,
-  onOpenChange,
-  onSubmit,
-}: {
-  account: AdsAccount | null;
-  accessToken: string;
-  isSubmitting: boolean;
-  open: boolean;
-  onAccessTokenChange: (value: string) => void;
-  onOpenChange: (open: boolean) => void;
-  onSubmit: () => void;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="rounded-3xl sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Cập nhật Access Token</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-            <div className="font-semibold text-slate-950">
-              {account?.accountName ?? "Chưa có tài khoản"}
-            </div>
-            <div className="mt-1 text-xs font-medium text-slate-500">
-              {account?.accountId ?? "—"}
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Access token mới</Label>
-            <Input
-              value={accessToken}
-              type="password"
-              className="rounded-xl"
-              placeholder="EAAB..."
-              onChange={(event) => onAccessTokenChange(event.target.value)}
-            />
-          </div>
-          <p className="text-sm leading-6 text-slate-500">
-            Token mới sẽ thay thế token cũ. Hệ thống không hiển thị lại token đã lưu.
-          </p>
-        </div>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            className="rounded-xl"
-            disabled={isSubmitting}
-            onClick={() => onOpenChange(false)}
-          >
-            Huỷ
-          </Button>
-          <Button className="rounded-xl" disabled={!account || isSubmitting} onClick={onSubmit}>
-            {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Lưu token
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { InvoiceWorkspace } from "@/components/workspace/InvoiceWorkspace";
+import { AdminInvoicesWorkspace } from "@/components/workspace/AdminInvoicesWorkspace";
 
 export const Route = createFileRoute("/_authenticated/admin/invoices")({
-  component: InvoiceWorkspace,
+  component: AdminInvoicesWorkspace,
 });

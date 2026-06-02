@@ -192,18 +192,16 @@ Deno.serve(async (req: Request) => {
     if (!account || !account.is_active) {
       return json({ success: false, message: "Tài khoản quảng cáo không khả dụng" }, 404);
     }
-    if (!account.access_token_encrypted) {
+    const accessToken = await getAdsAccessToken(admin, account.access_token_encrypted);
+    if (!accessToken) {
       return json(
         {
           success: false,
-          message: "Tài khoản quảng cáo chưa có token đồng bộ",
+          message: "Chưa cấu hình token hệ thống Meta. Vui lòng liên hệ Admin.",
         },
         400,
       );
     }
-
-    // TODO: replace direct token read with encryption/decryption before production rollout.
-    const accessToken = account.access_token_encrypted;
     const accountPath = normalizeMetaAdAccountPath(account.ad_account_id);
     const dateRange = resolveDateRange(datePreset, body.dateStart, body.dateEnd);
     const syncedAt = new Date().toISOString();
@@ -303,6 +301,23 @@ async function fetchMetaAccountInfo({
   return fetchMeta<MetaAccountResponse>(
     `https://graph.facebook.com/${metaApiVersion}/${accountPath}?${params}`,
   );
+}
+
+async function getAdsAccessToken(
+  admin: ReturnType<typeof createClient>,
+  fallbackToken?: string | null,
+) {
+  const { data: systemToken, error } = await admin
+    .from("marketing_ads_system_tokens")
+    .select("access_token_encrypted")
+    .eq("is_active", true)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+
+  // TODO: decrypt the system token before production rollout.
+  return systemToken?.access_token_encrypted ?? fallbackToken ?? "";
 }
 
 async function fetchMetaCampaigns({

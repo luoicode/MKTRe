@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Loader2, RefreshCw, Search, Trash2 } from "lucide-react";
+import { ChevronDown, KeyRound, Loader2, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,16 +11,24 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   type AdsAccount,
   type AdsDashboardData,
   type AdsDatePreset,
+  type AdsSystemTokenStatus,
   adminDeleteAdsAccount,
+  adminDeleteAdsSystemToken,
+  adminUpsertAdsSystemToken,
   fetchAdminAdsAccounts,
+  fetchAdsSystemTokenStatus,
+  pauseAllActiveAdsets,
+  stripMetaAdAccountPrefix,
   syncAdsAccountData,
+  upsertAdsAccountTest,
 } from "@/lib/adsDashboard";
 import { cn } from "@/lib/utils";
-import { AdsCampaignTable, AdsKpiCards } from "../employee/ads-dashboard";
+import { AdsCampaignTable, AdsKpiCards, PauseAllAdsetsModal } from "../employee/ads-dashboard";
 
 export const Route = createFileRoute("/_authenticated/admin/ads-dashboard")({
   component: AdminAdsDashboardPage,
@@ -41,6 +49,11 @@ const DATE_FILTERS: { key: AdsDatePreset; label: string }[] = [
 
 const SYNC_CACHE_TTL_MS = 60_000;
 
+interface NewAccountForm {
+  accountName: string;
+  accountId: string;
+}
+
 function AdminAdsDashboardPage() {
   const [datePreset, setDatePreset] = useState<AdsDatePreset>("today");
   const [customDateStart, setCustomDateStart] = useState("");
@@ -53,6 +66,23 @@ function AdminAdsDashboardPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [pauseConfirmOpen, setPauseConfirmOpen] = useState(false);
+  const [isPausingAdsets, setIsPausingAdsets] = useState(false);
+  const [systemToken, setSystemToken] = useState<AdsSystemTokenStatus | null>(null);
+  const [tokenModalOpen, setTokenModalOpen] = useState(false);
+  const [deleteTokenOpen, setDeleteTokenOpen] = useState(false);
+  const [isSavingToken, setIsSavingToken] = useState(false);
+  const [isDeletingToken, setIsDeletingToken] = useState(false);
+  const [tokenForm, setTokenForm] = useState({
+    name: "MKTRe System Token",
+    accessToken: "",
+  });
+  const [addAccountOpen, setAddAccountOpen] = useState(false);
+  const [isAddingAccount, setIsAddingAccount] = useState(false);
+  const [newAccountForm, setNewAccountForm] = useState<NewAccountForm>({
+    accountName: "",
+    accountId: "",
+  });
   const successfulSyncCacheRef = useRef(new Map<string, number>());
   const accountSelectorRef = useRef<HTMLDivElement>(null);
 
@@ -100,12 +130,19 @@ function AdminAdsDashboardPage() {
     return data;
   }, [currentDateFilter]);
 
+  const loadSystemToken = useCallback(async () => {
+    const tokenStatus = await fetchAdsSystemTokenStatus();
+    setSystemToken(tokenStatus);
+    return tokenStatus;
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
-    fetchAdminAdsAccounts({ datePreset: "today" })
-      .then((data) => {
+    Promise.all([fetchAdminAdsAccounts({ datePreset: "today" }), fetchAdsSystemTokenStatus()])
+      .then(([data, tokenStatus]) => {
         if (!isMounted) return;
         setDashboardData(data);
+        setSystemToken(tokenStatus);
         setActiveAccountId(data.accounts[0]?.id ?? "");
       })
       .catch(() => {
@@ -247,6 +284,115 @@ function AdminAdsDashboardPage() {
     }
   };
 
+  const handlePauseAllActiveAdsets = async () => {
+    if (!activeAccount) return;
+
+    setIsPausingAdsets(true);
+    try {
+      const pauseResult = await pauseAllActiveAdsets(activeAccount.id);
+      if (pauseResult.ok) {
+        await syncAdsAccountData(activeAccount.id, currentDateFilter);
+        await loadAccounts();
+        toast.success(pauseResult.message);
+      } else if ((pauseResult.pausedCount ?? 0) > 0) {
+        await syncAdsAccountData(activeAccount.id, currentDateFilter);
+        await loadAccounts();
+        toast.warning(pauseResult.message);
+      } else {
+        toast.info(pauseResult.message);
+      }
+      setPauseConfirmOpen(false);
+    } catch {
+      toast.error("Không thể tắt nhóm quảng cáo.");
+    } finally {
+      setIsPausingAdsets(false);
+    }
+  };
+
+  const handleAddAccount = async () => {
+    const accountName = newAccountForm.accountName.trim();
+    const accountId = newAccountForm.accountId.trim();
+
+    if (!accountName || !accountId) {
+      toast.error("Nhập đủ tên và ID tài khoản quảng cáo");
+      return;
+    }
+    if (!/^\d+$/.test(accountId)) {
+      toast.error("ID tài khoản quảng cáo chỉ gồm phần số");
+      return;
+    }
+
+    setIsAddingAccount(true);
+    try {
+      const result = await upsertAdsAccountTest({
+        accountName,
+        adAccountId: accountId,
+      });
+      if (!result.success) {
+        toast.error(result.message);
+        return;
+      }
+      const refreshed = await fetchAdminAdsAccounts(currentDateFilter);
+      setDashboardData(refreshed);
+      setActiveAccountId(result.accountId ?? refreshed.accounts[0]?.id ?? "");
+      setNewAccountForm({ accountName: "", accountId: "" });
+      setAddAccountOpen(false);
+      toast.success(result.message);
+    } catch {
+      toast.error("Không thể thêm tài khoản quảng cáo.");
+    } finally {
+      setIsAddingAccount(false);
+    }
+  };
+
+  const handleSaveSystemToken = async () => {
+    const accessToken = tokenForm.accessToken.trim();
+    if (!accessToken) {
+      toast.error("Nhập access token hệ thống");
+      return;
+    }
+
+    setIsSavingToken(true);
+    try {
+      const result = await adminUpsertAdsSystemToken({
+        name: tokenForm.name.trim() || "MKTRe System Token",
+        accessToken,
+      });
+      if (!result.success) {
+        toast.error(result.message);
+        return;
+      }
+      await loadSystemToken();
+      setTokenForm({ name: "MKTRe System Token", accessToken: "" });
+      setTokenModalOpen(false);
+      toast.success(result.message);
+    } catch {
+      toast.error("Không thể lưu token hệ thống.");
+    } finally {
+      setIsSavingToken(false);
+    }
+  };
+
+  const handleDeleteSystemToken = async () => {
+    if (!systemToken) return;
+
+    setIsDeletingToken(true);
+    try {
+      const result = await adminDeleteAdsSystemToken(systemToken.id);
+      if (!result.success) {
+        toast.error(result.message);
+        return;
+      }
+      await loadSystemToken();
+      setDeleteTokenOpen(false);
+      toast.success(result.message);
+    } catch {
+      toast.error("Không thể xoá token hệ thống.");
+    } finally {
+      setIsDeletingToken(false);
+    }
+  };
+
   return (
     <main className="mx-auto w-full max-w-7xl space-y-2.5 p-3 text-slate-950 md:p-4">
       <section className="rounded-[18px] border border-slate-200/80 bg-white/90 p-3.5 shadow-sm">
@@ -376,16 +522,37 @@ function AdminAdsDashboardPage() {
               )}
             </Button>
             {activeAccount ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-8 gap-1.5 rounded-xl border-blue-100 bg-white px-3 text-xs font-semibold text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                  onClick={() => setAddAccountOpen(true)}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Thêm tài khoản
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-8 gap-1.5 rounded-xl border-red-100 bg-white px-3 text-xs font-semibold text-red-600 hover:bg-red-50 hover:text-red-700"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Xoá tài khoản
+                </Button>
+              </>
+            ) : (
               <Button
                 type="button"
                 variant="outline"
-                className="h-8 gap-1.5 rounded-xl border-red-100 bg-white px-3 text-xs font-semibold text-red-600 hover:bg-red-50 hover:text-red-700"
-                onClick={() => setDeleteOpen(true)}
+                className="h-8 gap-1.5 rounded-xl border-blue-100 bg-white px-3 text-xs font-semibold text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                onClick={() => setAddAccountOpen(true)}
               >
-                <Trash2 className="h-3.5 w-3.5" />
-                Xoá tài khoản
+                <Plus className="h-3.5 w-3.5" />
+                Thêm tài khoản
               </Button>
-            ) : null}
+            )}
           </div>
         </div>
         {datePreset === "custom" ? (
@@ -409,10 +576,26 @@ function AdminAdsDashboardPage() {
         ) : null}
       </section>
 
+      <AdsSystemTokenCard
+        token={systemToken}
+        onDelete={() => setDeleteTokenOpen(true)}
+        onEdit={() => {
+          setTokenForm({
+            name: systemToken?.name ?? "MKTRe System Token",
+            accessToken: "",
+          });
+          setTokenModalOpen(true);
+        }}
+      />
+
       {activeAccount ? (
         <>
           <AdsKpiCards account={activeAccount} />
-          <AdsCampaignTable account={activeAccount} showPauseAll={false} />
+          <AdsCampaignTable
+            account={activeAccount}
+            onPauseAll={() => setPauseConfirmOpen(true)}
+            showPauseAll
+          />
         </>
       ) : (
         <div className="rounded-[18px] border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm">
@@ -438,6 +621,40 @@ function AdminAdsDashboardPage() {
         open={deleteOpen}
         onConfirm={handleDeleteAccount}
         onOpenChange={setDeleteOpen}
+      />
+      <AdminAddAdsAccountModal
+        form={newAccountForm}
+        isSubmitting={isAddingAccount}
+        open={addAccountOpen}
+        onFormChange={setNewAccountForm}
+        onOpenChange={setAddAccountOpen}
+        onSubmit={handleAddAccount}
+      />
+      <AdsSystemTokenModal
+        form={tokenForm}
+        isSubmitting={isSavingToken}
+        open={tokenModalOpen}
+        token={systemToken}
+        onFormChange={setTokenForm}
+        onOpenChange={(open) => {
+          setTokenModalOpen(open);
+          if (!open) setTokenForm({ name: "MKTRe System Token", accessToken: "" });
+        }}
+        onSubmit={handleSaveSystemToken}
+      />
+      <DeleteAdsSystemTokenModal
+        isSubmitting={isDeletingToken}
+        open={deleteTokenOpen}
+        token={systemToken}
+        onConfirm={handleDeleteSystemToken}
+        onOpenChange={setDeleteTokenOpen}
+      />
+      <PauseAllAdsetsModal
+        account={activeAccount}
+        isSubmitting={isPausingAdsets}
+        open={pauseConfirmOpen}
+        onConfirm={handlePauseAllActiveAdsets}
+        onOpenChange={setPauseConfirmOpen}
       />
     </main>
   );
@@ -500,4 +717,277 @@ function DeleteAdsAccountModal({
       </DialogContent>
     </Dialog>
   );
+}
+
+function AdsSystemTokenCard({
+  token,
+  onDelete,
+  onEdit,
+}: {
+  token: AdsSystemTokenStatus | null;
+  onDelete: () => void;
+  onEdit: () => void;
+}) {
+  return (
+    <section className="rounded-[18px] border border-slate-200/80 bg-white p-3.5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+            <KeyRound className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-base font-bold text-slate-950">Token hệ thống Meta</h2>
+            <p className="mt-0.5 text-sm text-slate-500">
+              {token
+                ? `Đã cấu hình • ${token.name}`
+                : "Chưa cấu hình token hệ thống cho Ads Dashboard"}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <span
+            className={cn(
+              "rounded-full px-2.5 py-1 text-xs font-semibold",
+              token ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700",
+            )}
+          >
+            {token ? "Đã cấu hình" : "Chưa cấu hình"}
+          </span>
+          {token ? (
+            <span className="text-xs font-medium text-slate-500">
+              Cập nhật: {formatDateTime(token.updatedAt)}
+            </span>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            className="h-8 rounded-xl px-3 text-xs font-semibold"
+            onClick={onEdit}
+          >
+            {token ? "Cập nhật token" : "Thêm token"}
+          </Button>
+          {token ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-8 rounded-xl border-red-100 px-3 text-xs font-semibold text-red-600 hover:bg-red-50 hover:text-red-700"
+              onClick={onDelete}
+            >
+              Xoá token
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      {token ? (
+        <div className="mt-3 grid gap-2 rounded-2xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-500 sm:grid-cols-3">
+          <div>
+            <span className="block font-semibold text-slate-700">Loại</span>
+            System User Token
+          </div>
+          <div>
+            <span className="block font-semibold text-slate-700">Người cập nhật</span>
+            {token.updatedByName ?? token.createdByName ?? "—"}
+          </div>
+          <div>
+            <span className="block font-semibold text-slate-700">Trạng thái</span>
+            Active
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function AdminAddAdsAccountModal({
+  form,
+  isSubmitting,
+  open,
+  onFormChange,
+  onOpenChange,
+  onSubmit,
+}: {
+  form: NewAccountForm;
+  isSubmitting: boolean;
+  open: boolean;
+  onFormChange: (form: NewAccountForm) => void;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="rounded-3xl sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Thêm tài khoản quảng cáo</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Tên tài khoản quảng cáo</Label>
+            <Input
+              value={form.accountName}
+              className="rounded-xl"
+              placeholder="VD: INV_AKA_DASNOTRI_HỮU HUY_03_29/05/26"
+              onChange={(event) => onFormChange({ ...form, accountName: event.target.value })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>ID tài khoản quảng cáo</Label>
+            <Input
+              value={form.accountId}
+              className="rounded-xl"
+              placeholder="VD: 2407288503067302"
+              onChange={(event) =>
+                onFormChange({
+                  ...form,
+                  accountId: stripMetaAdAccountPrefix(event.target.value),
+                })
+              }
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            className="rounded-xl"
+            disabled={isSubmitting}
+            onClick={() => onOpenChange(false)}
+          >
+            Huỷ
+          </Button>
+          <Button className="rounded-xl" disabled={isSubmitting} onClick={onSubmit}>
+            {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Lưu tài khoản
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AdsSystemTokenModal({
+  form,
+  isSubmitting,
+  open,
+  token,
+  onFormChange,
+  onOpenChange,
+  onSubmit,
+}: {
+  form: { name: string; accessToken: string };
+  isSubmitting: boolean;
+  open: boolean;
+  token: AdsSystemTokenStatus | null;
+  onFormChange: (form: { name: string; accessToken: string }) => void;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="rounded-3xl sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{token ? "Cập nhật token hệ thống" : "Thêm token hệ thống"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Tên token</Label>
+            <Input
+              value={form.name}
+              className="rounded-xl"
+              placeholder="MKTRe System Token"
+              onChange={(event) => onFormChange({ ...form, name: event.target.value })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Access token</Label>
+            <Input
+              value={form.accessToken}
+              type="password"
+              className="rounded-xl"
+              placeholder="EAA..."
+              onChange={(event) => onFormChange({ ...form, accessToken: event.target.value })}
+            />
+          </div>
+          <p className="text-sm leading-6 text-slate-500">
+            Token hệ thống dùng để đồng bộ dữ liệu quảng cáo và thao tác nhóm quảng cáo cho toàn bộ
+            tài khoản được gán trong BM. Hệ thống không hiển thị lại token đã lưu.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            className="rounded-xl"
+            disabled={isSubmitting}
+            onClick={() => onOpenChange(false)}
+          >
+            Huỷ
+          </Button>
+          <Button className="rounded-xl" disabled={isSubmitting} onClick={onSubmit}>
+            {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Lưu token
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeleteAdsSystemTokenModal({
+  isSubmitting,
+  open,
+  token,
+  onConfirm,
+  onOpenChange,
+}: {
+  isSubmitting: boolean;
+  open: boolean;
+  token: AdsSystemTokenStatus | null;
+  onConfirm: () => void;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="rounded-3xl sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Xoá token hệ thống Meta</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-sm leading-6 text-slate-600">
+            Xoá token hệ thống sẽ khiến Ads Dashboard không thể đồng bộ hoặc thao tác tài khoản
+            quảng cáo cho đến khi thêm token mới.
+          </p>
+          <div className="rounded-2xl border border-red-100 bg-red-50 p-3 text-sm text-red-900">
+            <span className="font-semibold">Token:</span> {token?.name ?? "—"}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            className="rounded-xl"
+            disabled={isSubmitting}
+            onClick={() => onOpenChange(false)}
+          >
+            Huỷ
+          </Button>
+          <Button
+            className="rounded-xl bg-red-600 hover:bg-red-700"
+            disabled={!token || isSubmitting}
+            onClick={onConfirm}
+          >
+            {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Xoá token
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
 }

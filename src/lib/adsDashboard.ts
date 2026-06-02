@@ -47,7 +47,6 @@ export interface AdsDateRangeFilter {
 export interface AddAdsAccountDraft {
   accountName: string;
   accountId: string;
-  accessToken?: string;
 }
 
 export interface AdsDashboardActionResult {
@@ -62,7 +61,7 @@ export interface AdsDashboardActionResult {
 export interface UpsertAdsAccountTestInput {
   accountName: string;
   adAccountId: string;
-  accessToken: string;
+  accessToken?: string;
 }
 
 export interface UpsertAdsAccountTestResult {
@@ -82,6 +81,31 @@ export interface UpdateAdsAccountTokenResult {
 }
 
 export interface AdminDeleteAdsAccountResult {
+  success: boolean;
+  message: string;
+}
+
+export interface AdsSystemTokenStatus {
+  id: string;
+  name: string;
+  tokenType: string;
+  isActive: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+  createdById: string | null;
+  createdByName: string | null;
+  createdByUsername: string | null;
+  updatedById: string | null;
+  updatedByName: string | null;
+  updatedByUsername: string | null;
+}
+
+export interface UpsertAdsSystemTokenInput {
+  name: string;
+  accessToken: string;
+}
+
+export interface AdsSystemTokenActionResult {
   success: boolean;
   message: string;
 }
@@ -122,6 +146,21 @@ interface AdsCampaignSnapshotRow {
   synced_at: string;
 }
 
+interface AdsSystemTokenPublicRow {
+  id: string;
+  name: string;
+  token_type: string;
+  is_active: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_by_username: string | null;
+  updated_by: string | null;
+  updated_by_name: string | null;
+  updated_by_username: string | null;
+}
+
 interface QueryResult<T> {
   data: T[] | null;
   error: { message: string } | null;
@@ -141,9 +180,18 @@ interface AdsTableQuery<T> {
 interface AdsSupabaseClient {
   from(table: "marketing_ads_accounts_public"): AdsTableQuery<AdsAccountPublicRow>;
   from(table: "marketing_ads_campaign_snapshots"): AdsTableQuery<AdsCampaignSnapshotRow>;
+  from(table: "marketing_ads_system_tokens_public"): AdsTableQuery<AdsSystemTokenPublicRow>;
 }
 
 const adsSupabase = supabase as unknown as AdsSupabaseClient;
+
+export function stripMetaAdAccountPrefix(adAccountId: string): string {
+  return adAccountId.trim().replace(/^act_/i, "");
+}
+
+export function normalizeMetaAdAccountId(adAccountId: string): string {
+  return `act_${stripMetaAdAccountPrefix(adAccountId)}`;
+}
 
 export async function fetchEmployeeAdsAccounts(
   filter: AdsDateRangeFilter = { datePreset: "today" },
@@ -297,10 +345,15 @@ export async function pauseAllActiveAdsets(accountId: string): Promise<AdsDashbo
 export async function upsertAdsAccountTest(
   input: UpsertAdsAccountTestInput,
 ): Promise<UpsertAdsAccountTestResult> {
+  const normalizedInput = {
+    ...input,
+    adAccountId: normalizeMetaAdAccountId(input.adAccountId),
+  };
+
   const { data, error } = await supabase.functions.invoke<UpsertAdsAccountTestResult>(
     "upsert-ads-account-test",
     {
-      body: input,
+      body: normalizedInput,
     },
   );
 
@@ -357,6 +410,65 @@ export async function adminDeleteAdsAccount(
   };
 }
 
+export async function fetchAdsSystemTokenStatus(): Promise<AdsSystemTokenStatus | null> {
+  const { data, error } = await adsSupabase
+    .from("marketing_ads_system_tokens_public")
+    .select(
+      "id, name, token_type, is_active, created_at, updated_at, created_by, created_by_name, created_by_username, updated_by, updated_by_name, updated_by_username",
+    )
+    .eq("is_active", true)
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const row = data?.[0];
+  return row ? mapSystemTokenRow(row) : null;
+}
+
+export async function adminUpsertAdsSystemToken(
+  input: UpsertAdsSystemTokenInput,
+): Promise<AdsSystemTokenActionResult> {
+  const { data, error } = await supabase.functions.invoke<AdsSystemTokenActionResult>(
+    "admin-upsert-ads-system-token",
+    {
+      body: input,
+    },
+  );
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return {
+    success: Boolean(data?.success),
+    message: data?.message ?? "Không thể lưu token hệ thống",
+  };
+}
+
+export async function adminDeleteAdsSystemToken(
+  tokenId: string,
+): Promise<AdsSystemTokenActionResult> {
+  const { data, error } = await supabase.functions.invoke<AdsSystemTokenActionResult>(
+    "admin-delete-ads-system-token",
+    {
+      body: {
+        tokenId,
+      },
+    },
+  );
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return {
+    success: Boolean(data?.success),
+    message: data?.message ?? "Không thể xoá token hệ thống",
+  };
+}
+
 export function createTestAdsAccount(draft: AddAdsAccountDraft): AdsAccount {
   return {
     id: draft.accountId,
@@ -410,6 +522,23 @@ function mapSnapshotRowToCampaign(snapshot: AdsCampaignSnapshotRow): AdsCampaign
     spent: toNumber(snapshot.spent),
     result: toNullableNumber(snapshot.result_count),
     purchase: toNullableNumber(snapshot.purchase_count),
+  };
+}
+
+function mapSystemTokenRow(row: AdsSystemTokenPublicRow): AdsSystemTokenStatus {
+  return {
+    id: row.id,
+    name: row.name,
+    tokenType: row.token_type,
+    isActive: row.is_active,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    createdById: row.created_by,
+    createdByName: row.created_by_name,
+    createdByUsername: row.created_by_username,
+    updatedById: row.updated_by,
+    updatedByName: row.updated_by_name,
+    updatedByUsername: row.updated_by_username,
   };
 }
 

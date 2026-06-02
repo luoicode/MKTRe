@@ -11,7 +11,6 @@ const corsHeaders = {
 type UpsertAdsAccountTestRequest = {
   accountName?: string;
   adAccountId?: string;
-  accessToken?: string;
 };
 
 Deno.serve(async (req: Request) => {
@@ -34,17 +33,15 @@ Deno.serve(async (req: Request) => {
 
     const body = (await readJson(req)) as UpsertAdsAccountTestRequest;
     const accountName = body.accountName?.trim();
-    const adAccountId = body.adAccountId?.trim();
-    const accessToken = body.accessToken?.trim();
+    const rawAdAccountId = body.adAccountId?.trim() ?? "";
+    const adAccountIdDigits = rawAdAccountId.replace(/^act_/i, "");
+    const adAccountId = `act_${adAccountIdDigits}`;
 
     if (!accountName) {
       return json({ success: false, message: "Tên tài khoản quảng cáo không được để trống" }, 400);
     }
-    if (!adAccountId || !/^act_[A-Za-z0-9_]+$/.test(adAccountId)) {
-      return json({ success: false, message: "ID tài khoản quảng cáo phải có dạng act_..." }, 400);
-    }
-    if (!accessToken) {
-      return json({ success: false, message: "Access token không được để trống" }, 400);
+    if (!/^\d+$/.test(adAccountIdDigits)) {
+      return json({ success: false, message: "Chỉ nhập phần số ID tài khoản quảng cáo" }, 400);
     }
 
     const userClient = createClient(supabaseUrl, anonKey, {
@@ -71,26 +68,20 @@ Deno.serve(async (req: Request) => {
       .select("role")
       .eq("user_id", profile.id);
     if (rolesError) throw rolesError;
-    const canUseTestFlow = (roles ?? []).some(
-      (row) => row.role === "employee" || row.role === "leader",
+    const canUseTestFlow = (roles ?? []).some((row) =>
+      ["admin", "employee", "leader"].includes(row.role),
     );
     if (!canUseTestFlow) {
-      return json(
-        { success: false, message: "Chỉ nhân viên hoặc Leader Marketing được thêm tài khoản test" },
-        403,
-      );
+      return json({ success: false, message: "Bạn không có quyền thêm tài khoản quảng cáo" }, 403);
     }
 
-    // Phase test only: token is stored in this column as a placeholder.
-    // TODO: encrypt/decrypt this value before production rollout.
     const { data: account, error: accountError } = await admin
       .from("marketing_ads_accounts")
       .upsert(
         {
           account_name: accountName,
           ad_account_id: adAccountId,
-          access_token_encrypted: accessToken,
-          token_status: "test",
+          token_status: "active",
           is_active: true,
           created_by: profile.id,
         },
@@ -100,20 +91,27 @@ Deno.serve(async (req: Request) => {
       .single();
     if (accountError) throw accountError;
 
-    const { error: assignmentError } = await admin.from("marketing_ads_account_assignments").upsert(
-      {
-        ads_account_id: account.id,
-        employee_id: profile.id,
-        assigned_by: profile.id,
-      },
-      { onConflict: "ads_account_id,employee_id" },
+    const shouldAssignToCreator = (roles ?? []).some((row) =>
+      ["employee", "leader"].includes(row.role),
     );
-    if (assignmentError) throw assignmentError;
+    if (shouldAssignToCreator) {
+      const { error: assignmentError } = await admin
+        .from("marketing_ads_account_assignments")
+        .upsert(
+          {
+            ads_account_id: account.id,
+            employee_id: profile.id,
+            assigned_by: profile.id,
+          },
+          { onConflict: "ads_account_id,employee_id" },
+        );
+      if (assignmentError) throw assignmentError;
+    }
 
     return json({
       success: true,
       accountId: account.id,
-      message: "Đã thêm tài khoản quảng cáo test",
+      message: "Đã thêm tài khoản quảng cáo",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -121,7 +119,7 @@ Deno.serve(async (req: Request) => {
     return json(
       {
         success: false,
-        message: "Không thể thêm tài khoản quảng cáo test. Vui lòng kiểm tra lại thông tin.",
+        message: "Không thể thêm tài khoản quảng cáo. Vui lòng kiểm tra lại thông tin.",
       },
       500,
     );

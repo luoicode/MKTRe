@@ -25,7 +25,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/lib/auth";
 import { captureElementAsPngBlob, downloadBlob } from "@/lib/captureImage";
-import { fetchInvoiceProducts, type InvoiceProduct } from "@/lib/invoices";
+import { createInvoice, fetchInvoiceProducts, type InvoiceProduct } from "@/lib/invoices";
 import { formatVnd, parseVndInput } from "@/lib/products";
 import { copyReportImageToClipboard } from "@/utils/reportImageStorage";
 
@@ -192,12 +192,16 @@ export function InvoiceWorkspace() {
     setLines([emptyLine()]);
   };
 
+  const selectedLines = useMemo(() => lines.filter((line) => line.productId), [lines]);
+
   const validateInvoice = () => {
     if (!customerName.trim()) throw new Error("Nhập tên khách hàng");
     if (!customerPhone.trim()) throw new Error("Nhập số điện thoại khách");
     if (!customerAddress.trim()) throw new Error("Nhập địa chỉ khách");
-    if (!lines.some((line) => line.displayName.trim() && parseVndInput(line.total) > 0)) {
-      throw new Error("Chọn ít nhất 1 sản phẩm");
+    if (!profile?.id) throw new Error("Không tìm thấy hồ sơ người tạo hoá đơn");
+    if (selectedLines.length === 0) throw new Error("Chọn ít nhất 1 sản phẩm và combo");
+    if (lines.some((line) => line.parentId && !line.productId)) {
+      throw new Error("Mỗi dòng sản phẩm phải chọn đủ combo");
     }
   };
 
@@ -205,6 +209,31 @@ export function InvoiceWorkspace() {
     try {
       validateInvoice();
       setCapturing(true);
+      await createInvoice({
+        invoice_date: invoiceDate,
+        created_by: profile?.id ?? "",
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        customer_address: customerAddress,
+        subtotal_amount: subtotal,
+        discount_amount: discount,
+        final_amount: total,
+        notes: internalNote,
+        items: selectedLines.map((line) => {
+          const product = products.find((item) => item.id === line.productId);
+          const parent = products.find((item) => item.id === line.parentId);
+          return {
+            product_id: line.productId,
+            product_name: parent?.name || product?.product_group || line.displayName,
+            combo_name: line.displayName,
+            quantity: Number(line.quantity || 0),
+            unit_price: parseVndInput(line.unitPrice),
+            subtotal: parseVndInput(line.total),
+            discount_amount: parseVndInput(line.discount),
+            total_amount: parseVndInput(line.totalAfterDiscount),
+          };
+        }),
+      });
       const blob = await captureElementAsPngBlob({
         target: previewRef.current,
         pixelRatio: 2,
@@ -217,6 +246,7 @@ export function InvoiceWorkspace() {
         return url;
       });
       setPreviewOpen(true);
+      toast.success("Đã tạo hoá đơn");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Không chụp được hóa đơn");
     } finally {
@@ -424,24 +454,14 @@ export function InvoiceWorkspace() {
               ))}
             </div>
           </CardContent>
-          <div className="sticky bottom-0 flex flex-wrap justify-end gap-2 border-t bg-white/95 p-3 backdrop-blur">
+          <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-2 border-t bg-white/95 p-3 backdrop-blur">
             <Button variant="outline" size="sm" className="rounded-xl" onClick={resetInvoice}>
               <RefreshCcw className="mr-2 h-4 w-4" />
               Làm mới
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="rounded-xl"
-              onClick={captureInvoice}
-              disabled={capturing}
-            >
+            <Button size="sm" className="rounded-xl" onClick={captureInvoice} disabled={capturing}>
               <ImageIcon className="mr-2 h-4 w-4" />
-              {capturing ? "Đang chụp..." : "Chụp hoá đơn"}
-            </Button>
-            <Button size="sm" className="rounded-xl" onClick={copyInvoice} disabled={capturing}>
-              <Copy className="mr-2 h-4 w-4" />
-              Copy ảnh
+              {capturing ? "Đang tạo..." : "Tạo hoá đơn"}
             </Button>
           </div>
         </Card>
@@ -479,31 +499,29 @@ export function InvoiceWorkspace() {
       </div>
 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-4xl rounded-3xl">
+        <DialogContent className="max-w-[min(92vw,980px)] rounded-3xl">
           <DialogHeader>
             <DialogTitle>Preview ảnh hoá đơn</DialogTitle>
           </DialogHeader>
           {previewUrl ? (
-            <div className="max-h-[70vh] overflow-auto rounded-2xl border bg-slate-50 p-3">
+            <div className="flex max-h-[72vh] items-center justify-center rounded-2xl border bg-slate-50 p-3">
               <img
                 src={previewUrl}
                 alt="Preview hoá đơn"
-                className="mx-auto max-w-full rounded-xl bg-white"
+                className="max-h-[68vh] max-w-full rounded-xl bg-white object-contain"
               />
             </div>
           ) : null}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPreviewOpen(false)}>
-              Đóng
-            </Button>
+          <DialogFooter className="gap-2 sm:justify-end">
             <Button variant="outline" onClick={downloadInvoice}>
               <Download className="mr-2 h-4 w-4" />
               Tải ảnh
             </Button>
-            <Button onClick={copyInvoice}>
+            <Button variant="outline" onClick={copyInvoice}>
               <Copy className="mr-2 h-4 w-4" />
               Copy ảnh
             </Button>
+            <Button onClick={() => setPreviewOpen(false)}>Đóng</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
