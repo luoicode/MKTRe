@@ -20,6 +20,7 @@ import {
   CalendarCheck,
   Menu,
   ClipboardList,
+  Receipt,
   Warehouse,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -61,6 +62,8 @@ const NAV: NavItem[] = [
   { to: "/admin/ads-dashboard", label: "Ads Dashboard", icon: BarChart3, roles: ["admin"] },
   { to: "/admin/kpi", label: "KPI", icon: Target, roles: ["admin"] },
   { to: "/admin/floating-pool", label: "Kho thả nổi", icon: Warehouse, roles: ["admin"] },
+  { to: "/admin/products", label: "Sản phẩm", icon: Package, roles: ["admin"] },
+  { to: "/admin/invoices", label: "Hoá đơn", icon: Receipt, roles: ["admin"] },
   { to: "/admin/users", label: "Người dùng", icon: Users, roles: ["admin"] },
   { to: "/admin/teams", label: "Quản lý team", icon: UsersRound, roles: ["admin"] },
   { to: "/admin/tasks", label: "Công việc", icon: CheckSquare, roles: ["admin"] },
@@ -147,13 +150,14 @@ const NAV: NavItem[] = [
     icon: Warehouse,
     roles: [...SALE_ROLES],
   },
+  { to: "/sale/invoices", label: "Hoá đơn", icon: Receipt, roles: [...SALE_ROLES] },
   {
     to: "/sale/team",
     label: "Thành viên team",
     icon: UsersRound,
     roles: [APP_ROLES.SALE_LEADER],
   },
-  { to: "/sale/profile", label: "Đào tạo sale", icon: BookOpen, roles: [...SALE_ROLES] },
+  { to: "/sale/resources", label: "Đào tạo sale", icon: BookOpen, roles: [...SALE_ROLES] },
 ];
 
 export function AppLayout({ children }: { children: ReactNode }) {

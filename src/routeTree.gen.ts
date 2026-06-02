@@ -14,9 +14,11 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
 import { Route as AuthenticatedSaleTeamRouteImport } from './routes/_authenticated/sale/team'
+import { Route as AuthenticatedSaleResourcesRouteImport } from './routes/_authenticated/sale/resources'
 import { Route as AuthenticatedSaleReportRouteImport } from './routes/_authenticated/sale/report'
 import { Route as AuthenticatedSaleProfileRouteImport } from './routes/_authenticated/sale/profile'
 import { Route as AuthenticatedSaleKpiRouteImport } from './routes/_authenticated/sale/kpi'
+import { Route as AuthenticatedSaleInvoicesRouteImport } from './routes/_authenticated/sale/invoices'
 import { Route as AuthenticatedSaleFloatingPoolRouteImport } from './routes/_authenticated/sale/floating-pool'
 import { Route as AuthenticatedSaleDashboardRouteImport } from './routes/_authenticated/sale/dashboard'
 import { Route as AuthenticatedSaleAttendanceRouteImport } from './routes/_authenticated/sale/attendance'
@@ -71,9 +73,11 @@ import { Route as AuthenticatedAdminResourcesRouteImport } from './routes/_authe
 import { Route as AuthenticatedAdminReportsRouteImport } from './routes/_authenticated/admin/reports'
 import { Route as AuthenticatedAdminRankingRouteImport } from './routes/_authenticated/admin/ranking'
 import { Route as AuthenticatedAdminProfileRouteImport } from './routes/_authenticated/admin/profile'
+import { Route as AuthenticatedAdminProductsRouteImport } from './routes/_authenticated/admin/products'
 import { Route as AuthenticatedAdminNotificationsRouteImport } from './routes/_authenticated/admin/notifications'
 import { Route as AuthenticatedAdminManagerAssignmentsRouteImport } from './routes/_authenticated/admin/manager-assignments'
 import { Route as AuthenticatedAdminKpiRouteImport } from './routes/_authenticated/admin/kpi'
+import { Route as AuthenticatedAdminInvoicesRouteImport } from './routes/_authenticated/admin/invoices'
 import { Route as AuthenticatedAdminFloatingPoolRouteImport } from './routes/_authenticated/admin/floating-pool'
 import { Route as AuthenticatedAdminDashboardRouteImport } from './routes/_authenticated/admin/dashboard'
 import { Route as AuthenticatedAdminAttendanceRouteImport } from './routes/_authenticated/admin/attendance'
@@ -105,6 +109,12 @@ const AuthenticatedSaleTeamRoute = AuthenticatedSaleTeamRouteImport.update({
   path: '/sale/team',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedSaleResourcesRoute =
+  AuthenticatedSaleResourcesRouteImport.update({
+    id: '/sale/resources',
+    path: '/sale/resources',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedSaleReportRoute = AuthenticatedSaleReportRouteImport.update({
   id: '/sale/report',
   path: '/sale/report',
@@ -121,6 +131,12 @@ const AuthenticatedSaleKpiRoute = AuthenticatedSaleKpiRouteImport.update({
   path: '/sale/kpi',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedSaleInvoicesRoute =
+  AuthenticatedSaleInvoicesRouteImport.update({
+    id: '/sale/invoices',
+    path: '/sale/invoices',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedSaleFloatingPoolRoute =
   AuthenticatedSaleFloatingPoolRouteImport.update({
     id: '/sale/floating-pool',
@@ -440,6 +456,12 @@ const AuthenticatedAdminProfileRoute =
     path: '/admin/profile',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminProductsRoute =
+  AuthenticatedAdminProductsRouteImport.update({
+    id: '/admin/products',
+    path: '/admin/products',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminNotificationsRoute =
   AuthenticatedAdminNotificationsRouteImport.update({
     id: '/admin/notifications',
@@ -457,6 +479,12 @@ const AuthenticatedAdminKpiRoute = AuthenticatedAdminKpiRouteImport.update({
   path: '/admin/kpi',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAdminInvoicesRoute =
+  AuthenticatedAdminInvoicesRouteImport.update({
+    id: '/admin/invoices',
+    path: '/admin/invoices',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminFloatingPoolRoute =
   AuthenticatedAdminFloatingPoolRouteImport.update({
     id: '/admin/floating-pool',
@@ -497,9 +525,11 @@ export interface FileRoutesByFullPath {
   '/admin/attendance': typeof AuthenticatedAdminAttendanceRoute
   '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
   '/admin/floating-pool': typeof AuthenticatedAdminFloatingPoolRoute
+  '/admin/invoices': typeof AuthenticatedAdminInvoicesRoute
   '/admin/kpi': typeof AuthenticatedAdminKpiRoute
   '/admin/manager-assignments': typeof AuthenticatedAdminManagerAssignmentsRoute
   '/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
+  '/admin/products': typeof AuthenticatedAdminProductsRoute
   '/admin/profile': typeof AuthenticatedAdminProfileRoute
   '/admin/ranking': typeof AuthenticatedAdminRankingRoute
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
@@ -554,9 +584,11 @@ export interface FileRoutesByFullPath {
   '/sale/attendance': typeof AuthenticatedSaleAttendanceRoute
   '/sale/dashboard': typeof AuthenticatedSaleDashboardRoute
   '/sale/floating-pool': typeof AuthenticatedSaleFloatingPoolRoute
+  '/sale/invoices': typeof AuthenticatedSaleInvoicesRoute
   '/sale/kpi': typeof AuthenticatedSaleKpiRoute
   '/sale/profile': typeof AuthenticatedSaleProfileRoute
   '/sale/report': typeof AuthenticatedSaleReportRoute
+  '/sale/resources': typeof AuthenticatedSaleResourcesRoute
   '/sale/team': typeof AuthenticatedSaleTeamRoute
 }
 export interface FileRoutesByTo {
@@ -568,9 +600,11 @@ export interface FileRoutesByTo {
   '/admin/attendance': typeof AuthenticatedAdminAttendanceRoute
   '/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
   '/admin/floating-pool': typeof AuthenticatedAdminFloatingPoolRoute
+  '/admin/invoices': typeof AuthenticatedAdminInvoicesRoute
   '/admin/kpi': typeof AuthenticatedAdminKpiRoute
   '/admin/manager-assignments': typeof AuthenticatedAdminManagerAssignmentsRoute
   '/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
+  '/admin/products': typeof AuthenticatedAdminProductsRoute
   '/admin/profile': typeof AuthenticatedAdminProfileRoute
   '/admin/ranking': typeof AuthenticatedAdminRankingRoute
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
@@ -625,9 +659,11 @@ export interface FileRoutesByTo {
   '/sale/attendance': typeof AuthenticatedSaleAttendanceRoute
   '/sale/dashboard': typeof AuthenticatedSaleDashboardRoute
   '/sale/floating-pool': typeof AuthenticatedSaleFloatingPoolRoute
+  '/sale/invoices': typeof AuthenticatedSaleInvoicesRoute
   '/sale/kpi': typeof AuthenticatedSaleKpiRoute
   '/sale/profile': typeof AuthenticatedSaleProfileRoute
   '/sale/report': typeof AuthenticatedSaleReportRoute
+  '/sale/resources': typeof AuthenticatedSaleResourcesRoute
   '/sale/team': typeof AuthenticatedSaleTeamRoute
 }
 export interface FileRoutesById {
@@ -641,9 +677,11 @@ export interface FileRoutesById {
   '/_authenticated/admin/attendance': typeof AuthenticatedAdminAttendanceRoute
   '/_authenticated/admin/dashboard': typeof AuthenticatedAdminDashboardRoute
   '/_authenticated/admin/floating-pool': typeof AuthenticatedAdminFloatingPoolRoute
+  '/_authenticated/admin/invoices': typeof AuthenticatedAdminInvoicesRoute
   '/_authenticated/admin/kpi': typeof AuthenticatedAdminKpiRoute
   '/_authenticated/admin/manager-assignments': typeof AuthenticatedAdminManagerAssignmentsRoute
   '/_authenticated/admin/notifications': typeof AuthenticatedAdminNotificationsRoute
+  '/_authenticated/admin/products': typeof AuthenticatedAdminProductsRoute
   '/_authenticated/admin/profile': typeof AuthenticatedAdminProfileRoute
   '/_authenticated/admin/ranking': typeof AuthenticatedAdminRankingRoute
   '/_authenticated/admin/reports': typeof AuthenticatedAdminReportsRoute
@@ -698,9 +736,11 @@ export interface FileRoutesById {
   '/_authenticated/sale/attendance': typeof AuthenticatedSaleAttendanceRoute
   '/_authenticated/sale/dashboard': typeof AuthenticatedSaleDashboardRoute
   '/_authenticated/sale/floating-pool': typeof AuthenticatedSaleFloatingPoolRoute
+  '/_authenticated/sale/invoices': typeof AuthenticatedSaleInvoicesRoute
   '/_authenticated/sale/kpi': typeof AuthenticatedSaleKpiRoute
   '/_authenticated/sale/profile': typeof AuthenticatedSaleProfileRoute
   '/_authenticated/sale/report': typeof AuthenticatedSaleReportRoute
+  '/_authenticated/sale/resources': typeof AuthenticatedSaleResourcesRoute
   '/_authenticated/sale/team': typeof AuthenticatedSaleTeamRoute
 }
 export interface FileRouteTypes {
@@ -714,9 +754,11 @@ export interface FileRouteTypes {
     | '/admin/attendance'
     | '/admin/dashboard'
     | '/admin/floating-pool'
+    | '/admin/invoices'
     | '/admin/kpi'
     | '/admin/manager-assignments'
     | '/admin/notifications'
+    | '/admin/products'
     | '/admin/profile'
     | '/admin/ranking'
     | '/admin/reports'
@@ -771,9 +813,11 @@ export interface FileRouteTypes {
     | '/sale/attendance'
     | '/sale/dashboard'
     | '/sale/floating-pool'
+    | '/sale/invoices'
     | '/sale/kpi'
     | '/sale/profile'
     | '/sale/report'
+    | '/sale/resources'
     | '/sale/team'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -785,9 +829,11 @@ export interface FileRouteTypes {
     | '/admin/attendance'
     | '/admin/dashboard'
     | '/admin/floating-pool'
+    | '/admin/invoices'
     | '/admin/kpi'
     | '/admin/manager-assignments'
     | '/admin/notifications'
+    | '/admin/products'
     | '/admin/profile'
     | '/admin/ranking'
     | '/admin/reports'
@@ -842,9 +888,11 @@ export interface FileRouteTypes {
     | '/sale/attendance'
     | '/sale/dashboard'
     | '/sale/floating-pool'
+    | '/sale/invoices'
     | '/sale/kpi'
     | '/sale/profile'
     | '/sale/report'
+    | '/sale/resources'
     | '/sale/team'
   id:
     | '__root__'
@@ -857,9 +905,11 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/attendance'
     | '/_authenticated/admin/dashboard'
     | '/_authenticated/admin/floating-pool'
+    | '/_authenticated/admin/invoices'
     | '/_authenticated/admin/kpi'
     | '/_authenticated/admin/manager-assignments'
     | '/_authenticated/admin/notifications'
+    | '/_authenticated/admin/products'
     | '/_authenticated/admin/profile'
     | '/_authenticated/admin/ranking'
     | '/_authenticated/admin/reports'
@@ -914,9 +964,11 @@ export interface FileRouteTypes {
     | '/_authenticated/sale/attendance'
     | '/_authenticated/sale/dashboard'
     | '/_authenticated/sale/floating-pool'
+    | '/_authenticated/sale/invoices'
     | '/_authenticated/sale/kpi'
     | '/_authenticated/sale/profile'
     | '/_authenticated/sale/report'
+    | '/_authenticated/sale/resources'
     | '/_authenticated/sale/team'
   fileRoutesById: FileRoutesById
 }
@@ -963,6 +1015,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSaleTeamRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/sale/resources': {
+      id: '/_authenticated/sale/resources'
+      path: '/sale/resources'
+      fullPath: '/sale/resources'
+      preLoaderRoute: typeof AuthenticatedSaleResourcesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/sale/report': {
       id: '/_authenticated/sale/report'
       path: '/sale/report'
@@ -982,6 +1041,13 @@ declare module '@tanstack/react-router' {
       path: '/sale/kpi'
       fullPath: '/sale/kpi'
       preLoaderRoute: typeof AuthenticatedSaleKpiRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/sale/invoices': {
+      id: '/_authenticated/sale/invoices'
+      path: '/sale/invoices'
+      fullPath: '/sale/invoices'
+      preLoaderRoute: typeof AuthenticatedSaleInvoicesRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/sale/floating-pool': {
@@ -1362,6 +1428,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminProfileRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/products': {
+      id: '/_authenticated/admin/products'
+      path: '/admin/products'
+      fullPath: '/admin/products'
+      preLoaderRoute: typeof AuthenticatedAdminProductsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/notifications': {
       id: '/_authenticated/admin/notifications'
       path: '/admin/notifications'
@@ -1381,6 +1454,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/kpi'
       fullPath: '/admin/kpi'
       preLoaderRoute: typeof AuthenticatedAdminKpiRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin/invoices': {
+      id: '/_authenticated/admin/invoices'
+      path: '/admin/invoices'
+      fullPath: '/admin/invoices'
+      preLoaderRoute: typeof AuthenticatedAdminInvoicesRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/floating-pool': {
@@ -1428,9 +1508,11 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminAttendanceRoute: typeof AuthenticatedAdminAttendanceRoute
   AuthenticatedAdminDashboardRoute: typeof AuthenticatedAdminDashboardRoute
   AuthenticatedAdminFloatingPoolRoute: typeof AuthenticatedAdminFloatingPoolRoute
+  AuthenticatedAdminInvoicesRoute: typeof AuthenticatedAdminInvoicesRoute
   AuthenticatedAdminKpiRoute: typeof AuthenticatedAdminKpiRoute
   AuthenticatedAdminManagerAssignmentsRoute: typeof AuthenticatedAdminManagerAssignmentsRoute
   AuthenticatedAdminNotificationsRoute: typeof AuthenticatedAdminNotificationsRoute
+  AuthenticatedAdminProductsRoute: typeof AuthenticatedAdminProductsRoute
   AuthenticatedAdminProfileRoute: typeof AuthenticatedAdminProfileRoute
   AuthenticatedAdminRankingRoute: typeof AuthenticatedAdminRankingRoute
   AuthenticatedAdminReportsRoute: typeof AuthenticatedAdminReportsRoute
@@ -1485,9 +1567,11 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSaleAttendanceRoute: typeof AuthenticatedSaleAttendanceRoute
   AuthenticatedSaleDashboardRoute: typeof AuthenticatedSaleDashboardRoute
   AuthenticatedSaleFloatingPoolRoute: typeof AuthenticatedSaleFloatingPoolRoute
+  AuthenticatedSaleInvoicesRoute: typeof AuthenticatedSaleInvoicesRoute
   AuthenticatedSaleKpiRoute: typeof AuthenticatedSaleKpiRoute
   AuthenticatedSaleProfileRoute: typeof AuthenticatedSaleProfileRoute
   AuthenticatedSaleReportRoute: typeof AuthenticatedSaleReportRoute
+  AuthenticatedSaleResourcesRoute: typeof AuthenticatedSaleResourcesRoute
   AuthenticatedSaleTeamRoute: typeof AuthenticatedSaleTeamRoute
 }
 
@@ -1498,10 +1582,12 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminAttendanceRoute: AuthenticatedAdminAttendanceRoute,
   AuthenticatedAdminDashboardRoute: AuthenticatedAdminDashboardRoute,
   AuthenticatedAdminFloatingPoolRoute: AuthenticatedAdminFloatingPoolRoute,
+  AuthenticatedAdminInvoicesRoute: AuthenticatedAdminInvoicesRoute,
   AuthenticatedAdminKpiRoute: AuthenticatedAdminKpiRoute,
   AuthenticatedAdminManagerAssignmentsRoute:
     AuthenticatedAdminManagerAssignmentsRoute,
   AuthenticatedAdminNotificationsRoute: AuthenticatedAdminNotificationsRoute,
+  AuthenticatedAdminProductsRoute: AuthenticatedAdminProductsRoute,
   AuthenticatedAdminProfileRoute: AuthenticatedAdminProfileRoute,
   AuthenticatedAdminRankingRoute: AuthenticatedAdminRankingRoute,
   AuthenticatedAdminReportsRoute: AuthenticatedAdminReportsRoute,
@@ -1559,9 +1645,11 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSaleAttendanceRoute: AuthenticatedSaleAttendanceRoute,
   AuthenticatedSaleDashboardRoute: AuthenticatedSaleDashboardRoute,
   AuthenticatedSaleFloatingPoolRoute: AuthenticatedSaleFloatingPoolRoute,
+  AuthenticatedSaleInvoicesRoute: AuthenticatedSaleInvoicesRoute,
   AuthenticatedSaleKpiRoute: AuthenticatedSaleKpiRoute,
   AuthenticatedSaleProfileRoute: AuthenticatedSaleProfileRoute,
   AuthenticatedSaleReportRoute: AuthenticatedSaleReportRoute,
+  AuthenticatedSaleResourcesRoute: AuthenticatedSaleResourcesRoute,
   AuthenticatedSaleTeamRoute: AuthenticatedSaleTeamRoute,
 }
 

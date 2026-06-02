@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ResourcesWorkspace } from "@/components/workspace/ResourcesWorkspace";
+import { ProfileWorkspace } from "@/components/workspace/ProfileWorkspace";
 
 export const Route = createFileRoute("/_authenticated/sale/profile")({
-  component: ResourcesWorkspace,
+  component: ProfileWorkspace,
 });
