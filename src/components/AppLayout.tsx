@@ -4,6 +4,7 @@ import { APP_ROLES, getRoleProfilePath, ROLE_LABELS, SALE_ROLES, type AppRole } 
 import { Button } from "@/components/ui/button";
 import {
   BarChart3,
+  BriefcaseBusiness,
   Users,
   UsersRound,
   FileText,
@@ -12,6 +13,8 @@ import {
   Target,
   CheckSquare,
   BookOpen,
+  ChevronDown,
+  ClipboardCheck,
   Trophy,
   UserRound,
   Lock,
@@ -22,6 +25,10 @@ import {
   ClipboardList,
   Receipt,
   Warehouse,
+  Database,
+  FolderOpen,
+  GraduationCap,
+  Megaphone,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -53,7 +60,83 @@ interface NavItem {
   label: string;
   icon: typeof BarChart3;
   roles: AppRole[];
+  search?: Record<string, string>;
 }
+
+interface NavGroup {
+  type: "group";
+  id: string;
+  label: string;
+  icon: typeof BarChart3;
+  roles: AppRole[];
+  defaultOpen: boolean;
+  children: NavItem[];
+}
+
+type NavEntry = NavItem | NavGroup;
+
+const adminRoles: AppRole[] = ["admin"];
+
+const ADMIN_NAV: NavEntry[] = [
+  { to: "/admin/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: adminRoles },
+  { to: "/admin/reports", label: "Báo cáo", icon: FileText, roles: adminRoles },
+  { to: "/admin/kpi", label: "KPI", icon: Target, roles: adminRoles },
+  { to: "/admin/attendance", label: "Điểm danh", icon: CalendarCheck, roles: adminRoles },
+  { to: "/admin/notifications", label: "Thông báo", icon: Bell, roles: adminRoles },
+  { to: "/admin/products", label: "Sản phẩm", icon: Package, roles: adminRoles },
+  { to: "/admin/invoices", label: "Hoá đơn", icon: Receipt, roles: adminRoles },
+  {
+    type: "group",
+    id: "management",
+    label: "Quản lý",
+    icon: UsersRound,
+    roles: adminRoles,
+    defaultOpen: false,
+    children: [
+      { to: "/admin/users", label: "Người dùng", icon: UserRound, roles: adminRoles },
+      { to: "/admin/teams", label: "Quản lý team", icon: Users, roles: adminRoles },
+    ],
+  },
+  {
+    type: "group",
+    id: "marketing",
+    label: "Marketing",
+    icon: Megaphone,
+    roles: adminRoles,
+    defaultOpen: false,
+    children: [
+      { to: "/admin/ads-dashboard", label: "ADS Dashboard", icon: BarChart3, roles: adminRoles },
+      { to: "/admin/tasks", label: "Công việc", icon: ClipboardCheck, roles: adminRoles },
+      { to: "/admin/assets", label: "Tài sản", icon: FolderOpen, roles: adminRoles },
+      { to: "/admin/ranking", label: "Ranking Marketing", icon: Trophy, roles: adminRoles },
+      {
+        to: "/admin/resources",
+        label: "Đào tạo Marketing",
+        icon: BookOpen,
+        roles: adminRoles,
+        search: { department: "marketing" },
+      },
+    ],
+  },
+  {
+    type: "group",
+    id: "sale",
+    label: "Sale",
+    icon: BriefcaseBusiness,
+    roles: adminRoles,
+    defaultOpen: false,
+    children: [
+      { to: "/admin/floating-pool", label: "Kho thả nổi", icon: Database, roles: adminRoles },
+      {
+        to: "/admin/resources",
+        label: "Đào tạo Sale",
+        icon: GraduationCap,
+        roles: adminRoles,
+        search: { department: "sale" },
+      },
+    ],
+  },
+];
 
 const NAV: NavItem[] = [
   // Admin
@@ -172,7 +255,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const [savingPassword, setSavingPassword] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  const items = NAV.filter((n) => role && n.roles.includes(role));
+  const navEntries: NavEntry[] =
+    role === APP_ROLES.ADMIN ? ADMIN_NAV : NAV.filter((n) => role && n.roles.includes(role));
+  const flatItems = flattenNavEntries(navEntries);
 
   const handleSignOut = async () => {
     await signOut();
@@ -347,7 +432,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 bg-background md:h-screen md:overflow-hidden">
       <aside className="hidden w-64 shrink-0 border-r bg-card md:flex md:min-h-0 md:flex-col">
-        <SidebarContent items={items} pathname={location.pathname} />
+        <SidebarContent
+          entries={navEntries}
+          pathname={location.pathname}
+          search={location.search}
+        />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col md:min-h-0">
@@ -363,8 +452,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 <SheetTitle>Menu</SheetTitle>
               </SheetHeader>
               <SidebarContent
-                items={items}
+                entries={navEntries}
                 pathname={location.pathname}
+                search={location.search}
                 onNavigate={() => setMobileNavOpen(false)}
               />
             </SheetContent>
@@ -378,7 +468,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
         <header className="hidden min-h-14 shrink-0 items-center border-b bg-card/95 px-4 py-2 shadow-sm backdrop-blur md:flex xl:px-6">
           <div className="min-w-0 text-sm font-medium text-muted-foreground">
-            {items.find((item) => location.pathname.startsWith(item.to))?.label ?? ""}
+            {flatItems.find((item) => isNavItemActive(item, location.pathname, location.search))
+              ?.label ?? ""}
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <NotificationsBell />
@@ -418,12 +509,14 @@ function BrandMark({ compact = false }: { compact?: boolean }) {
 }
 
 function SidebarContent({
-  items,
+  entries,
   pathname,
+  search,
   onNavigate,
 }: {
-  items: NavItem[];
+  entries: NavEntry[];
   pathname: string;
+  search: unknown;
   onNavigate?: () => void;
 }) {
   return (
@@ -432,42 +525,146 @@ function SidebarContent({
         <BrandMark />
       </div>
       <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
-        <NavSection items={items} pathname={pathname} onNavigate={onNavigate} />
+        <NavSection entries={entries} pathname={pathname} search={search} onNavigate={onNavigate} />
       </nav>
     </div>
   );
 }
 
 function NavSection({
-  items,
+  entries,
   pathname,
+  search,
   onNavigate,
 }: {
-  items: NavItem[];
+  entries: NavEntry[];
   pathname: string;
+  search: unknown;
   onNavigate?: () => void;
 }) {
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(
+      entries
+        .filter((entry): entry is NavGroup => isNavGroup(entry))
+        .map((group) => [group.id, group.defaultOpen]),
+    ),
+  );
+
   return (
     <div className="space-y-1.5">
-      {items.map((it) => {
-        const active = pathname.startsWith(it.to);
+      {entries.map((entry) => {
+        if (!isNavGroup(entry)) {
+          return (
+            <SidebarNavLink
+              key={`${entry.to}-${entry.label}`}
+              item={entry}
+              pathname={pathname}
+              search={search}
+              onNavigate={onNavigate}
+            />
+          );
+        }
+
+        const groupOpen = openGroups[entry.id] ?? entry.defaultOpen;
+        const groupActive = entry.children.some((item) => isNavItemActive(item, pathname, search));
         return (
-          <Link
-            key={it.to}
-            to={it.to}
-            onClick={onNavigate}
-            className={cn(
-              "flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors",
-              active
-                ? "bg-blue-50 text-blue-700"
-                : "text-slate-600 hover:bg-slate-50 hover:text-slate-950",
-            )}
-          >
-            <it.icon className={cn("h-4 w-4 shrink-0", active ? "text-blue-700" : "")} />
-            <span className="truncate">{it.label}</span>
-          </Link>
+          <div key={entry.id} className="space-y-1">
+            <button
+              type="button"
+              className={cn(
+                "flex h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold transition-colors",
+                groupActive
+                  ? "bg-blue-50 text-blue-700"
+                  : "text-slate-700 hover:bg-slate-50 hover:text-slate-950",
+              )}
+              onClick={() => setOpenGroups((current) => ({ ...current, [entry.id]: !groupOpen }))}
+            >
+              <entry.icon className="h-4 w-4 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 shrink-0 text-slate-400 transition-transform",
+                  groupOpen && "rotate-180",
+                )}
+              />
+            </button>
+            {groupOpen ? (
+              <div className="ml-4 space-y-1 border-l border-slate-200 pl-2">
+                {entry.children.map((child) => (
+                  <SidebarNavLink
+                    key={`${entry.id}-${child.to}-${child.label}`}
+                    item={child}
+                    pathname={pathname}
+                    search={search}
+                    onNavigate={onNavigate}
+                    child
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
         );
       })}
     </div>
   );
+}
+
+function SidebarNavLink({
+  item,
+  pathname,
+  search,
+  onNavigate,
+  child = false,
+}: {
+  item: NavItem;
+  pathname: string;
+  search: unknown;
+  onNavigate?: () => void;
+  child?: boolean;
+}) {
+  const active = isNavItemActive(item, pathname, search);
+  return (
+    <Link
+      key={`${item.to}-${item.label}`}
+      to={item.to}
+      search={item.search}
+      onClick={onNavigate}
+      className={cn(
+        "flex h-10 items-center gap-3 rounded-xl px-3 text-sm transition-colors",
+        child ? "font-medium" : "font-medium",
+        active
+          ? "bg-blue-50 text-blue-700"
+          : "text-slate-600 hover:bg-slate-50 hover:text-slate-950",
+      )}
+    >
+      <item.icon className={cn("h-4 w-4 shrink-0", active ? "text-blue-700" : "")} />
+      <span className="truncate">{item.label}</span>
+    </Link>
+  );
+}
+
+function isNavGroup(entry: NavEntry): entry is NavGroup {
+  return "type" in entry && entry.type === "group";
+}
+
+function flattenNavEntries(entries: NavEntry[]): NavItem[] {
+  return entries.flatMap((entry) => (isNavGroup(entry) ? entry.children : [entry]));
+}
+
+function getSearchDepartment(search: unknown) {
+  if (search && typeof search === "object" && "department" in search) {
+    const department = (search as { department?: unknown }).department;
+    return department === "sale" || department === "marketing" ? department : null;
+  }
+  return null;
+}
+
+function isNavItemActive(item: NavItem, pathname: string, search: unknown) {
+  const samePath = pathname === item.to || pathname.startsWith(`${item.to}/`);
+  if (!samePath) return false;
+  if (!item.search?.department) return true;
+
+  const department = getSearchDepartment(search);
+  if (!department && item.search.department === "marketing") return true;
+  return department === item.search.department;
 }

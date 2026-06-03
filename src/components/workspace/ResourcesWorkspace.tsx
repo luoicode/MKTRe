@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "@tanstack/react-router";
 import {
   ArrowRight,
   Award,
@@ -171,19 +172,6 @@ const emptyDocumentForm: DocumentFormState = {
   is_pinned: false,
 };
 
-const departmentTabs: Array<{ value: InfoDepartment; label: string; description: string }> = [
-  {
-    value: "marketing",
-    label: "Marketing",
-    description: "Quy trình ads, KPI, content, báo cáo và onboarding MKT",
-  },
-  {
-    value: "sale",
-    label: "Sale",
-    description: "Quy trình nhận lead, script gọi, Odoo, KPI và onboarding Sale",
-  },
-];
-
 const documentTypeFilters: Array<{ value: InternalDocumentFilter; label: string }> = [
   { value: "all", label: "Tất cả" },
   { value: "pdf", label: "PDF" },
@@ -199,6 +187,7 @@ const documentTypeFilters: Array<{ value: InternalDocumentFilter; label: string 
 export function ResourcesWorkspace() {
   const { profile, role } = useAuth();
   const qc = useQueryClient();
+  const location = useLocation();
   const isAdmin = role === "admin";
   const isEmployee = role === "employee";
   const canViewProgress = isManagementRole(role) || role === "leader";
@@ -228,6 +217,13 @@ export function ResourcesWorkspace() {
   const [progressSearch, setProgressSearch] = useState("");
   const [progressStatus, setProgressStatus] = useState("all");
   const currentDepartment = canSwitchDepartments ? activeDepartment : allowedDepartment;
+  const requestedDepartment = getRequestedDepartment(location.search);
+
+  useEffect(() => {
+    if (canSwitchDepartments && requestedDepartment && activeDepartment !== requestedDepartment) {
+      setActiveDepartment(requestedDepartment);
+    }
+  }, [activeDepartment, canSwitchDepartments, requestedDepartment]);
 
   useEffect(() => {
     if (!canSwitchDepartments && activeDepartment !== allowedDepartment) {
@@ -1179,43 +1175,24 @@ export function ResourcesWorkspace() {
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col gap-4 overflow-hidden">
-      <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
-        <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+      <div className="overflow-hidden rounded-3xl border bg-card shadow-sm">
+        <div className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-center gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
               <GraduationCap className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-xl font-black tracking-tight">
-                {canSwitchDepartments ? "Đào tạo" : `Đào tạo ${currentDepartmentLabel}`}
+              <h1 className="truncate text-2xl font-black tracking-tight">
+                Đào tạo {currentDepartmentLabel}
               </h1>
               <p className="mt-1 text-sm text-muted-foreground">
                 Tài liệu, quy trình và onboarding nội bộ
               </p>
-              {canSwitchDepartments ? (
-                <div className="mt-3 flex w-fit rounded-full bg-muted p-1">
-                  {departmentTabs.map((tab) => (
-                    <button
-                      key={tab.value}
-                      type="button"
-                      className={cn(
-                        "rounded-full px-4 py-1.5 text-sm font-bold transition",
-                        activeDepartment === tab.value
-                          ? "bg-primary text-primary-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                      onClick={() => setActiveDepartment(tab.value)}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <div className="mt-3 flex w-fit rounded-full bg-muted p-1">
+              <div className="mt-4 flex w-fit rounded-2xl bg-muted p-1">
                 <button
                   type="button"
                   className={cn(
-                    "rounded-full px-4 py-1.5 text-sm font-bold transition",
+                    "rounded-xl px-4 py-2 text-sm font-bold transition",
                     resourceMode === "training"
                       ? "bg-primary text-primary-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground",
@@ -1227,7 +1204,7 @@ export function ResourcesWorkspace() {
                 <button
                   type="button"
                   className={cn(
-                    "rounded-full px-4 py-1.5 text-sm font-bold transition",
+                    "rounded-xl px-4 py-2 text-sm font-bold transition",
                     resourceMode === "onboarding"
                       ? "bg-primary text-primary-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground",
@@ -2546,6 +2523,12 @@ function getDocumentTypeLabel(fileType: InternalDocumentFileType) {
 
 function getDepartmentLabel(department: InfoDepartment) {
   return department === "sale" ? "Sale" : "Marketing";
+}
+
+function getRequestedDepartment(search: unknown): InfoDepartment | null {
+  if (!search || typeof search !== "object" || !("department" in search)) return null;
+  const department = (search as { department?: unknown }).department;
+  return department === "sale" || department === "marketing" ? department : null;
 }
 
 function getYouTubeEmbedUrl(url: string) {
