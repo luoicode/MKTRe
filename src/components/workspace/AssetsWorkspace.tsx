@@ -253,6 +253,10 @@ export function AssetsWorkspace() {
   const profileTeamMap = useMemo(() => {
     return buildProfileTeamMap(memberships);
   }, [memberships]);
+  const dialogOwnerTeamOptions = useMemo(
+    () => getProfileTeamOptions(form.owner_profile_id, profileTeamMap, teams),
+    [form.owner_profile_id, profileTeamMap, teams],
+  );
   const ownerFilterProfiles = useMemo(() => {
     if (isLeader) return profiles.filter((user) => profileTeamMap.has(user.id));
     return profiles;
@@ -320,14 +324,17 @@ export function AssetsWorkspace() {
         ? (groupFilter as AssetGroup)
         : (groupOptions[0] as AssetGroup);
     const nextType = defaultTypeFor(nextGroup);
+    const defaultOwnerProfileId = isEmployee && nextGroup !== "common" ? (profile?.id ?? "") : "";
     setForm({
       ...defaultForm,
       asset_group: nextGroup,
       asset_type: nextType,
       asset_type_custom: "",
       title: nextGroup === "personal" ? assetTypeLabel(nextType) : "",
-      owner_profile_id: nextGroup === "personal" ? (profile?.id ?? "") : "",
-      owner_team_id: nextGroup === "flexible" ? (teams[0]?.id ?? "") : "",
+      owner_profile_id: defaultOwnerProfileId,
+      owner_team_id: defaultOwnerProfileId
+        ? getPrimaryTeamId(defaultOwnerProfileId, profileTeamMap)
+        : "",
     });
     setShowSensitiveInput(false);
     setDialogOpen(true);
@@ -385,22 +392,20 @@ export function AssetsWorkspace() {
       return;
     }
 
-    const ownerTeamId = form.asset_group === "flexible" ? form.owner_team_id || null : null;
-    const ownerProfileId =
-      form.asset_group === "fixed" || form.asset_group === "personal" || form.owner_profile_id
-        ? form.owner_profile_id || profile.id
-        : null;
+    const requiresOwner = ["fixed", "flexible", "personal"].includes(form.asset_group);
+    const ownerTeamId = requiresOwner ? form.owner_team_id || null : null;
+    const ownerProfileId = requiresOwner ? form.owner_profile_id || null : null;
 
     if (form.asset_group === "common" && role !== "admin") {
       toast.error("Chỉ Admin được tạo tài sản chung");
       return;
     }
-    if (form.asset_group === "flexible" && !ownerTeamId) {
-      toast.error("Chọn team nhận tài sản");
+    if (requiresOwner && !ownerProfileId) {
+      toast.error("Chọn user nhận tài sản");
       return;
     }
-    if (form.asset_group === "fixed" && !ownerProfileId) {
-      toast.error("Chọn user nhận tài sản cố định");
+    if (requiresOwner && !ownerTeamId) {
+      toast.error("Chọn team của user nhận tài sản");
       return;
     }
     const normalizedAssetType = normalizeAssetType(assetType);
@@ -412,7 +417,7 @@ export function AssetsWorkspace() {
         (asset) =>
           asset.id !== form.id &&
           asset.asset_group === "personal" &&
-          asset.owner_profile_id === profile.id &&
+          asset.owner_profile_id === ownerProfileId &&
           normalizeAssetType(asset.asset_type) === normalizedAssetType &&
           form.asset_type !== OTHER_TYPE,
       )
@@ -617,14 +622,17 @@ export function AssetsWorkspace() {
                 value={form.asset_group}
                 onValueChange={(value) => {
                   const group = value as AssetGroup;
+                  const nextOwnerProfileId = group === "common" ? "" : form.owner_profile_id;
                   setForm({
                     ...form,
                     asset_group: group,
                     asset_type: defaultTypeFor(group),
                     asset_type_custom: "",
                     title: group === "personal" ? assetTypeLabel(defaultTypeFor(group)) : "",
-                    owner_profile_id: group === "personal" ? (profile?.id ?? "") : "",
-                    owner_team_id: group === "flexible" ? form.owner_team_id : "",
+                    owner_profile_id: nextOwnerProfileId,
+                    owner_team_id: nextOwnerProfileId
+                      ? getPrimaryTeamId(nextOwnerProfileId, profileTeamMap)
+                      : "",
                   });
                 }}
                 disabled={groupOptions.length === 1 || !!form.id}
@@ -720,77 +728,60 @@ export function AssetsWorkspace() {
               </Select>
             </Field>
 
-            {(form.asset_group === "fixed" || form.asset_group === "flexible") && (
-              <Field label={form.asset_group === "fixed" ? "User nhận" : "Team nhận"}>
-                {form.asset_group === "fixed" ? (
+            {form.asset_group !== "common" && (
+              <>
+                <Field label="User nhận">
                   <Select
                     value={form.owner_profile_id || NONE}
-                    onValueChange={(value) =>
-                      setForm({ ...form, owner_profile_id: value === NONE ? "" : value })
-                    }
+                    onValueChange={(value) => {
+                      const ownerProfileId = value === NONE ? "" : value;
+                      setForm({
+                        ...form,
+                        owner_profile_id: ownerProfileId,
+                        owner_team_id: ownerProfileId
+                          ? getPrimaryTeamId(ownerProfileId, profileTeamMap)
+                          : "",
+                      });
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={NONE}>Chọn user</SelectItem>
-                      {profiles.map((user) => (
+                      {ownerFilterProfiles.map((user) => (
                         <SelectItem key={user.id} value={user.id}>
                           {user.full_name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                ) : isLeader ? (
-                  <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
-                    {teams.find((team) => team.id === form.owner_team_id)?.name ??
-                      teams[0]?.name ??
-                      "Team của Leader"}
-                  </div>
-                ) : (
+                </Field>
+
+                <Field label="Team">
                   <Select
                     value={form.owner_team_id || NONE}
                     onValueChange={(value) =>
                       setForm({ ...form, owner_team_id: value === NONE ? "" : value })
                     }
+                    disabled={!form.owner_profile_id || dialogOwnerTeamOptions.length <= 1}
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={NONE}>Chọn team</SelectItem>
-                      {teams.map((team) => (
+                      <SelectItem value={NONE}>
+                        {form.owner_profile_id ? "Chưa có team" : "Chọn user trước"}
+                      </SelectItem>
+                      {dialogOwnerTeamOptions.map((team) => (
                         <SelectItem key={team.id} value={team.id}>
                           {team.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                )}
-              </Field>
-            )}
-
-            {form.asset_group === "flexible" && (
-              <Field label="User nhận cá nhân">
-                <Select
-                  value={form.owner_profile_id || NONE}
-                  onValueChange={(value) =>
-                    setForm({ ...form, owner_profile_id: value === NONE ? "" : value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>Cả team</SelectItem>
-                    {ownerFilterProfiles.map((user) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        {user.full_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
+                </Field>
+              </>
             )}
 
             <div className="md:col-span-2">
@@ -872,6 +863,21 @@ function buildProfileTeamMap(memberships: MembershipRow[]) {
     map.set(membership.user_id, teamIds);
   }
   return map;
+}
+
+function getPrimaryTeamId(profileId: string, profileTeamMap: Map<string, Set<string>>) {
+  return Array.from(profileTeamMap.get(profileId) ?? [])[0] ?? "";
+}
+
+function getProfileTeamOptions(
+  profileId: string,
+  profileTeamMap: Map<string, Set<string>>,
+  teams: TeamRow[],
+) {
+  if (!profileId) return [];
+  const teamIds = profileTeamMap.get(profileId);
+  if (!teamIds?.size) return [];
+  return teams.filter((team) => teamIds.has(team.id));
 }
 
 async function excludeSaleProfiles<T extends Pick<ProfileRow, "id">>(profiles: T[]) {
