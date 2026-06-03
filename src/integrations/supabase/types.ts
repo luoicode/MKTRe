@@ -399,6 +399,7 @@ export type Database = {
         Row: {
           created_at: string;
           created_by: string | null;
+          department: string;
           description: string | null;
           id: string;
           is_active: boolean;
@@ -410,6 +411,7 @@ export type Database = {
         Insert: {
           created_at?: string;
           created_by?: string | null;
+          department?: string;
           description?: string | null;
           id?: string;
           is_active?: boolean;
@@ -421,6 +423,7 @@ export type Database = {
         Update: {
           created_at?: string;
           created_by?: string | null;
+          department?: string;
           description?: string | null;
           id?: string;
           is_active?: boolean;
@@ -2166,6 +2169,7 @@ export type Database = {
           created_by: string | null;
           deadline: string | null;
           dedupe_key: string | null;
+          department: string;
           description: string | null;
           id: string;
           link_url: string | null;
@@ -2191,6 +2195,7 @@ export type Database = {
           created_by?: string | null;
           deadline?: string | null;
           dedupe_key?: string | null;
+          department?: string;
           description?: string | null;
           id?: string;
           link_url?: string | null;
@@ -2216,6 +2221,7 @@ export type Database = {
           created_by?: string | null;
           deadline?: string | null;
           dedupe_key?: string | null;
+          department?: string;
           description?: string | null;
           id?: string;
           link_url?: string | null;

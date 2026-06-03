@@ -1841,7 +1841,7 @@ async function fetchMarketingProfiles() {
     .in("role", [...MARKETING_ROLES]);
   if (rolesError) throw rolesError;
   const ids = Array.from(new Set((roles ?? []).map((role) => role.user_id)));
-  return fetchProfilesByIds(ids);
+  return fetchProfilesByIds(ids, { activeOnly: true });
 }
 
 async function fetchProfilesByRole(role: AppRole) {

@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
 import { Route as AuthenticatedSaleTeamRouteImport } from './routes/_authenticated/sale/team'
+import { Route as AuthenticatedSaleTasksRouteImport } from './routes/_authenticated/sale/tasks'
 import { Route as AuthenticatedSaleResourcesRouteImport } from './routes/_authenticated/sale/resources'
 import { Route as AuthenticatedSaleReportRouteImport } from './routes/_authenticated/sale/report'
 import { Route as AuthenticatedSaleProfileRouteImport } from './routes/_authenticated/sale/profile'
@@ -70,6 +71,7 @@ import { Route as AuthenticatedEmployeeAdsDashboardRouteImport } from './routes/
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 import { Route as AuthenticatedAdminTeamsRouteImport } from './routes/_authenticated/admin/teams'
 import { Route as AuthenticatedAdminTasksRouteImport } from './routes/_authenticated/admin/tasks'
+import { Route as AuthenticatedAdminSaleTasksRouteImport } from './routes/_authenticated/admin/sale-tasks'
 import { Route as AuthenticatedAdminResourcesRouteImport } from './routes/_authenticated/admin/resources'
 import { Route as AuthenticatedAdminReportsRouteImport } from './routes/_authenticated/admin/reports'
 import { Route as AuthenticatedAdminRankingRouteImport } from './routes/_authenticated/admin/ranking'
@@ -108,6 +110,11 @@ const AuthenticatedNotificationsRoute =
 const AuthenticatedSaleTeamRoute = AuthenticatedSaleTeamRouteImport.update({
   id: '/sale/team',
   path: '/sale/team',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedSaleTasksRoute = AuthenticatedSaleTasksRouteImport.update({
+  id: '/sale/tasks',
+  path: '/sale/tasks',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedSaleResourcesRoute =
@@ -439,6 +446,12 @@ const AuthenticatedAdminTasksRoute = AuthenticatedAdminTasksRouteImport.update({
   path: '/admin/tasks',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAdminSaleTasksRoute =
+  AuthenticatedAdminSaleTasksRouteImport.update({
+    id: '/admin/sale-tasks',
+    path: '/admin/sale-tasks',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminResourcesRoute =
   AuthenticatedAdminResourcesRouteImport.update({
     id: '/admin/resources',
@@ -541,6 +554,7 @@ export interface FileRoutesByFullPath {
   '/admin/ranking': typeof AuthenticatedAdminRankingRoute
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/admin/resources': typeof AuthenticatedAdminResourcesRoute
+  '/admin/sale-tasks': typeof AuthenticatedAdminSaleTasksRoute
   '/admin/tasks': typeof AuthenticatedAdminTasksRoute
   '/admin/teams': typeof AuthenticatedAdminTeamsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -597,6 +611,7 @@ export interface FileRoutesByFullPath {
   '/sale/profile': typeof AuthenticatedSaleProfileRoute
   '/sale/report': typeof AuthenticatedSaleReportRoute
   '/sale/resources': typeof AuthenticatedSaleResourcesRoute
+  '/sale/tasks': typeof AuthenticatedSaleTasksRoute
   '/sale/team': typeof AuthenticatedSaleTeamRoute
 }
 export interface FileRoutesByTo {
@@ -617,6 +632,7 @@ export interface FileRoutesByTo {
   '/admin/ranking': typeof AuthenticatedAdminRankingRoute
   '/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/admin/resources': typeof AuthenticatedAdminResourcesRoute
+  '/admin/sale-tasks': typeof AuthenticatedAdminSaleTasksRoute
   '/admin/tasks': typeof AuthenticatedAdminTasksRoute
   '/admin/teams': typeof AuthenticatedAdminTeamsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -673,6 +689,7 @@ export interface FileRoutesByTo {
   '/sale/profile': typeof AuthenticatedSaleProfileRoute
   '/sale/report': typeof AuthenticatedSaleReportRoute
   '/sale/resources': typeof AuthenticatedSaleResourcesRoute
+  '/sale/tasks': typeof AuthenticatedSaleTasksRoute
   '/sale/team': typeof AuthenticatedSaleTeamRoute
 }
 export interface FileRoutesById {
@@ -695,6 +712,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/ranking': typeof AuthenticatedAdminRankingRoute
   '/_authenticated/admin/reports': typeof AuthenticatedAdminReportsRoute
   '/_authenticated/admin/resources': typeof AuthenticatedAdminResourcesRoute
+  '/_authenticated/admin/sale-tasks': typeof AuthenticatedAdminSaleTasksRoute
   '/_authenticated/admin/tasks': typeof AuthenticatedAdminTasksRoute
   '/_authenticated/admin/teams': typeof AuthenticatedAdminTeamsRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -751,6 +769,7 @@ export interface FileRoutesById {
   '/_authenticated/sale/profile': typeof AuthenticatedSaleProfileRoute
   '/_authenticated/sale/report': typeof AuthenticatedSaleReportRoute
   '/_authenticated/sale/resources': typeof AuthenticatedSaleResourcesRoute
+  '/_authenticated/sale/tasks': typeof AuthenticatedSaleTasksRoute
   '/_authenticated/sale/team': typeof AuthenticatedSaleTeamRoute
 }
 export interface FileRouteTypes {
@@ -773,6 +792,7 @@ export interface FileRouteTypes {
     | '/admin/ranking'
     | '/admin/reports'
     | '/admin/resources'
+    | '/admin/sale-tasks'
     | '/admin/tasks'
     | '/admin/teams'
     | '/admin/users'
@@ -829,6 +849,7 @@ export interface FileRouteTypes {
     | '/sale/profile'
     | '/sale/report'
     | '/sale/resources'
+    | '/sale/tasks'
     | '/sale/team'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -849,6 +870,7 @@ export interface FileRouteTypes {
     | '/admin/ranking'
     | '/admin/reports'
     | '/admin/resources'
+    | '/admin/sale-tasks'
     | '/admin/tasks'
     | '/admin/teams'
     | '/admin/users'
@@ -905,6 +927,7 @@ export interface FileRouteTypes {
     | '/sale/profile'
     | '/sale/report'
     | '/sale/resources'
+    | '/sale/tasks'
     | '/sale/team'
   id:
     | '__root__'
@@ -926,6 +949,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/ranking'
     | '/_authenticated/admin/reports'
     | '/_authenticated/admin/resources'
+    | '/_authenticated/admin/sale-tasks'
     | '/_authenticated/admin/tasks'
     | '/_authenticated/admin/teams'
     | '/_authenticated/admin/users'
@@ -982,6 +1006,7 @@ export interface FileRouteTypes {
     | '/_authenticated/sale/profile'
     | '/_authenticated/sale/report'
     | '/_authenticated/sale/resources'
+    | '/_authenticated/sale/tasks'
     | '/_authenticated/sale/team'
   fileRoutesById: FileRoutesById
 }
@@ -1026,6 +1051,13 @@ declare module '@tanstack/react-router' {
       path: '/sale/team'
       fullPath: '/sale/team'
       preLoaderRoute: typeof AuthenticatedSaleTeamRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/sale/tasks': {
+      id: '/_authenticated/sale/tasks'
+      path: '/sale/tasks'
+      fullPath: '/sale/tasks'
+      preLoaderRoute: typeof AuthenticatedSaleTasksRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/sale/resources': {
@@ -1420,6 +1452,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminTasksRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/sale-tasks': {
+      id: '/_authenticated/admin/sale-tasks'
+      path: '/admin/sale-tasks'
+      fullPath: '/admin/sale-tasks'
+      preLoaderRoute: typeof AuthenticatedAdminSaleTasksRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/resources': {
       id: '/_authenticated/admin/resources'
       path: '/admin/resources'
@@ -1537,6 +1576,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminRankingRoute: typeof AuthenticatedAdminRankingRoute
   AuthenticatedAdminReportsRoute: typeof AuthenticatedAdminReportsRoute
   AuthenticatedAdminResourcesRoute: typeof AuthenticatedAdminResourcesRoute
+  AuthenticatedAdminSaleTasksRoute: typeof AuthenticatedAdminSaleTasksRoute
   AuthenticatedAdminTasksRoute: typeof AuthenticatedAdminTasksRoute
   AuthenticatedAdminTeamsRoute: typeof AuthenticatedAdminTeamsRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
@@ -1593,6 +1633,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSaleProfileRoute: typeof AuthenticatedSaleProfileRoute
   AuthenticatedSaleReportRoute: typeof AuthenticatedSaleReportRoute
   AuthenticatedSaleResourcesRoute: typeof AuthenticatedSaleResourcesRoute
+  AuthenticatedSaleTasksRoute: typeof AuthenticatedSaleTasksRoute
   AuthenticatedSaleTeamRoute: typeof AuthenticatedSaleTeamRoute
 }
 
@@ -1613,6 +1654,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminRankingRoute: AuthenticatedAdminRankingRoute,
   AuthenticatedAdminReportsRoute: AuthenticatedAdminReportsRoute,
   AuthenticatedAdminResourcesRoute: AuthenticatedAdminResourcesRoute,
+  AuthenticatedAdminSaleTasksRoute: AuthenticatedAdminSaleTasksRoute,
   AuthenticatedAdminTasksRoute: AuthenticatedAdminTasksRoute,
   AuthenticatedAdminTeamsRoute: AuthenticatedAdminTeamsRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
@@ -1672,6 +1714,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSaleProfileRoute: AuthenticatedSaleProfileRoute,
   AuthenticatedSaleReportRoute: AuthenticatedSaleReportRoute,
   AuthenticatedSaleResourcesRoute: AuthenticatedSaleResourcesRoute,
+  AuthenticatedSaleTasksRoute: AuthenticatedSaleTasksRoute,
   AuthenticatedSaleTeamRoute: AuthenticatedSaleTeamRoute,
 }
 

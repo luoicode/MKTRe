@@ -127,6 +127,7 @@ const ADMIN_NAV: NavEntry[] = [
     defaultOpen: false,
     children: [
       { to: "/admin/floating-pool", label: "Kho thả nổi", icon: Database, roles: adminRoles },
+      { to: "/admin/sale-tasks", label: "Công việc", icon: ClipboardCheck, roles: adminRoles },
       {
         to: "/admin/resources",
         label: "Đào tạo Sale",
@@ -233,8 +234,8 @@ const NAV: NavItem[] = [
     icon: Warehouse,
     roles: [...SALE_ROLES],
   },
+  { to: "/sale/tasks", label: "Công việc", icon: CheckSquare, roles: [...SALE_ROLES] },
   { to: "/sale/products", label: "Sản phẩm", icon: Package, roles: [...SALE_ROLES] },
-  { to: "/sale/invoices", label: "Hoá đơn", icon: Receipt, roles: [...SALE_ROLES] },
   {
     to: "/sale/team",
     label: "Thành viên team",

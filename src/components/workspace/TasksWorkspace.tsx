@@ -29,11 +29,6 @@ import { useAuth } from "@/lib/auth";
 import { captureElementAsPngUrl, waitForCaptureReady } from "@/lib/captureImage";
 import { getLeaderTeamIds } from "@/lib/dailyAggregates";
 import { formatYmd } from "@/lib/dateRange";
-import {
-  canSeeInactiveProfiles,
-  filterVisibleProfileIds,
-  filterVisibleProfiles,
-} from "@/lib/profileVisibility";
 import { isSaleRole } from "@/lib/roles";
 import { getTaskDeadlineState, type TaskDeadlineState } from "@/lib/taskDeadline";
 import {
@@ -83,6 +78,7 @@ type BoardStatus = "todo" | "rejected" | "pending_review" | "done";
 type TaskPriority = "low" | "medium" | "high";
 type DeadlineFilter = "all" | "today" | "overdue" | "future" | "none";
 type DeadlineState = TaskDeadlineState;
+type TaskDepartment = "marketing" | "sale";
 type CompletionTarget =
   | { type: "task"; id: string; title: string; teamId: string | null }
   | { type: "template"; id: string; title: string; teamId: string | null };
@@ -216,12 +212,36 @@ function normalizeTaskStatus(value: string | null | undefined): BoardStatus {
   return "todo";
 }
 
-export function TasksWorkspace() {
+type TasksWorkspaceProps = {
+  department?: TaskDepartment;
+};
+
+const TASK_ROLE_BY_DEPARTMENT: Record<
+  TaskDepartment,
+  (role: string | null | undefined) => boolean
+> = {
+  marketing: (value) => value === "employee" || value === "leader",
+  sale: (value) => Boolean(value && isSaleRole(value)),
+};
+
+function getDepartmentTeamFilter(department: TaskDepartment) {
+  return department === "marketing" ? "department.is.null,department.eq.marketing" : null;
+}
+
+export function TasksWorkspace({ department = "marketing" }: TasksWorkspaceProps) {
   const { profile, role } = useAuth();
   const qc = useQueryClient();
-  const canAssign = role === "admin" || role === "manager" || role === "leader";
-  const canManageOnboardingTemplates = role === "admin" || role === "manager";
-  const isEmployee = role === "employee";
+  const isSaleDepartment = department === "sale";
+  const isMarketingLeader = department === "marketing" && role === "leader";
+  const isSaleLeader = department === "sale" && role === "leader_sale";
+  const isScopedTeamLeader = isMarketingLeader || isSaleLeader;
+  const canAssign =
+    role === "admin" ||
+    (!isSaleDepartment && (role === "manager" || role === "leader")) ||
+    isSaleLeader;
+  const canManageOnboardingTemplates =
+    department === "marketing" && (role === "admin" || role === "manager");
+  const isEmployee = isSaleDepartment ? role === "sale" : role === "employee";
   const usesKanbanBoard = isEmployee || canAssign;
   const date = formatYmd(new Date());
   const [task, setTask] = useState({
@@ -284,12 +304,23 @@ export function TasksWorkspace() {
   });
 
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ["tasks-workspace", role, profile?.id, date],
+    queryKey: ["tasks-workspace", department, role, profile?.id, date],
     enabled: !!profile && !!role,
     queryFn: async () => {
       let teamIds: string[] | undefined;
-      if (role === "leader") teamIds = await getLeaderTeamIds(profile!.id);
-      if (role === "employee") {
+      if (isMarketingLeader) {
+        teamIds = await getLeaderTeamIds(profile!.id);
+      }
+      if (isSaleLeader) {
+        const { data: leaderMemberships } = await supabase
+          .from("team_memberships")
+          .select("team_id")
+          .eq("user_id", profile!.id)
+          .eq("role_in_team", "leader")
+          .eq("is_active", true);
+        teamIds = (leaderMemberships ?? []).map((membership) => membership.team_id);
+      }
+      if (isEmployee) {
         const { data: employeeMemberships } = await supabase
           .from("team_memberships")
           .select("team_id")
@@ -302,11 +333,11 @@ export function TasksWorkspace() {
       if (teamIds && teamIds.length === 0) {
         teams = [];
       } else {
-        let teamsQuery = supabase
-          .from("teams")
-          .select("id, name")
-          .or("department.is.null,department.eq.marketing")
-          .order("name");
+        let teamsQuery = supabase.from("teams").select("id, name").order("name");
+        const marketingTeamFilter = getDepartmentTeamFilter(department);
+        teamsQuery = marketingTeamFilter
+          ? teamsQuery.or(marketingTeamFilter)
+          : teamsQuery.eq("department", department);
         if (teamIds?.length) teamsQuery = teamsQuery.in("id", teamIds);
         const { data: teamRows } = await teamsQuery;
         teams = teamRows ?? [];
@@ -328,29 +359,31 @@ export function TasksWorkspace() {
             .from("profiles")
             .select("id, full_name, username, avatar_url, status")
             .in("id", userIds)
+            .eq("status", "active")
             .order("full_name")
         : { data: [] };
       const { data: assignableRoles, error: assignableRolesError } = userIds.length
         ? await supabase.from("user_roles").select("user_id, role").in("user_id", userIds)
         : { data: [], error: null };
       if (assignableRolesError) throw assignableRolesError;
-      const saleUserIds = new Set(
-        (assignableRoles ?? []).filter((row) => isSaleRole(row.role)).map((row) => row.user_id),
+      const allowedTaskUserIds = new Set(
+        (assignableRoles ?? [])
+          .filter((row) => TASK_ROLE_BY_DEPARTMENT[department](row.role))
+          .map((row) => row.user_id),
       );
-      const marketingTaskUsers = (users ?? []).filter((user) => !saleUserIds.has(user.id));
-      const visibleUsers = filterVisibleProfiles(marketingTaskUsers, role);
-      const visibleUserIds = filterVisibleProfileIds(visibleUsers, role);
+      const visibleUsers = (users ?? []).filter((user) => allowedTaskUserIds.has(user.id));
 
       let tasksQuery = supabase
         .from("tasks")
         .select("*")
+        .eq("department", department)
         .or(`task_date.eq.${date},deadline.not.is.null,status.eq.pending_review`)
         .order("created_at", { ascending: false });
-      if (role === "employee") tasksQuery = tasksQuery.eq("assigned_to", profile!.id);
-      if ((role === "leader" || role === "manager") && activeTeamIds.length) {
+      if (isEmployee) tasksQuery = tasksQuery.eq("assigned_to", profile!.id);
+      if ((isScopedTeamLeader || role === "manager") && activeTeamIds.length) {
         tasksQuery = tasksQuery.in("team_id", activeTeamIds);
       }
-      if ((role === "leader" || role === "manager") && !activeTeamIds.length) {
+      if ((isScopedTeamLeader || role === "manager") && !activeTeamIds.length) {
         tasksQuery = tasksQuery.limit(0);
       }
       const { data: rawTasks, error: tasksError } = await tasksQuery;
@@ -370,9 +403,8 @@ export function TasksWorkspace() {
             .in("id", taskProfileIds)
             .order("full_name")
         : { data: [] };
-      const visibleTaskProfiles = filterVisibleProfiles(taskProfiles ?? [], role);
       const profileMap = new Map(
-        [...visibleUsers, ...visibleTaskProfiles].map((user) => [user.id, user]),
+        [...visibleUsers, ...(taskProfiles ?? [])].map((user) => [user.id, user]),
       );
       const teamMap = new Map(teams.map((team) => [team.id, team]));
       const normalizedTaskRows = (rawTasks ?? []).map((row) => ({
@@ -381,13 +413,6 @@ export function TasksWorkspace() {
       }));
       const tasks: TaskRow[] = normalizedTaskRows
         .filter((row) => shouldShowTaskOnBoard(row, date))
-        .filter((row) => !saleUserIds.has(row.assigned_to))
-        .filter(
-          (row) =>
-            canSeeInactiveProfiles(role) ||
-            row.assigned_to === profile!.id ||
-            visibleUserIds.has(row.assigned_to),
-        )
         .map((row) => ({
           ...row,
           profiles: profileMap.get(row.assigned_to) ?? null,
@@ -408,6 +433,7 @@ export function TasksWorkspace() {
       const templatesQuery = supabase
         .from("daily_task_templates")
         .select("*")
+        .eq("department", department)
         .eq("is_active", true)
         .order("sort_order");
       const { data: templates } = await templatesQuery;
@@ -437,12 +463,12 @@ export function TasksWorkspace() {
             .select("id, full_name, username, avatar_url, status")
             .in("id", completionProfileIds)
         : { data: [] };
-      const visibleCompletionProfiles = filterVisibleProfiles(completionProfiles ?? [], role);
 
       if (import.meta.env.DEV) {
         console.info("[TasksWorkspace] task load debug", {
           currentProfileId: profile?.id,
           currentRole: role,
+          department,
           selectedTeamId: task.team_id || null,
           visibleTeamIds: activeTeamIds,
           todayDate: date,
@@ -473,7 +499,7 @@ export function TasksWorkspace() {
         ),
         onboardingTemplates: (onboardingTemplates ?? []) as OnboardingTemplateRow[],
         completions: (completions ?? []) as CompletionRow[],
-        completionProfiles: visibleCompletionProfiles as UserRow[],
+        completionProfiles: (completionProfiles ?? []) as UserRow[],
       };
     },
   });
@@ -491,11 +517,11 @@ export function TasksWorkspace() {
   }, [screenshotMode]);
 
   useEffect(() => {
-    if (role !== "leader" || !data?.teams.length) return;
+    if (!isScopedTeamLeader || !data?.teams.length) return;
     const teamId = data.teams[0].id;
     setTask((current) => (current.team_id ? current : { ...current, team_id: teamId }));
     setTemplate((current) => (current.team_id ? current : { ...current, team_id: teamId }));
-  }, [data?.teams, role]);
+  }, [data?.teams, isScopedTeamLeader]);
 
   const taskUsers = task.team_id
     ? getUsersForTeam(data?.users ?? [], data?.memberships ?? [], task.team_id)
@@ -827,7 +853,7 @@ export function TasksWorkspace() {
     (item: Pick<TaskRow, "assigned_to" | "team_id">) => {
       if (!profile || !role || !item.assigned_to) return false;
       if (role === "admin" || role === "manager") return true;
-      if (role !== "leader" || item.assigned_to === profile.id || !item.team_id) return false;
+      if (!isScopedTeamLeader || item.assigned_to === profile.id || !item.team_id) return false;
       return (data?.memberships ?? []).some(
         (membership) =>
           membership.team_id === item.team_id &&
@@ -836,14 +862,14 @@ export function TasksWorkspace() {
           (data?.teams ?? []).some((team) => team.id === membership.team_id),
       );
     },
-    [data?.memberships, data?.teams, profile, role],
+    [data?.memberships, data?.teams, isScopedTeamLeader, profile, role],
   );
 
   const canReviewTemplateCompletion = useCallback(
     (template: Pick<TemplateRow, "team_id">, completion: Pick<CompletionRow, "user_id">) => {
       if (!profile || !role) return false;
       if (role === "admin" || role === "manager") return true;
-      if (role !== "leader" || completion.user_id === profile.id) return false;
+      if (!isScopedTeamLeader || completion.user_id === profile.id) return false;
       return (data?.memberships ?? []).some((membership) => {
         if (membership.user_id !== completion.user_id) return false;
         if (membership.role_in_team === "leader") return false;
@@ -851,7 +877,7 @@ export function TasksWorkspace() {
         return (data?.teams ?? []).some((team) => team.id === membership.team_id);
       });
     },
-    [data?.memberships, data?.teams, profile, role],
+    [data?.memberships, data?.teams, isScopedTeamLeader, profile, role],
   );
 
   useEffect(() => {
@@ -990,6 +1016,7 @@ export function TasksWorkspace() {
         .from("daily_task_templates")
         .update({
           team_id: normalizeUuid(template.team_id),
+          department,
           title: template.title.trim(),
           description: template.description.trim() || null,
         })
@@ -1007,6 +1034,7 @@ export function TasksWorkspace() {
     }
     const payload: TablesInsert<"daily_task_templates"> = {
       ...template,
+      department,
       team_id: normalizeUuid(template.team_id),
       created_by: profile?.id,
     };
@@ -1608,7 +1636,7 @@ export function TasksWorkspace() {
 
   const taskForm = (
     <div className="grid gap-3 md:grid-cols-2">
-      {role === "leader" ? (
+      {isScopedTeamLeader ? (
         <div className="rounded-xl border bg-muted/40 p-3 text-sm">
           <p className="text-xs text-muted-foreground">Team</p>
           <p className="font-medium">
@@ -1702,7 +1730,7 @@ export function TasksWorkspace() {
 
   const templateForm = (
     <div className="grid gap-3">
-      {role === "leader" ? (
+      {isScopedTeamLeader ? (
         <div className="rounded-xl border bg-muted/40 p-3 text-sm">
           <p className="text-xs text-muted-foreground">Team</p>
           <p className="font-medium">
@@ -2977,11 +3005,23 @@ export function TasksWorkspace() {
 
       <WorkspacePageHeader
         className="md:sticky md:top-0 md:z-20"
-        title={isEmployee ? "Checklist Công Việc" : "Checklist công việc"}
+        title={
+          department === "sale"
+            ? isEmployee
+              ? "Checklist Công Việc Sale"
+              : "Checklist công việc Sale"
+            : isEmployee
+              ? "Checklist Công Việc MKT"
+              : "Checklist công việc MKT"
+        }
         subtitle={
-          isEmployee
-            ? "Nhân sự - Quản lý nhiệm vụ cá nhân"
-            : "Quản lý nhiệm vụ, checklist và luồng duyệt của đội ngũ"
+          department === "sale"
+            ? isEmployee
+              ? "Sale - Quản lý nhiệm vụ cá nhân"
+              : "Quản lý nhiệm vụ, checklist và luồng duyệt của đội Sale"
+            : isEmployee
+              ? "Nhân sự - Quản lý nhiệm vụ cá nhân"
+              : "Quản lý nhiệm vụ, checklist và luồng duyệt của đội ngũ"
         }
         contentClassName={usesKanbanBoard ? "lg:items-start" : undefined}
         rightContent={
@@ -3290,7 +3330,7 @@ export function TasksWorkspace() {
 
             {canAssign && (
               <>
-                {role !== "leader" && (
+                {!isScopedTeamLeader && (
                   <Select
                     value={selectedTeamId}
                     onValueChange={(value) => {
