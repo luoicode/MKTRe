@@ -476,9 +476,6 @@ function AdsEmptyState({ onAddTestAccount }: { onAddTestAccount: () => void }) {
       <h2 className="mt-4 text-lg font-bold tracking-tight text-slate-950">
         Chưa có tài khoản quảng cáo nào được kết nối
       </h2>
-      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-        Khi Leader Marketing gán tài khoản quảng cáo, dữ liệu sẽ hiển thị tại đây.
-      </p>
       <Button
         type="button"
         variant="outline"
