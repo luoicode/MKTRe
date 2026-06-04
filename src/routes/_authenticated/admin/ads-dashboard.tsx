@@ -22,6 +22,7 @@ import {
   adminUpsertAdsSystemToken,
   fetchAdminAdsAccounts,
   fetchAdsSystemTokenStatus,
+  getAdsDateFilterValidationError,
   pauseAllActiveAdsets,
   stripMetaAdAccountPrefix,
   syncAdsAccountData,
@@ -52,6 +53,11 @@ const SYNC_CACHE_TTL_MS = 60_000;
 interface NewAccountForm {
   accountName: string;
   accountId: string;
+}
+
+function getActionErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
 }
 
 function AdminAdsDashboardPage() {
@@ -96,11 +102,8 @@ function AdminAdsDashboardPage() {
   );
 
   const customDateError = useMemo(() => {
-    if (datePreset !== "custom") return "";
-    if (!customDateStart || !customDateEnd) return "Chọn đủ từ ngày và đến ngày.";
-    if (customDateStart > customDateEnd) return "Từ ngày phải nhỏ hơn hoặc bằng đến ngày.";
-    return "";
-  }, [customDateEnd, customDateStart, datePreset]);
+    return getAdsDateFilterValidationError(currentDateFilter);
+  }, [currentDateFilter]);
 
   const accounts = dashboardData.accounts;
   const activeAccount = useMemo(
@@ -290,20 +293,24 @@ function AdminAdsDashboardPage() {
     setIsPausingAdsets(true);
     try {
       const pauseResult = await pauseAllActiveAdsets(activeAccount.id);
-      if (pauseResult.ok) {
+      const shouldRefreshAfterPause =
+        !customDateError && (pauseResult.ok || (pauseResult.pausedCount ?? 0) > 0);
+
+      if (shouldRefreshAfterPause) {
         await syncAdsAccountData(activeAccount.id, currentDateFilter);
         await loadAccounts();
+      }
+
+      if (pauseResult.ok) {
         toast.success(pauseResult.message);
       } else if ((pauseResult.pausedCount ?? 0) > 0) {
-        await syncAdsAccountData(activeAccount.id, currentDateFilter);
-        await loadAccounts();
         toast.warning(pauseResult.message);
       } else {
-        toast.info(pauseResult.message);
+        toast.error(pauseResult.message);
       }
       setPauseConfirmOpen(false);
-    } catch {
-      toast.error("Không thể tắt nhóm quảng cáo.");
+    } catch (error) {
+      toast.error(getActionErrorMessage(error, "Không thể tắt nhóm quảng cáo."));
     } finally {
       setIsPausingAdsets(false);
     }

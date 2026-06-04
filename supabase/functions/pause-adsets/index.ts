@@ -20,6 +20,7 @@ type MetaError = {
     type?: string;
     code?: number;
     error_subcode?: number;
+    fbtrace_id?: string;
   };
 };
 
@@ -39,6 +40,27 @@ type PauseError = {
   adsetId: string;
   message: string;
 };
+
+type TokenSelection = {
+  accessToken: string;
+  source: "system" | "account_fallback" | "missing";
+};
+
+class MetaApiError extends Error {
+  code?: number;
+  subcode?: number;
+  type?: string;
+  fbtraceId?: string;
+
+  constructor(metaError: NonNullable<MetaError["error"]>, fallback: string) {
+    super(metaError.message ?? fallback);
+    this.name = "MetaApiError";
+    this.code = metaError.code;
+    this.subcode = metaError.error_subcode;
+    this.type = metaError.type;
+    this.fbtraceId = metaError.fbtrace_id;
+  }
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -121,23 +143,26 @@ Deno.serve(async (req: Request) => {
     if (!account || !account.is_active) {
       return json({ success: false, message: "Tài khoản quảng cáo không khả dụng" }, 404);
     }
-    const accessToken = await getAdsAccessToken(admin, account.access_token_encrypted);
-    if (!accessToken) {
-      return json(
-        {
-          success: false,
-          message: "Chưa cấu hình token hệ thống Meta. Vui lòng liên hệ Admin.",
-          successCount: 0,
-          failedCount: 0,
-          errors: [],
-        },
-        400,
-      );
+    const tokenSelection = await getAdsAccessToken(admin, account.access_token_encrypted);
+    console.log("[pause-adsets][token_source]", tokenSelection.source);
+    if (!tokenSelection.accessToken) {
+      return json({
+        success: false,
+        message: "Chưa cấu hình token hệ thống Meta.",
+        successCount: 0,
+        failedCount: 0,
+        errors: [],
+      });
     }
     const accountPath = normalizeMetaAdAccountPath(account.ad_account_id);
     const adsetIds = requestedAdsetIds.length
       ? requestedAdsetIds
-      : await fetchActiveAdsetIds({ accountPath, accessToken, metaApiVersion });
+      : await fetchActiveAdsetIds({
+          accountPath,
+          accessToken: tokenSelection.accessToken,
+          metaApiVersion,
+        });
+    console.log("[pause-adsets][active_adsets_count]", adsetIds.length);
 
     if (!adsetIds.length) {
       return json({
@@ -154,23 +179,27 @@ Deno.serve(async (req: Request) => {
 
     for (const adsetId of adsetIds) {
       try {
-        await pauseMetaAdset({ adsetId, accessToken, metaApiVersion });
+        await pauseMetaAdset({ adsetId, accessToken: tokenSelection.accessToken, metaApiVersion });
         successCount += 1;
       } catch (error) {
         errors.push({
           adsetId,
-          message: error instanceof Error ? error.message : String(error),
+          message: getUserFacingMetaErrorMessage(error),
         });
       }
     }
 
     const failedCount = errors.length;
+    const message =
+      failedCount > 0
+        ? successCount > 0
+          ? `Đã tắt ${successCount}/${adsetIds.length} nhóm quảng cáo`
+          : (errors[0]?.message ?? "Không thể tắt nhóm quảng cáo.")
+        : `Đã tắt ${successCount} nhóm quảng cáo`;
+
     return json({
       success: successCount > 0 && failedCount === 0,
-      message:
-        failedCount > 0
-          ? `Đã tắt ${successCount}/${adsetIds.length} nhóm quảng cáo`
-          : `Đã tắt ${successCount} nhóm quảng cáo`,
+      message,
       successCount,
       failedCount,
       errors,
@@ -178,15 +207,16 @@ Deno.serve(async (req: Request) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[pause-adsets][error]", { message });
+    const userMessage = getUserFacingMetaErrorMessage(error);
     return json(
       {
         success: false,
-        message: "Không thể tắt nhóm quảng cáo. Vui lòng kiểm tra token hoặc quyền Meta.",
+        message: userMessage,
         successCount: 0,
         failedCount: 0,
-        errors: [{ adsetId: "-", message }],
+        errors: [{ adsetId: "-", message: userMessage }],
       },
-      500,
+      error instanceof MetaApiError ? 200 : 500,
     );
   }
 });
@@ -217,7 +247,7 @@ async function fetchActiveAdsetIds({
 async function getAdsAccessToken(
   admin: ReturnType<typeof createClient>,
   fallbackToken?: string | null,
-) {
+): Promise<TokenSelection> {
   const { data: systemToken, error } = await admin
     .from("marketing_ads_system_tokens")
     .select("access_token_encrypted")
@@ -228,7 +258,13 @@ async function getAdsAccessToken(
   if (error) throw error;
 
   // TODO: decrypt the system token before production rollout.
-  return systemToken?.access_token_encrypted ?? fallbackToken ?? "";
+  if (systemToken?.access_token_encrypted) {
+    return { accessToken: systemToken.access_token_encrypted, source: "system" };
+  }
+  if (fallbackToken) {
+    return { accessToken: fallbackToken, source: "account_fallback" };
+  }
+  return { accessToken: "", source: "missing" };
 }
 
 async function pauseMetaAdset({
@@ -256,7 +292,7 @@ async function pauseMetaAdset({
     throw new Error(`Meta response parse failed with status ${response.status}`);
   }
   if (!response.ok || payload.error) {
-    throw new Error(payload.error?.message ?? `Meta API failed with status ${response.status}`);
+    throwMetaError(payload, `Meta API failed with status ${response.status}`, adsetId);
   }
   return payload;
 }
@@ -284,9 +320,41 @@ async function fetchMeta<T extends MetaError>(url: string): Promise<T> {
     throw new Error(`Meta response parse failed with status ${response.status}`);
   }
   if (!response.ok || payload.error) {
-    throw new Error(payload.error?.message ?? `Meta API failed with status ${response.status}`);
+    throwMetaError(payload, `Meta API failed with status ${response.status}`);
   }
   return payload;
+}
+
+function throwMetaError(payload: MetaError, fallback: string, adsetId?: string): never {
+  const metaError = payload.error;
+  console.error("[pause-adsets][meta_error]", {
+    adsetId,
+    message: metaError?.message ?? fallback,
+    type: metaError?.type,
+    code: metaError?.code,
+    subcode: metaError?.error_subcode,
+    fbtraceId: metaError?.fbtrace_id,
+  });
+  if (metaError) throw new MetaApiError(metaError, fallback);
+  throw new Error(fallback);
+}
+
+function getUserFacingMetaErrorMessage(error: unknown) {
+  if (error instanceof MetaApiError) {
+    if (error.code === 190) return "Token Meta đã hết hạn hoặc không hợp lệ.";
+    if (error.code === 10 || error.code === 200) {
+      return "Token chưa có quyền quản lý tài khoản quảng cáo này.";
+    }
+    return shortenMetaMessage(error.message);
+  }
+  if (error instanceof Error && error.message) return shortenMetaMessage(error.message);
+  return "Không thể tắt nhóm quảng cáo.";
+}
+
+function shortenMetaMessage(message: string) {
+  const trimmed = message.trim();
+  if (trimmed.length <= 180) return trimmed;
+  return `${trimmed.slice(0, 177)}...`;
 }
 
 function sanitizeAdsetIds(adsetIds: string[]) {

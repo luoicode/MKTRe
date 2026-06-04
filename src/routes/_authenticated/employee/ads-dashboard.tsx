@@ -18,6 +18,7 @@ import {
   type AdsDatePreset,
   type AdsDashboardData,
   fetchEmployeeAdsAccounts,
+  getAdsDateFilterValidationError,
   pauseAllActiveAdsets,
   stripMetaAdAccountPrefix,
   syncAdsAccountData,
@@ -64,6 +65,11 @@ const MAX_CAMPAIGN_PAGES = 5;
 
 const currencyFormatter = new Intl.NumberFormat("vi-VN");
 
+function getActionErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
+
 export function AdsDashboardPage() {
   const [datePreset, setDatePreset] = useState<AdsDatePreset>("today");
   const [customDateStart, setCustomDateStart] = useState("");
@@ -92,11 +98,8 @@ export function AdsDashboardPage() {
   );
 
   const customDateError = useMemo(() => {
-    if (datePreset !== "custom") return "";
-    if (!customDateStart || !customDateEnd) return "Chọn đủ từ ngày và đến ngày.";
-    if (customDateStart > customDateEnd) return "Từ ngày phải nhỏ hơn hoặc bằng đến ngày.";
-    return "";
-  }, [customDateEnd, customDateStart, datePreset]);
+    return getAdsDateFilterValidationError(currentDateFilter);
+  }, [currentDateFilter]);
 
   const loadAdsAccounts = useCallback(async () => {
     const data = await fetchEmployeeAdsAccounts(currentDateFilter);
@@ -208,12 +211,6 @@ export function AdsDashboardPage() {
   const handleDatePresetChange = async (nextPreset: AdsDatePreset) => {
     setDatePreset(nextPreset);
     if (nextPreset === "custom") {
-      try {
-        const data = await fetchEmployeeAdsAccounts({ datePreset: "custom" });
-        setDashboardData(data);
-      } catch {
-        toast.error("Không tải được dữ liệu Ads Dashboard.");
-      }
       return;
     }
     if (!activeAccount) return;
@@ -291,22 +288,24 @@ export function AdsDashboardPage() {
     setIsPausingAdsets(true);
     try {
       const pauseResult = await pauseAllActiveAdsets(activeAccount.id);
-      if (pauseResult.ok) {
+      const shouldRefreshAfterPause =
+        !customDateError && (pauseResult.ok || (pauseResult.pausedCount ?? 0) > 0);
+
+      if (shouldRefreshAfterPause) {
         await syncAdsAccountData(activeAccount.id, currentDateFilter);
         await loadAdsAccounts();
+      }
+
+      if (pauseResult.ok) {
         toast.success(pauseResult.message);
+      } else if ((pauseResult.pausedCount ?? 0) > 0) {
+        toast.warning(pauseResult.message);
       } else {
-        if ((pauseResult.pausedCount ?? 0) > 0) {
-          await syncAdsAccountData(activeAccount.id, currentDateFilter);
-          await loadAdsAccounts();
-          toast.warning(pauseResult.message);
-        } else {
-          toast.info(pauseResult.message);
-        }
+        toast.error(pauseResult.message);
       }
       setPauseConfirmOpen(false);
-    } catch {
-      toast.error("Không thể tắt nhóm quảng cáo.");
+    } catch (error) {
+      toast.error(getActionErrorMessage(error, "Không thể tắt nhóm quảng cáo."));
     } finally {
       setIsPausingAdsets(false);
     }

@@ -11,9 +11,11 @@ import {
   BadgePercent,
   CheckCircle2,
   ExternalLink,
+  Pencil,
   PiggyBank,
   Plus,
   RefreshCw,
+  Trash2,
   TrendingDown,
   TrendingUp,
   WalletCards,
@@ -50,6 +52,20 @@ const budgetTimeFilters: Array<{ key: BudgetTimeFilter; label: string }> = [
   { key: "this_month", label: "Tháng này" },
   { key: "last_month", label: "Tháng trước" },
   { key: "custom", label: "Tuỳ chỉnh" },
+];
+
+const budgetTableColumns = [
+  { label: "Ngày", width: "w-[96px]", align: "text-left" },
+  { label: "Tiền nhận", width: "w-[118px]", align: "text-right" },
+  { label: "Người chuyển", width: "w-[120px]", align: "text-left" },
+  { label: "Tiền chi", width: "w-[118px]", align: "text-right" },
+  { label: "Phí NH", width: "w-[92px]", align: "text-right" },
+  { label: "Phí DV", width: "w-[100px]", align: "text-right" },
+  { label: "KT cập nhật", width: "w-[118px]", align: "text-right" },
+  { label: "Chênh lệch", width: "w-[108px]", align: "text-right" },
+  { label: "Hoá đơn", width: "w-[84px]", align: "text-center" },
+  { label: "Xác nhận", width: "w-[84px]", align: "text-center" },
+  { label: "", width: "w-[92px]", align: "text-center" },
 ];
 
 interface BudgetTransaction {
@@ -132,6 +148,7 @@ function EmployeeBudgetPage() {
   const [customDateEnd, setCustomDateEnd] = useState("");
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
   const [form, setForm] = useState<BudgetFormState>(emptyForm);
 
   const loadAdsAccounts = useCallback((showToast = false) => {
@@ -178,6 +195,10 @@ function EmployeeBudgetPage() {
   );
 
   const periodLabel = useMemo(() => getPeriodLabel(timeFilter, dateRange), [dateRange, timeFilter]);
+  const previousBalanceLabel = useMemo(
+    () => getPreviousBalanceLabel(dateRange.start),
+    [dateRange.start],
+  );
 
   const visibleTransactions = useMemo(
     () =>
@@ -197,13 +218,19 @@ function EmployeeBudgetPage() {
       (sum, item) => sum + getServiceFeeAmount(item),
       0,
     );
+    const previousBalance = dateRange.start
+      ? transactions
+          .filter((item) => item.adAccountId === activeAccountId && item.date < dateRange.start)
+          .reduce((sum, item) => sum + item.receivedAmount - item.spentAmount, 0)
+      : 0;
     return {
+      previousBalance,
       received,
       spent,
       remaining: received - spent,
       serviceFee,
     };
-  }, [visibleTransactions]);
+  }, [activeAccountId, dateRange.start, transactions, visibleTransactions]);
 
   const updateMoneyField = (field: keyof BudgetFormState, value: string) => {
     const parsedValue = parseMoney(value);
@@ -211,6 +238,7 @@ function EmployeeBudgetPage() {
   };
 
   const resetForm = () => {
+    setEditingTransactionId(null);
     setForm({
       ...emptyForm,
       date: toDateInputValue(new Date()),
@@ -219,10 +247,26 @@ function EmployeeBudgetPage() {
   };
 
   const openAddModal = () => {
+    setEditingTransactionId(null);
     setForm((current) => ({
       ...current,
       adAccountId: activeAccountId || adsAccounts[0]?.id || "",
     }));
+    setModalOpen(true);
+  };
+
+  const openEditModal = (transaction: BudgetTransaction) => {
+    setEditingTransactionId(transaction.id);
+    setForm({
+      date: transaction.date,
+      receivedAmount: transaction.receivedAmount,
+      sender: transaction.sender,
+      adAccountId: transaction.adAccountId,
+      spentAmount: transaction.spentAmount,
+      bankFeePercent: transaction.bankFeePercent,
+      serviceFeePercent: transaction.serviceFeePercent,
+      invoiceLink: transaction.invoiceLink,
+    });
     setModalOpen(true);
   };
 
@@ -250,8 +294,7 @@ function EmployeeBudgetPage() {
       return;
     }
 
-    const transaction: BudgetTransaction = {
-      id: `budget-${Date.now()}`,
+    const transactionPayload: Omit<BudgetTransaction, "id"> = {
       date: form.date,
       receivedAmount: form.receivedAmount,
       sender: form.sender.trim(),
@@ -265,10 +308,35 @@ function EmployeeBudgetPage() {
       invoiceLink: form.invoiceLink.trim(),
       confirmed: true,
     };
-    setTransactions((current) => [transaction, ...current]);
+
+    if (editingTransactionId) {
+      setTransactions((current) =>
+        current.map((item) =>
+          item.id === editingTransactionId ? { ...item, ...transactionPayload } : item,
+        ),
+      );
+      toast.success("Đã cập nhật giao dịch ngân sách");
+    } else {
+      setTransactions((current) => [
+        { id: `budget-${Date.now()}`, ...transactionPayload },
+        ...current,
+      ]);
+      toast.success("Đã thêm giao dịch ngân sách");
+    }
     setModalOpen(false);
     resetForm();
-    toast.success("Đã thêm giao dịch ngân sách");
+  };
+
+  const deleteTransaction = (transaction: BudgetTransaction) => {
+    const confirmed = window.confirm("Bạn có chắc muốn xoá giao dịch ngân sách này?");
+    if (!confirmed) return;
+
+    setTransactions((current) => current.filter((item) => item.id !== transaction.id));
+    if (editingTransactionId === transaction.id) {
+      setModalOpen(false);
+      resetForm();
+    }
+    toast.success("Đã xoá giao dịch ngân sách");
   };
 
   return (
@@ -280,7 +348,7 @@ function EmployeeBudgetPage() {
               <WalletCards className="h-7 w-7" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">Ngân sách Marketing</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">Ngân sách Marketing</h1>
               <p className="mt-1 text-sm text-slate-500">
                 Theo dõi dòng tiền tài khoản quảng cáo • {periodLabel}
               </p>
@@ -293,7 +361,13 @@ function EmployeeBudgetPage() {
         </div>
       </section>
 
-      <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <SummaryCard
+          title={previousBalanceLabel}
+          value={summary.previousBalance}
+          icon={WalletCards}
+          tone="slate"
+        />
         <SummaryCard
           title="Tổng tiền nhận"
           value={summary.received}
@@ -319,7 +393,7 @@ function EmployeeBudgetPage() {
         <div className="border-b border-slate-200 p-4">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="min-w-0">
-              <h2 className="text-xl font-bold">Bảng ngân sách</h2>
+              <h2 className="text-xl font-semibold">Bảng ngân sách</h2>
               <p className="mt-1 text-sm text-slate-500">
                 Theo dõi tiền nhận, chi phí quảng cáo và đối soát kế toán theo từng hoá đơn.
               </p>
@@ -328,9 +402,9 @@ function EmployeeBudgetPage() {
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-end">
               {adsAccounts.length > 0 ? (
                 <div className="min-w-0 space-y-1.5">
-                  <Label className="text-sm font-semibold text-slate-700">Tài khoản</Label>
+                  <Label className="text-sm font-medium text-slate-700">Tài khoản</Label>
                   <Select value={activeAccountId} onValueChange={setActiveAccountId}>
-                    <SelectTrigger className="h-11 w-full rounded-2xl bg-white text-sm font-semibold lg:w-[300px]">
+                    <SelectTrigger className="h-11 w-full rounded-2xl bg-white text-sm font-medium lg:w-[300px]">
                       <SelectValue placeholder="Chọn tài khoản quảng cáo" />
                     </SelectTrigger>
                     <SelectContent>
@@ -346,12 +420,12 @@ function EmployeeBudgetPage() {
 
               <div className="flex flex-wrap items-end gap-2">
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-semibold text-slate-700">Thời gian</Label>
+                  <Label className="text-sm font-medium text-slate-700">Thời gian</Label>
                   <Select
                     value={timeFilter}
                     onValueChange={(value) => setTimeFilter(value as BudgetTimeFilter)}
                   >
-                    <SelectTrigger className="h-11 w-[170px] rounded-2xl bg-white text-base font-semibold">
+                    <SelectTrigger className="h-11 w-[170px] rounded-2xl bg-white text-base font-medium">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -384,7 +458,7 @@ function EmployeeBudgetPage() {
                       onChange={(event) => setCustomDateStart(event.target.value)}
                       className="h-9 w-[150px] rounded-xl bg-white text-sm"
                     />
-                    <span className="text-xs font-semibold text-slate-400">đến</span>
+                    <span className="text-xs font-medium text-slate-400">đến</span>
                     <Input
                       type="date"
                       aria-label="Đến ngày"
@@ -408,32 +482,30 @@ function EmployeeBudgetPage() {
             <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-blue-50 text-blue-600">
               <WalletCards className="h-7 w-7" />
             </div>
-            <p className="mt-4 text-base font-semibold">
+            <p className="mt-4 text-base font-medium">
               Chưa có tài khoản quảng cáo. Vui lòng thêm ở Ads Dashboard.
             </p>
           </div>
         ) : (
-          <div>
-            <table className="w-full table-fixed border-collapse">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1090px] table-fixed border-collapse">
+              <colgroup>
+                {budgetTableColumns.map((column) => (
+                  <col key={column.label || "actions"} className={column.width} />
+                ))}
+              </colgroup>
               <thead className="bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 text-white">
                 <tr>
-                  {[
-                    "Ngày",
-                    "Số tiền nhận",
-                    "Người chuyển",
-                    "Số tiền chi",
-                    "Phí ngân hàng",
-                    "Phí dịch vụ",
-                    "KT cập nhật",
-                    "Chênh lệch",
-                    "Link hoá đơn",
-                    "Xác nhận",
-                  ].map((column) => (
+                  {budgetTableColumns.map((column) => (
                     <th
-                      key={column}
-                      className="px-3 py-3 text-left text-[11px] font-bold uppercase leading-tight tracking-wide"
+                      key={column.label || "actions-header"}
+                      title={column.label}
+                      className={cn(
+                        "h-14 overflow-hidden text-ellipsis whitespace-nowrap px-4 text-sm font-medium tracking-normal",
+                        column.align,
+                      )}
                     >
-                      {column}
+                      {column.label}
                     </th>
                   ))}
                 </tr>
@@ -441,7 +513,7 @@ function EmployeeBudgetPage() {
               <tbody>
                 {visibleTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-10 text-center text-sm text-slate-500">
+                    <td colSpan={11} className="px-4 py-10 text-center text-sm text-slate-500">
                       Chưa có giao dịch ngân sách trong khoảng này.
                     </td>
                   </tr>
@@ -451,24 +523,28 @@ function EmployeeBudgetPage() {
                       key={item.id}
                       className="border-b border-slate-100 text-sm transition hover:bg-blue-50/40"
                     >
-                      <td className="px-3 py-4 font-semibold">{formatDisplayDate(item.date)}</td>
-                      <td className="px-3 py-4 font-bold text-emerald-600">
+                      <td className="px-4 py-4 font-medium">{formatDisplayDate(item.date)}</td>
+                      <td className="px-4 py-4 text-right font-semibold text-emerald-600">
                         {formatCompactVnd(item.receivedAmount)}
                       </td>
-                      <td className="truncate px-3 py-4 text-slate-700" title={item.sender}>
+                      <td className="truncate px-4 py-4 text-slate-700" title={item.sender}>
                         {item.sender}
                       </td>
-                      <td className="px-3 py-4 font-bold text-rose-600">
+                      <td className="px-4 py-4 text-right font-semibold text-rose-600">
                         {formatCompactVnd(item.spentAmount)}
                       </td>
-                      <td className="px-3 py-4">{formatCompactVnd(getBankFeeAmount(item))}</td>
-                      <td className="px-3 py-4 font-semibold text-orange-600">
+                      <td className="px-4 py-4 text-right">
+                        {formatCompactVnd(getBankFeeAmount(item))}
+                      </td>
+                      <td className="px-4 py-4 text-right font-medium text-orange-600">
                         {formatCompactVnd(getServiceFeeAmount(item))}
                       </td>
-                      <td className="px-3 py-4">{formatCompactVnd(item.accountingUpdated)}</td>
+                      <td className="px-4 py-4 text-right">
+                        {formatCompactVnd(item.accountingUpdated)}
+                      </td>
                       <td
                         className={cn(
-                          "px-3 py-4 font-semibold",
+                          "px-4 py-4 text-right font-medium",
                           item.difference === 0
                             ? "text-slate-500"
                             : item.difference > 0
@@ -478,7 +554,7 @@ function EmployeeBudgetPage() {
                       >
                         {formatCompactVnd(item.difference)}
                       </td>
-                      <td className="px-3 py-4">
+                      <td className="px-4 py-4 text-center">
                         {item.invoiceLink ? (
                           <a
                             href={item.invoiceLink}
@@ -494,11 +570,37 @@ function EmployeeBudgetPage() {
                         )}
                       </td>
                       <td className="px-3 py-4">
-                        {item.confirmed ? (
-                          <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                        ) : (
-                          <XCircle className="h-5 w-5 text-rose-500" />
-                        )}
+                        <div className="flex justify-center">
+                          {item.confirmed ? (
+                            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                          ) : (
+                            <XCircle className="h-5 w-5 text-rose-500" />
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 rounded-xl"
+                            title="Sửa giao dịch"
+                            onClick={() => openEditModal(item)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 rounded-xl text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                            title="Xoá giao dịch"
+                            onClick={() => deleteTransaction(item)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -512,7 +614,9 @@ function EmployeeBudgetPage() {
       <Dialog open={modalOpen} onOpenChange={handleModalOpenChange}>
         <DialogContent className="max-h-[92vh] max-w-[620px] overflow-y-auto rounded-3xl p-0">
           <DialogHeader className="border-b border-slate-200 px-6 py-5">
-            <DialogTitle className="text-xl font-bold">Thêm giao dịch mới</DialogTitle>
+            <DialogTitle className="text-xl font-semibold">
+              {editingTransactionId ? "Sửa giao dịch" : "Thêm giao dịch mới"}
+            </DialogTitle>
           </DialogHeader>
 
           <div className="grid gap-4 px-6 py-5">
@@ -609,7 +713,9 @@ function EmployeeBudgetPage() {
             <Button variant="outline" onClick={() => handleModalOpenChange(false)}>
               Huỷ
             </Button>
-            <Button onClick={saveTransaction}>Lưu giao dịch</Button>
+            <Button onClick={saveTransaction}>
+              {editingTransactionId ? "Cập nhật giao dịch" : "Lưu giao dịch"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -626,9 +732,10 @@ function SummaryCard({
   title: string;
   value: number;
   icon: typeof TrendingUp;
-  tone: "green" | "red" | "blue" | "orange";
+  tone: "slate" | "green" | "red" | "blue" | "orange";
 }) {
   const toneClasses = {
+    slate: "bg-slate-100 text-slate-600",
     green: "bg-emerald-50 text-emerald-600",
     red: "bg-rose-50 text-rose-600",
     blue: "bg-blue-50 text-blue-600",
@@ -639,8 +746,8 @@ function SummaryCard({
     <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-slate-500">{title}</p>
-          <p className="mt-3 text-2xl font-bold tracking-tight">{formatVnd(value)}</p>
+          <p className="text-sm font-medium text-slate-500">{title}</p>
+          <p className="mt-3 text-2xl font-semibold tracking-tight">{formatVnd(value)}</p>
         </div>
         <div className={cn("grid h-11 w-11 place-items-center rounded-2xl", toneClasses[tone])}>
           <Icon className="h-5 w-5" />
@@ -653,7 +760,7 @@ function SummaryCard({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-2">
-      <Label className="text-sm font-semibold text-slate-600">{label}</Label>
+      <Label className="text-sm font-medium text-slate-600">{label}</Label>
       {children}
     </div>
   );
@@ -692,7 +799,7 @@ function PercentField({
           onChange={(event) => onChange(event.target.value)}
           className="pr-9"
         />
-        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-500">
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-500">
           %
         </span>
       </div>
@@ -805,6 +912,18 @@ function getPeriodLabel(
 
   const [year, month] = dateRange.start.split("-");
   return `Tháng ${Number(month)}/${year}`;
+}
+
+function getPreviousBalanceLabel(dateValue: string) {
+  const baseDate = dateValue ? parseDateInput(dateValue) : new Date();
+  const previousMonth = new Date(baseDate.getFullYear(), baseDate.getMonth() - 1, 1);
+  return `Số dư tháng ${previousMonth.getMonth() + 1}`;
+}
+
+function parseDateInput(dateValue: string) {
+  const [year, month, day] = dateValue.split("-").map(Number);
+  if (!year || !month || !day) return new Date();
+  return new Date(year, month - 1, day);
 }
 
 function formatDisplayDate(dateValue: string) {

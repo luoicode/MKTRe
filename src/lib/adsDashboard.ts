@@ -193,9 +193,19 @@ export function normalizeMetaAdAccountId(adAccountId: string): string {
   return `act_${stripMetaAdAccountPrefix(adAccountId)}`;
 }
 
+export function getAdsDateFilterValidationError(filter: AdsDateRangeFilter): string {
+  if (filter.datePreset !== "custom") return "";
+  if (!filter.dateStart || !filter.dateEnd) return "Chọn đủ từ ngày và đến ngày.";
+  if (filter.dateStart > filter.dateEnd) return "Từ ngày không được lớn hơn đến ngày.";
+  return "";
+}
+
 export async function fetchEmployeeAdsAccounts(
   filter: AdsDateRangeFilter = { datePreset: "today" },
 ): Promise<AdsDashboardData> {
+  const validationError = getAdsDateFilterValidationError(filter);
+  if (validationError) throw new Error(validationError);
+
   const { data: accountRows, error: accountsError } = await adsSupabase
     .from("marketing_ads_accounts_public")
     .select(
@@ -214,6 +224,9 @@ export async function fetchEmployeeAdsAccounts(
 export async function fetchAdminAdsAccounts(
   filter: AdsDateRangeFilter = { datePreset: "today" },
 ): Promise<AdsDashboardData> {
+  const validationError = getAdsDateFilterValidationError(filter);
+  if (validationError) throw new Error(validationError);
+
   const { data: accountRows, error: accountsError } = await adsSupabase
     .from("marketing_ads_accounts_public")
     .select(
@@ -279,6 +292,9 @@ export async function syncAdsAccountData(
   accountId: string,
   filter: AdsDateRangeFilter = { datePreset: "today" },
 ): Promise<AdsDashboardActionResult> {
+  const validationError = getAdsDateFilterValidationError(filter);
+  if (validationError) throw new Error(validationError);
+
   const { data, error } = await supabase.functions.invoke<{
     success: boolean;
     message: string;
@@ -330,12 +346,25 @@ export async function pauseAllActiveAdsets(accountId: string): Promise<AdsDashbo
   });
 
   if (error) {
-    throw new Error(error.message);
+    const response = (error as { context?: Response }).context;
+    if (response) {
+      let responseMessage = "";
+      try {
+        const payload = (await response.clone().json()) as { message?: string };
+        responseMessage = payload.message ?? "";
+      } catch {
+        responseMessage = "";
+      }
+      if (responseMessage) {
+        throw new Error(responseMessage);
+      }
+    }
+    throw new Error(error.message || "Không thể tắt nhóm quảng cáo.");
   }
 
   return {
     ok: Boolean(data?.success),
-    message: data?.message ?? "Không thể tắt nhóm quảng cáo",
+    message: data?.message ?? "Không thể tắt nhóm quảng cáo.",
     pausedCount: data?.successCount ?? 0,
     failedCount: data?.failedCount ?? 0,
     errors: data?.errors ?? [],
