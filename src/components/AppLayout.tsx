@@ -239,12 +239,6 @@ const NAV: NavItem[] = [
   { to: "/sale/tasks", label: "Công việc", icon: CheckSquare, roles: [...SALE_ROLES] },
   { to: "/sale/products", label: "Sản phẩm", icon: Package, roles: [...SALE_ROLES] },
   { to: "/sale/invoices", label: "Hoá đơn", icon: Receipt, roles: [...SALE_ROLES] },
-  {
-    to: "/sale/team",
-    label: "Thành viên team",
-    icon: UsersRound,
-    roles: [APP_ROLES.SALE_LEADER],
-  },
   { to: "/sale/resources", label: "Đào tạo sale", icon: BookOpen, roles: [...SALE_ROLES] },
 ];
 

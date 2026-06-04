@@ -1,5 +1,6 @@
-import { Download, ImageIcon, Loader2, RotateCcw, Send } from "lucide-react";
+import { Copy, Download, ImageIcon, Loader2, RotateCcw, Send } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -34,6 +35,7 @@ export function ReportPreviewModal({
   onConfirmSubmit: () => void;
 }) {
   const [downloading, setDownloading] = useState(false);
+  const [copying, setCopying] = useState(false);
 
   const downloadImage = async () => {
     if (!blob) return;
@@ -42,6 +44,25 @@ export function ReportPreviewModal({
       await saveReportImage(blob, filename);
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const copyImage = async () => {
+    if (!blob) return;
+    if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+      toast.error("Trình duyệt chưa hỗ trợ copy ảnh vào clipboard.");
+      return;
+    }
+
+    setCopying(true);
+    try {
+      const imageBlob = blob.type === "image/png" ? blob : new Blob([blob], { type: "image/png" });
+      await navigator.clipboard.write([new ClipboardItem({ [imageBlob.type]: imageBlob })]);
+      toast.success("Đã copy ảnh báo cáo");
+    } catch {
+      toast.error("Không thể copy ảnh. Vui lòng thử tải ảnh xuống.");
+    } finally {
+      setCopying(false);
     }
   };
 
@@ -84,6 +105,20 @@ export function ReportPreviewModal({
           >
             <Download className="mr-2 h-4 w-4" />
             {downloading ? "Đang tải..." : "Tải ảnh"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={copyImage}
+            disabled={!blob || copying || isCapturing || isSubmitting}
+            size="sm"
+          >
+            {copying ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Copy className="mr-2 h-4 w-4" />
+            )}
+            Copy ảnh
           </Button>
           <Button
             type="button"

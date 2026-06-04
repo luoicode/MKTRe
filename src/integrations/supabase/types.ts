@@ -1698,6 +1698,7 @@ export type Database = {
           new_data_closed: number;
           new_data_received: number;
           note: string | null;
+          old_customer_call_count: number;
           old_customers: number;
           report_date: string;
           slot_key: string;
@@ -1706,6 +1707,7 @@ export type Database = {
           submitted_at: string | null;
           updated_at: string;
           user_id: string;
+          video_call_data_count: number;
         };
         Insert: {
           created_at?: string;
@@ -1717,6 +1719,7 @@ export type Database = {
           new_data_closed?: number;
           new_data_received?: number;
           note?: string | null;
+          old_customer_call_count?: number;
           old_customers?: number;
           report_date: string;
           slot_key: string;
@@ -1725,6 +1728,7 @@ export type Database = {
           submitted_at?: string | null;
           updated_at?: string;
           user_id: string;
+          video_call_data_count?: number;
         };
         Update: {
           created_at?: string;
@@ -1736,6 +1740,7 @@ export type Database = {
           new_data_closed?: number;
           new_data_received?: number;
           note?: string | null;
+          old_customer_call_count?: number;
           old_customers?: number;
           report_date?: string;
           slot_key?: string;
@@ -1744,6 +1749,7 @@ export type Database = {
           submitted_at?: string | null;
           updated_at?: string;
           user_id?: string;
+          video_call_data_count?: number;
         };
         Relationships: [
           {

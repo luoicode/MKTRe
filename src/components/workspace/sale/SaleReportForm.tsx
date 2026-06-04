@@ -291,22 +291,28 @@ export function SaleReportForm() {
                       onChange={(value) => updateActiveField("newDataClosed", value)}
                     />
                     <SaleNumberField
-                      label={saleReportFieldLabels.floatingDataClosed}
-                      value={activeValues.floatingDataClosed}
-                      disabled={!activeSlotEditable}
-                      onChange={(value) => updateActiveField("floatingDataClosed", value)}
-                    />
-                    <SaleNumberField
                       label={saleReportFieldLabels.floatingDataReceived}
                       value={activeValues.floatingDataReceived}
                       disabled={!activeSlotEditable}
                       onChange={(value) => updateActiveField("floatingDataReceived", value)}
+                    />
+                    <SaleNumberField
+                      label={saleReportFieldLabels.floatingDataClosed}
+                      value={activeValues.floatingDataClosed}
+                      disabled={!activeSlotEditable}
+                      onChange={(value) => updateActiveField("floatingDataClosed", value)}
                     />
                     <SaleMoneyField
                       label={saleReportFieldLabels.newCustomerRevenue}
                       value={activeValues.newCustomerRevenue}
                       disabled={!activeSlotEditable}
                       onChange={(value) => updateActiveField("newCustomerRevenue", value)}
+                    />
+                    <SaleNumberField
+                      label={saleReportFieldLabels.videoCallDataCount}
+                      value={activeValues.videoCallDataCount}
+                      disabled={!activeSlotEditable}
+                      onChange={(value) => updateActiveField("videoCallDataCount", value)}
                     />
                     <SaleMoneyField
                       label={saleReportFieldLabels.floatingRevenue}
@@ -315,10 +321,10 @@ export function SaleReportForm() {
                       onChange={(value) => updateActiveField("floatingRevenue", value)}
                     />
                     <SaleNumberField
-                      label={saleReportFieldLabels.oldCustomers}
-                      value={activeValues.oldCustomers}
+                      label={saleReportFieldLabels.oldCustomerCallCount}
+                      value={activeValues.oldCustomerCallCount}
                       disabled={!activeSlotEditable}
-                      onChange={(value) => updateActiveField("oldCustomers", value)}
+                      onChange={(value) => updateActiveField("oldCustomerCallCount", value)}
                     />
                     <div className="space-y-1 sm:col-span-2 2xl:col-span-3">
                       <Label>Ghi chú</Label>
@@ -647,14 +653,14 @@ function buildExportRows(
     },
     {
       stt: 3,
-      label: "Data thả nổi chốt",
-      values: slotValues.map((value) => integer(value.floatingDataClosed)),
+      label: "Data thả nổi nhận",
+      values: slotValues.map((value) => integer(value.floatingDataReceived)),
       tone: "data",
     },
     {
       stt: 4,
-      label: "Data Thả Nổi Nhận",
-      values: slotValues.map((value) => integer(value.floatingDataReceived)),
+      label: "Data thả nổi chốt",
+      values: slotValues.map((value) => integer(value.floatingDataClosed)),
       tone: "data",
     },
     {
@@ -671,6 +677,12 @@ function buildExportRows(
     },
     {
       stt: 7,
+      label: "Số DATA khách gọi video",
+      values: slotValues.map((value) => integer(value.videoCallDataCount)),
+      tone: "calc",
+    },
+    {
+      stt: 8,
       label: "Tỷ lệ chốt mới",
       values: slotValues.map((value) =>
         percent(parseSaleNumber(value.newDataClosed), parseSaleNumber(value.newDataReceived)),
@@ -678,7 +690,7 @@ function buildExportRows(
       tone: "calc",
     },
     {
-      stt: 8,
+      stt: 9,
       label: "TB đơn Data mới",
       values: slotValues.map((value) => {
         const revenue = parseSaleNumber(value.newCustomerRevenue);
@@ -688,19 +700,19 @@ function buildExportRows(
       tone: "calc",
     },
     {
-      stt: 9,
+      stt: 10,
       label: "Doanh Số Thả Nổi",
       values: slotValues.map((value) => money(value.floatingRevenue)),
       tone: "calc",
     },
     {
-      stt: 10,
+      stt: 11,
       label: "Tổng tỷ lệ chốt",
       values: slotValues.map((value) => totalCloseRate(value)),
       tone: "calc",
     },
     {
-      stt: 11,
+      stt: 12,
       label: "Tổng doanh số",
       values: slotValues.map((value) =>
         formatSheetNumber(
@@ -710,9 +722,9 @@ function buildExportRows(
       tone: "calc",
     },
     {
-      stt: 12,
-      label: "Khách Cũ",
-      values: slotValues.map((value) => integer(value.oldCustomers)),
+      stt: 13,
+      label: "Số DATA khách cũ gọi",
+      values: slotValues.map((value) => integer(value.oldCustomerCallCount)),
       tone: "calc",
     },
   ];
@@ -741,8 +753,9 @@ function getDailyExportValue(
   const floatingDataClosed = parseSaleNumber(dailyTotals.floatingDataClosed);
   const floatingDataReceived = parseSaleNumber(dailyTotals.floatingDataReceived);
   const newCustomerRevenue = parseSaleNumber(dailyTotals.newCustomerRevenue);
+  const videoCallDataCount = parseSaleNumber(dailyTotals.videoCallDataCount);
   const floatingRevenue = parseSaleNumber(dailyTotals.floatingRevenue);
-  const oldCustomers = parseSaleNumber(dailyTotals.oldCustomers);
+  const oldCustomerCallCount = parseSaleNumber(dailyTotals.oldCustomerCallCount);
 
   switch (stt) {
     case 1:
@@ -758,17 +771,19 @@ function getDailyExportValue(
     case 6:
       return formatSheetNumber(newCustomerRevenue);
     case 7:
-      return percent(newDataClosed, newDataReceived);
+      return formatSheetNumber(videoCallDataCount);
     case 8:
-      return average(newCustomerRevenue, newDataClosed);
+      return percent(newDataClosed, newDataReceived);
     case 9:
-      return formatSheetNumber(floatingRevenue);
+      return average(newCustomerRevenue, newDataClosed);
     case 10:
-      return percent(newDataClosed + floatingDataClosed, newDataReceived + floatingDataReceived);
+      return formatSheetNumber(floatingRevenue);
     case 11:
-      return formatSheetNumber(newCustomerRevenue + floatingRevenue);
+      return percent(newDataClosed + floatingDataClosed, newDataReceived + floatingDataReceived);
     case 12:
-      return formatSheetNumber(oldCustomers);
+      return formatSheetNumber(newCustomerRevenue + floatingRevenue);
+    case 13:
+      return formatSheetNumber(oldCustomerCallCount);
     default:
       return "";
   }

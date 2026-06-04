@@ -58,7 +58,7 @@ type KpiRangeState = {
   to: string;
 };
 
-type KpiTargetScope = "personal" | "system";
+type KpiTargetScope = "personal" | "team" | "system";
 
 type KpiFormState = {
   target_scope: KpiTargetScope;
@@ -110,7 +110,7 @@ function createFormFromKpi(kpi: KpiTargetRow): KpiFormState {
   const costPercent =
     revenueTarget > 0 ? String(Math.round((adsTarget / revenueTarget) * 100)) : "";
   return {
-    target_scope: isSystemStrategicKpi(kpi) ? "system" : "personal",
+    target_scope: isSystemStrategicKpi(kpi) ? "system" : kpi.user_id ? "personal" : "team",
     team_id: kpi.team_id ?? "",
     user_id: kpi.user_id ?? "",
     period_type: kpi.period_type,
@@ -281,7 +281,7 @@ function statusClass(status: ReturnType<typeof kpiStatus>) {
 export function KpiWorkspace() {
   const { profile, role } = useAuth();
   const qc = useQueryClient();
-  const canEdit = role === "admin";
+  const canEdit = role === "admin" || role === "leader";
   const [createOpen, setCreateOpen] = useState(false);
   const [editingKpi, setEditingKpi] = useState<KpiTargetRow | null>(null);
   const [memberSearch, setMemberSearch] = useState("");
@@ -381,7 +381,7 @@ export function KpiWorkspace() {
       if (kpisError) throw kpisError;
       const scopedKpis = ((kpis ?? []) as KpiTargetRow[]).filter((kpi) => {
         if (kpi.user_id) return activeMarketingUserIds.has(kpi.user_id);
-        if (kpi.team_id) return false;
+        if (kpi.team_id) return visibleTeamIds.includes(kpi.team_id);
         return role === "admin";
       });
 
@@ -487,6 +487,15 @@ export function KpiWorkspace() {
       return sum + Number(personalKpi?.revenue_target ?? 0);
     }, 0);
   }, [data, teamFilter]);
+  const manualTeamTarget = useMemo(() => {
+    if (!data) return undefined;
+    const targetTeamIds =
+      teamFilter === "all" ? new Set(data.teamIds) : new Set<string>([teamFilter]);
+    return pickLatestKpi(
+      data.kpis.filter((row) => !row.user_id && row.team_id && targetTeamIds.has(row.team_id)),
+    );
+  }, [data, teamFilter]);
+  const displayedTeamTarget = Number(manualTeamTarget?.revenue_target ?? 0) || autoTeamTarget;
 
   const memberRows = useMemo<MemberKpiRow[]>(() => {
     const actualByUser = new Map<string, ReportMetricTotals>();
@@ -569,8 +578,20 @@ export function KpiWorkspace() {
     setForm(
       targetScope === "system"
         ? { ...defaultForm, target_scope: "system", team_id: "", user_id: "" }
-        : defaultForm,
+        : targetScope === "team"
+          ? { ...defaultForm, target_scope: "team", user_id: "" }
+          : defaultForm,
     );
+    setCreateOpen(true);
+  };
+
+  const openCreateForUser = (userId: string) => {
+    const teamId =
+      data?.memberships.find((membership) => membership.user_id === userId)?.team_id ??
+      data?.teams[0]?.id ??
+      "";
+    setEditingKpi(null);
+    setForm({ ...createDefaultForm(teamId), target_scope: "personal", user_id: userId });
     setCreateOpen(true);
   };
 
@@ -597,8 +618,16 @@ export function KpiWorkspace() {
       toast.error("Chỉ Admin được tạo KPI toàn hệ thống");
       return;
     }
+    if (form.target_scope === "team" && !form.team_id) {
+      toast.error("Chọn team cần tạo KPI");
+      return;
+    }
     if (form.target_scope === "personal" && !form.user_id) {
       toast.error("Chọn nhân sự cần tạo KPI");
+      return;
+    }
+    if (role === "leader" && form.team_id && !data?.teamIds.includes(form.team_id)) {
+      toast.error("Leader chỉ được tạo KPI trong team mình phụ trách");
       return;
     }
     const revenueTarget = parseNumberInput(form.revenue_target);
@@ -606,7 +635,7 @@ export function KpiWorkspace() {
     const adsTarget = Math.round((revenueTarget * costPercent) / 100);
     const payload: TablesInsert<"kpi_targets"> = {
       team_id: form.target_scope === "system" ? null : form.team_id || null,
-      user_id: form.target_scope === "system" ? null : form.user_id,
+      user_id: form.target_scope === "personal" ? form.user_id : null,
       period_type: form.period_type,
       period_start: form.period_start,
       period_end: form.period_end,
@@ -669,11 +698,9 @@ export function KpiWorkspace() {
               </Badge>
             )}
             {canEdit && (
-              <>
-                <Button onClick={() => openCreateDialog()}>
-                  <Plus className="mr-2 h-4 w-4" /> Tạo KPI
-                </Button>
-              </>
+              <Button onClick={() => openCreateDialog()}>
+                <Plus className="mr-2 h-4 w-4" /> Tạo KPI
+              </Button>
             )}
             {canEdit && (
               <Dialog open={createOpen} onOpenChange={closeKpiDialog}>
@@ -752,9 +779,16 @@ export function KpiWorkspace() {
               <>
                 <TeamKpiPanel
                   teamName={teamSummaryName}
-                  target={autoTeamTarget}
+                  target={displayedTeamTarget}
                   actual={role === "leader" ? data?.teamActual : filteredTeamActual}
                   isCompanyScope={role === "admin" && teamFilter === "all"}
+                  manualTarget={manualTeamTarget}
+                  canEdit={canEdit}
+                  onEdit={
+                    manualTeamTarget
+                      ? () => openEditDialog(manualTeamTarget)
+                      : () => openCreateDialog("team")
+                  }
                 />
               </>
             )}
@@ -771,6 +805,7 @@ export function KpiWorkspace() {
                 onSearch={setMemberSearch}
                 canEdit={canEdit}
                 onEdit={(kpi) => openEditDialog(kpi)}
+                onCreateForUser={openCreateForUser}
               />
             )}
           </div>
@@ -915,7 +950,7 @@ function KpiCreateDialog({
         <DialogTitle>{isEditing ? "Sửa KPI" : "Tạo KPI"}</DialogTitle>
       </DialogHeader>
       <div className="grid gap-3 md:grid-cols-2">
-        {role === "admin" && (
+        {(role === "admin" || role === "leader") && (
           <Field label="Loại KPI">
             <Select
               value={form.target_scope}
@@ -923,7 +958,7 @@ function KpiCreateDialog({
                 setForm({
                   ...form,
                   target_scope: value as KpiTargetScope,
-                  team_id: value === "system" ? "" : form.team_id,
+                  team_id: value === "system" ? "" : form.team_id || teams[0]?.id || "",
                   user_id: "",
                 })
               }
@@ -933,7 +968,10 @@ function KpiCreateDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="personal">KPI cá nhân</SelectItem>
-                <SelectItem value="system">KPI Toàn Hệ Thống</SelectItem>
+                <SelectItem value="team">KPI Team</SelectItem>
+                {role === "admin" ? (
+                  <SelectItem value="system">KPI Toàn Hệ Thống</SelectItem>
+                ) : null}
               </SelectContent>
             </Select>
           </Field>
@@ -969,6 +1007,24 @@ function KpiCreateDialog({
               <p className="font-medium">{selectedUserTeam?.name ?? "Chọn nhân sự để lấy team"}</p>
             </div>
           </>
+        ) : form.target_scope === "team" ? (
+          <Field label="Team">
+            <Select
+              value={form.team_id}
+              onValueChange={(teamId) => setForm({ ...form, team_id: teamId, user_id: "" })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Chọn team Marketing" />
+              </SelectTrigger>
+              <SelectContent>
+                {teams.map((team) => (
+                  <SelectItem key={team.id} value={team.id}>
+                    {team.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
         ) : (
           <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm md:col-span-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">
@@ -1020,7 +1076,7 @@ function KpiCreateDialog({
             onChange={(event) => setForm({ ...form, period_end: event.target.value })}
           />
         </Field>
-        {form.target_scope === "personal" && (
+        {form.target_scope !== "system" && (
           <>
             <Field label="% chi phí">
               <div className="relative">
@@ -1220,15 +1276,21 @@ function SystemStrategicKpiCard({
 }
 
 function TeamKpiPanel({
+  canEdit,
   teamName,
   target,
   actual,
   isCompanyScope,
+  manualTarget,
+  onEdit,
 }: {
+  canEdit?: boolean;
   teamName: string;
   target: number;
   actual?: ReportMetricTotals;
   isCompanyScope?: boolean;
+  manualTarget?: KpiTargetRow;
+  onEdit?: () => void;
 }) {
   const actualTotals = actual ?? emptyMetricTotals();
   const percent = kpiPercent(actualTotals.total_revenue, target);
@@ -1243,11 +1305,25 @@ function TeamKpiPanel({
           </p>
           <h2 className="mt-1 text-xl font-bold">{teamName}</h2>
         </div>
-        <Badge className={statusClass(status)}>{statusLabel(status)}</Badge>
+        <div className="flex items-center gap-2">
+          <Badge className={statusClass(status)}>{statusLabel(status)}</Badge>
+          {canEdit && onEdit ? (
+            <Button size="sm" variant="outline" onClick={onEdit}>
+              <Pencil className="mr-2 h-3.5 w-3.5" />
+              {manualTarget ? "Sửa KPI team" : "Tạo KPI team"}
+            </Button>
+          ) : null}
+        </div>
       </div>
       <div className="mt-5 grid gap-3 md:grid-cols-3 xl:grid-cols-5">
         <LightMetric
-          label={isCompanyScope ? "SUM KPI cá nhân active" : "SUM KPI cá nhân trong team"}
+          label={
+            manualTarget
+              ? "KPI team đã đặt"
+              : isCompanyScope
+                ? "SUM KPI cá nhân active"
+                : "SUM KPI cá nhân trong team"
+          }
           value={fmtVndDong(target)}
         />
         <LightMetric
@@ -1331,6 +1407,7 @@ function KpiHistory({
 function MemberKpiTable({
   canEdit,
   emptyMessage,
+  onCreateForUser,
   onEdit,
   rows,
   search,
@@ -1338,6 +1415,7 @@ function MemberKpiTable({
 }: {
   canEdit: boolean;
   emptyMessage: string;
+  onCreateForUser: (userId: string) => void;
   onEdit: (kpi: KpiTargetRow) => void;
   rows: MemberKpiRow[];
   search: string;
@@ -1409,7 +1487,14 @@ function MemberKpiTable({
                           Sửa
                         </Button>
                       ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onCreateForUser(row.user.id)}
+                        >
+                          <Plus className="mr-2 h-3.5 w-3.5" />
+                          Tạo KPI
+                        </Button>
                       )}
                     </td>
                   ) : null}

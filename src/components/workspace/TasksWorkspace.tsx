@@ -1776,7 +1776,6 @@ export function TasksWorkspace({ department = "marketing" }: TasksWorkspaceProps
 
   const renderEmployeeTaskCard = (item: UnifiedChecklistItem) => {
     const title = getUnifiedItemTitle(item);
-    const description = getUnifiedItemDescription(item);
     const status = item.status;
     const link = getUnifiedItemLink(item);
     const feedback = getUnifiedItemFeedback(item, getTemplateCompletion);
@@ -1787,32 +1786,31 @@ export function TasksWorkspace({ department = "marketing" }: TasksWorkspaceProps
         type="button"
         onClick={() => openEmployeeItemDetails(item)}
         className={cn(
-          "group w-full rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/25",
+          "group w-full rounded-xl border bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/25",
           item.deadlineState === "overdue" ? "border-red-200" : "border-slate-200",
         )}
       >
-        <div className="min-w-0 space-y-3">
+        <div className="min-w-0 space-y-2.5">
           <div className="min-w-0">
-            <p className="line-clamp-2 text-base font-bold leading-snug text-slate-950">{title}</p>
-            {description && (
-              <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-500">{description}</p>
-            )}
+            <p className="line-clamp-2 text-sm font-semibold leading-snug text-slate-950">
+              {title}
+            </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
             {item.type === "template" ? (
-              <Badge className="rounded-full border-pink-100 bg-pink-50 px-3 py-1 text-xs font-semibold text-pink-600 hover:bg-pink-50">
+              <Badge className="rounded-full border-pink-100 bg-pink-50 px-2.5 py-0.5 text-[11px] font-semibold text-pink-600 hover:bg-pink-50">
                 Hằng ngày
               </Badge>
             ) : (
-              <Badge className="rounded-full border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+              <Badge className="rounded-full border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">
                 {item.task.deadline
                   ? `Deadline: ${formatDateOnly(item.task.deadline)}`
                   : "Không deadline"}
               </Badge>
             )}
             {item.deadlineState === "overdue" && (
-              <Badge className="rounded-full border-red-100 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50">
+              <Badge className="rounded-full border-red-100 bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-700 hover:bg-red-50">
                 Quá hạn
               </Badge>
             )}
@@ -1834,7 +1832,7 @@ export function TasksWorkspace({ department = "marketing" }: TasksWorkspaceProps
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="h-9 rounded-xl px-3 text-xs"
+                  className="h-8 rounded-lg px-2.5 text-xs"
                   onClick={(event) => {
                     event.stopPropagation();
                     openUnifiedItemLink(item);
@@ -1849,7 +1847,7 @@ export function TasksWorkspace({ department = "marketing" }: TasksWorkspaceProps
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="h-9 rounded-xl px-3 text-xs"
+                  className="h-8 rounded-lg px-2.5 text-xs"
                   onClick={(event) => {
                     event.stopPropagation();
                     openEmployeeItemDetails(item);
@@ -1863,7 +1861,7 @@ export function TasksWorkspace({ department = "marketing" }: TasksWorkspaceProps
                 <Button
                   type="button"
                   size="sm"
-                  className="h-9 rounded-xl px-4 text-xs"
+                  className="h-8 rounded-lg px-3 text-xs"
                   onClick={(event) => {
                     event.stopPropagation();
                     submitEmployeeItem(item);
@@ -1877,7 +1875,7 @@ export function TasksWorkspace({ department = "marketing" }: TasksWorkspaceProps
                 <Button
                   type="button"
                   size="sm"
-                  className="h-9 rounded-xl bg-amber-600 px-4 text-xs hover:bg-amber-700"
+                  className="h-8 rounded-lg bg-amber-600 px-3 text-xs hover:bg-amber-700"
                   onClick={(event) => {
                     event.stopPropagation();
                     submitEmployeeItem(item);
@@ -1895,7 +1893,6 @@ export function TasksWorkspace({ department = "marketing" }: TasksWorkspaceProps
 
   const renderManagerTaskCard = (item: UnifiedChecklistItem) => {
     const title = getUnifiedItemTitle(item);
-    const description = getUnifiedItemDescription(item);
     const status = item.status;
     const link = getUnifiedItemLink(item);
     const feedback = getUnifiedItemFeedback(item, getTemplateCompletion);
@@ -1910,32 +1907,29 @@ export function TasksWorkspace({ department = "marketing" }: TasksWorkspaceProps
         type="button"
         onClick={() => openUnifiedItemDetails(item)}
         className={cn(
-          "group w-full rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/25",
+          "group w-full rounded-xl border bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary/25",
           item.deadlineState === "overdue" ? "border-red-200" : "border-slate-200",
         )}
       >
-        <div className="min-w-0 space-y-3">
+        <div className="min-w-0 space-y-2.5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="line-clamp-2 text-base font-bold leading-snug text-slate-950">
+              <p className="line-clamp-2 text-sm font-semibold leading-snug text-slate-950">
                 {title}
               </p>
-              {description && (
-                <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-500">{description}</p>
-              )}
             </div>
             {item.type === "task" && (
-              <UserAvatar user={item.task.profiles} className="h-9 w-9 border" />
+              <UserAvatar user={item.task.profiles} className="h-8 w-8 border" />
             )}
           </div>
 
           <div className="flex flex-wrap gap-2">
             {item.type === "template" ? (
-              <Badge className="rounded-full border-pink-100 bg-pink-50 px-3 py-1 text-xs font-semibold text-pink-600 hover:bg-pink-50">
+              <Badge className="rounded-full border-pink-100 bg-pink-50 px-2.5 py-0.5 text-[11px] font-semibold text-pink-600 hover:bg-pink-50">
                 Hằng ngày
               </Badge>
             ) : (
-              <Badge className="rounded-full border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+              <Badge className="rounded-full border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">
                 {item.task.deadline
                   ? `Deadline: ${formatDateOnly(item.task.deadline)}`
                   : "Không deadline"}
@@ -1943,14 +1937,14 @@ export function TasksWorkspace({ department = "marketing" }: TasksWorkspaceProps
             )}
             <Badge
               className={cn(
-                "rounded-full border px-3 py-1 text-xs font-semibold",
+                "rounded-full border px-2.5 py-0.5 text-[11px] font-semibold",
                 statusPillClass(status),
               )}
             >
               {statusShortLabel(status)}
             </Badge>
             {item.deadlineState === "overdue" && (
-              <Badge className="rounded-full border-red-100 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50">
+              <Badge className="rounded-full border-red-100 bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-700 hover:bg-red-50">
                 Quá hạn
               </Badge>
             )}
@@ -1985,7 +1979,7 @@ export function TasksWorkspace({ department = "marketing" }: TasksWorkspaceProps
                 type="button"
                 size="sm"
                 variant="outline"
-                className="h-9 rounded-xl px-3 text-xs"
+                className="h-8 rounded-lg px-2.5 text-xs"
                 onClick={(event) => {
                   event.stopPropagation();
                   openUnifiedItemLink(item);
@@ -2000,7 +1994,7 @@ export function TasksWorkspace({ department = "marketing" }: TasksWorkspaceProps
                 type="button"
                 size="sm"
                 variant="outline"
-                className="h-9 rounded-xl px-3 text-xs"
+                className="h-8 rounded-lg px-2.5 text-xs"
                 onClick={(event) => {
                   event.stopPropagation();
                   if (item.type === "task") startEditTask(item.task);
@@ -2016,7 +2010,7 @@ export function TasksWorkspace({ department = "marketing" }: TasksWorkspaceProps
                 type="button"
                 size="sm"
                 variant="outline"
-                className="h-9 rounded-xl px-3 text-xs"
+                className="h-8 rounded-lg px-2.5 text-xs"
                 onClick={(event) => {
                   event.stopPropagation();
                   openUnifiedItemComment(item);
@@ -2030,7 +2024,7 @@ export function TasksWorkspace({ department = "marketing" }: TasksWorkspaceProps
               <Button
                 type="button"
                 size="sm"
-                className="h-9 rounded-xl px-4 text-xs"
+                className="h-8 rounded-lg px-3 text-xs"
                 onClick={(event) => {
                   event.stopPropagation();
                   openUnifiedItemReview(item);
@@ -2515,13 +2509,14 @@ export function TasksWorkspace({ department = "marketing" }: TasksWorkspaceProps
   const currentSelectedTask = selectedTask
     ? (data?.tasks.find((item) => item.id === selectedTask.id) ?? selectedTask)
     : null;
+  const captureUserName = profile?.full_name || profile?.username || "Chưa xác định";
 
   return (
     <div
       ref={usesKanbanBoard ? checklistBoardRef : undefined}
       className={cn(
-        "space-y-4 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden md:pr-2",
-        screenshotMode && "bg-slate-50 p-4",
+        "space-y-3 md:flex md:h-full md:min-h-0 md:flex-col md:overflow-hidden md:pr-2",
+        screenshotMode && "bg-slate-50",
       )}
     >
       <ReportImagePreviewDialog
@@ -3003,6 +2998,12 @@ export function TasksWorkspace({ department = "marketing" }: TasksWorkspaceProps
         </DialogContent>
       </Dialog>
 
+      {screenshotMode && usesKanbanBoard && (
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <p className="text-sm font-semibold text-slate-950">Người thực hiện: {captureUserName}</p>
+        </div>
+      )}
+
       <WorkspacePageHeader
         className="md:sticky md:top-0 md:z-20"
         title={
@@ -3238,7 +3239,7 @@ export function TasksWorkspace({ department = "marketing" }: TasksWorkspaceProps
               <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
             </div>
           ) : (
-            <div className="grid min-w-0 gap-4 md:h-0 md:min-h-[420px] md:flex-1 md:grid-cols-2 md:overflow-hidden xl:grid-cols-4">
+            <div className="grid min-w-0 gap-3 md:h-0 md:min-h-[380px] md:flex-1 md:grid-cols-2 md:overflow-hidden xl:grid-cols-4">
               {employeeBoardColumns.map((column) => {
                 const columnItems = baseChecklistItems.filter(
                   (item) => item.status === column.status,
@@ -3246,28 +3247,28 @@ export function TasksWorkspace({ department = "marketing" }: TasksWorkspaceProps
                 return (
                   <section
                     key={column.status}
-                    className="flex min-h-[360px] min-w-0 flex-col rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm md:h-full md:min-h-0 md:overflow-hidden"
+                    className="flex min-h-[320px] min-w-0 flex-col rounded-2xl border border-slate-200 bg-white/80 p-3 shadow-sm md:h-full md:min-h-0 md:overflow-hidden"
                   >
-                    <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
-                      <h2 className="flex min-w-0 items-center gap-2 text-lg font-extrabold uppercase tracking-tight text-slate-950">
+                    <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
+                      <h2 className="flex min-w-0 items-center gap-2 text-base font-bold uppercase tracking-tight text-slate-950">
                         <span>{column.icon}</span>
                         <span className="truncate">{column.title}</span>
                       </h2>
                       <span
                         className={cn(
-                          "inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full px-2 text-sm font-bold",
+                          "inline-flex h-7 min-w-7 shrink-0 items-center justify-center rounded-full px-2 text-xs font-bold",
                           column.countClass,
                         )}
                       >
                         {columnItems.length}
                       </span>
                     </div>
-                    <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
+                    <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain pr-1">
                       {columnItems.map((item) =>
                         isEmployee ? renderEmployeeTaskCard(item) : renderManagerTaskCard(item),
                       )}
                       {!columnItems.length && (
-                        <div className="rounded-2xl border border-dashed bg-slate-50 p-5 text-center text-sm text-slate-500">
+                        <div className="rounded-xl border border-dashed bg-slate-50 p-3 text-center text-sm text-slate-500">
                           Trống
                         </div>
                       )}

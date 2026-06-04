@@ -69,7 +69,11 @@ import {
   formatSaleRatioCurrency,
   formatSaleVnd,
 } from "@/lib/saleReportUtils";
-import { summarizeSaleReports, type SaleReportRow } from "@/lib/saleReports";
+import {
+  getSaleReportOldCustomerCallCount,
+  summarizeSaleReports,
+  type SaleReportRow,
+} from "@/lib/saleReports";
 import { cn } from "@/lib/utils";
 import { usePagination } from "@/lib/usePagination";
 
@@ -456,8 +460,9 @@ export function AdminSaleReports() {
                       "Data nổi nhận",
                       "Data nổi chốt",
                       "DS khách mới",
+                      "Số DATA khách gọi video",
                       "DS thả nổi",
-                      "Khách cũ",
+                      "Số DATA khách cũ gọi",
                       "Tổng DS",
                       "Tỷ lệ chốt",
                       "TB đơn",
@@ -496,9 +501,14 @@ export function AdminSaleReports() {
                           {formatSaleVnd(Number(row.new_customer_revenue ?? 0))}
                         </td>
                         <td className="px-3 py-3">
+                          {formatSaleInteger(Number(row.video_call_data_count ?? 0))}
+                        </td>
+                        <td className="px-3 py-3">
                           {formatSaleVnd(Number(row.floating_revenue ?? 0))}
                         </td>
-                        <td className="px-3 py-3">{formatSaleInteger(row.old_customers)}</td>
+                        <td className="px-3 py-3">
+                          {formatSaleInteger(getSaleReportOldCustomerCallCount(row))}
+                        </td>
                         <td className="px-3 py-3 font-semibold">
                           {formatSaleVnd(rowSummary.totalRevenue)}
                         </td>
@@ -511,7 +521,7 @@ export function AdminSaleReports() {
                       </tr>
                     );
                   })}
-                  {!visibleReports.length && <EmptyTableRow colSpan={14} />}
+                  {!visibleReports.length && <EmptyTableRow colSpan={15} />}
                 </tbody>
               </table>
             </CardContent>

@@ -8,7 +8,7 @@ import {
   type SaleReportFormValues,
   type SaleReportSlotId,
 } from "@/lib/saleReportUtils";
-import { getSlotState, type ReportSlotState } from "@/lib/reportSlotGating";
+import type { ReportSlotState } from "@/lib/reportSlotGating";
 
 export type SaleReportRow = Tables<"sale_reports">;
 export type SaleReportStatus = "draft" | "submitted";
@@ -24,7 +24,8 @@ export type SaleReportSummary = {
   floatingDataReceived: number;
   newDataClosed: number;
   floatingDataClosed: number;
-  oldCustomers: number;
+  videoCallDataCount: number;
+  oldCustomerCallCount: number;
 };
 
 export type SaleReportsBySlot = Record<SaleReportSlotId, SaleReportRow | null>;
@@ -68,12 +69,16 @@ export function getSaleSlotStatus({
   slotId?: string;
   bypass?: boolean;
 }): SaleSlotStatus {
-  return getSlotState({
-    slot: { id: slotId, time: slotTime },
-    submitted: report?.status === "submitted",
-    now,
-    bypass,
-  });
+  if (report?.status === "submitted") return "submitted";
+  if (bypass) return "available";
+
+  const slotKey = resolveSaleReportSlotId(slotId, slotTime);
+  if (!slotKey) return "not_open";
+
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  const window = SALE_SLOT_WINDOWS[slotKey];
+  if (minutes >= window.open && minutes <= window.close) return "available";
+  return minutes < window.open ? "not_open" : "locked";
 }
 
 export function findPreferredSaleSlot(
@@ -152,11 +157,12 @@ export function rowToSaleForm(row: SaleReportRow): SaleReportFormValues {
   return {
     newDataReceived: String(row.new_data_received ?? 0),
     newDataClosed: String(row.new_data_closed ?? 0),
-    floatingDataClosed: String(row.floating_data_closed ?? 0),
     floatingDataReceived: String(row.floating_data_received ?? 0),
+    floatingDataClosed: String(row.floating_data_closed ?? 0),
     newCustomerRevenue: String(row.new_customer_revenue ?? 0),
+    videoCallDataCount: String(row.video_call_data_count ?? 0),
     floatingRevenue: String(row.floating_revenue ?? 0),
-    oldCustomers: String(row.old_customers ?? 0),
+    oldCustomerCallCount: String(getSaleReportOldCustomerCallCount(row)),
     note: row.note ?? "",
   };
 }
@@ -184,11 +190,13 @@ export function saleFormToPayload({
     slot_time: slot.time,
     new_data_received: parseSaleNumber(values.newDataReceived),
     new_data_closed: parseSaleNumber(values.newDataClosed),
-    floating_data_closed: parseSaleNumber(values.floatingDataClosed),
     floating_data_received: parseSaleNumber(values.floatingDataReceived),
+    floating_data_closed: parseSaleNumber(values.floatingDataClosed),
     new_customer_revenue: parseSaleNumber(values.newCustomerRevenue),
+    video_call_data_count: parseSaleNumber(values.videoCallDataCount),
     floating_revenue: parseSaleNumber(values.floatingRevenue),
-    old_customers: parseSaleNumber(values.oldCustomers),
+    old_customer_call_count: parseSaleNumber(values.oldCustomerCallCount),
+    old_customers: parseSaleNumber(values.oldCustomerCallCount),
     note: values.note.trim() || null,
     status,
     submitted_at: status === "submitted" ? (submittedAt ?? new Date().toISOString()) : null,
@@ -204,11 +212,14 @@ export function summarizeSaleReports(rows: SaleReportRow[]) {
   return summarizeSaleFormValues({
     newDataReceived: String(sumNumber(submittedRows, "new_data_received")),
     newDataClosed: String(sumNumber(submittedRows, "new_data_closed")),
-    floatingDataClosed: String(sumNumber(submittedRows, "floating_data_closed")),
     floatingDataReceived: String(sumNumber(submittedRows, "floating_data_received")),
+    floatingDataClosed: String(sumNumber(submittedRows, "floating_data_closed")),
     newCustomerRevenue: String(sumNumber(submittedRows, "new_customer_revenue")),
+    videoCallDataCount: String(sumNumber(submittedRows, "video_call_data_count")),
     floatingRevenue: String(sumNumber(submittedRows, "floating_revenue")),
-    oldCustomers: String(sumNumber(submittedRows, "old_customers")),
+    oldCustomerCallCount: String(
+      submittedRows.reduce((sum, row) => sum + getSaleReportOldCustomerCallCount(row), 0),
+    ),
     note: "",
   });
 }
@@ -219,8 +230,9 @@ export function summarizeSaleFormValues(values: SaleReportFormValues): SaleRepor
   const newDataClosed = parseSaleNumber(values.newDataClosed);
   const floatingDataClosed = parseSaleNumber(values.floatingDataClosed);
   const newCustomerRevenue = parseSaleNumber(values.newCustomerRevenue);
+  const videoCallDataCount = parseSaleNumber(values.videoCallDataCount);
   const floatingRevenue = parseSaleNumber(values.floatingRevenue);
-  const oldCustomers = parseSaleNumber(values.oldCustomers);
+  const oldCustomerCallCount = parseSaleNumber(values.oldCustomerCallCount);
   const totalDataReceived = newDataReceived + floatingDataReceived;
   const totalDataClosed = newDataClosed + floatingDataClosed;
   const totalRevenue = newCustomerRevenue + floatingRevenue;
@@ -235,8 +247,13 @@ export function summarizeSaleFormValues(values: SaleReportFormValues): SaleRepor
     floatingDataReceived,
     newDataClosed,
     floatingDataClosed,
-    oldCustomers,
+    videoCallDataCount,
+    oldCustomerCallCount,
   };
+}
+
+export function getSaleReportOldCustomerCallCount(row: SaleReportRow) {
+  return Number(row.old_customer_call_count ?? row.old_customers ?? 0);
 }
 
 export function groupSaleReportsByDate(rows: SaleReportRow[]) {
@@ -274,6 +291,27 @@ export function latestSaleActivities(rows: SaleReportRow[]) {
 
 function isSaleReportSlotId(value: string): value is SaleReportSlotId {
   return saleReportSlots.some((slot) => slot.id === value);
+}
+
+const SALE_SLOT_WINDOWS: Record<SaleReportSlotId, { open: number; close: number }> = {
+  morning: { open: 0, close: 11 * 60 + 50 },
+  afternoon: { open: 17 * 60, close: 20 * 60 + 24 },
+  evening: { open: 20 * 60 + 25, close: 24 * 60 - 1 },
+};
+
+function resolveSaleReportSlotId(
+  slotId: string | undefined,
+  slotTime: string,
+): SaleReportSlotId | null {
+  if (slotId && isSaleReportSlotId(slotId)) return slotId;
+
+  const normalized = slotTime.replace("h", ":");
+  const [hourPart] = normalized.split(":");
+  const hour = Number(hourPart);
+  if (hour === 11) return "morning";
+  if (hour === 16 || hour === 17) return "afternoon";
+  if (hour === 20 || hour === 21) return "evening";
+  return null;
 }
 
 function sumNumber(rows: SaleReportRow[], key: keyof SaleReportRow) {

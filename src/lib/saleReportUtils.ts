@@ -1,7 +1,7 @@
 export const saleReportSlots = [
-  { id: "morning", label: "Khung 1", time: "11h55", tableLabel: "Ca ngày" },
-  { id: "afternoon", label: "Khung 2", time: "16h55", tableLabel: "Ca chiều" },
-  { id: "evening", label: "Khung 3", time: "21h00", tableLabel: "Ca tối" },
+  { id: "morning", label: "Khung 1", time: "11h50", tableLabel: "Ca ngày" },
+  { id: "afternoon", label: "Khung 2", time: "17h20", tableLabel: "Ca chiều" },
+  { id: "evening", label: "Khung 3", time: "20h45", tableLabel: "Ca tối" },
 ] as const;
 
 export type SaleReportSlotId = (typeof saleReportSlots)[number]["id"];
@@ -9,11 +9,12 @@ export type SaleReportSlotId = (typeof saleReportSlots)[number]["id"];
 export interface SaleReportFormValues {
   newDataReceived: string;
   newDataClosed: string;
-  floatingDataClosed: string;
   floatingDataReceived: string;
+  floatingDataClosed: string;
   newCustomerRevenue: string;
+  videoCallDataCount: string;
   floatingRevenue: string;
-  oldCustomers: string;
+  oldCustomerCallCount: string;
   note: string;
 }
 
@@ -30,11 +31,12 @@ export interface SaleComputedMetrics {
 export const emptySaleReportForm: SaleReportFormValues = {
   newDataReceived: "",
   newDataClosed: "",
-  floatingDataClosed: "",
   floatingDataReceived: "",
+  floatingDataClosed: "",
   newCustomerRevenue: "",
+  videoCallDataCount: "",
   floatingRevenue: "",
-  oldCustomers: "",
+  oldCustomerCallCount: "",
   note: "",
 };
 
@@ -44,8 +46,9 @@ export const saleReportFieldLabels: Record<keyof Omit<SaleReportFormValues, "not
   floatingDataClosed: "Tổng data thả nổi chốt",
   floatingDataReceived: "Tổng data thả nổi nhận",
   newCustomerRevenue: "Doanh số khách mới",
+  videoCallDataCount: "Số DATA khách gọi video",
   floatingRevenue: "Doanh số thả nổi",
-  oldCustomers: "Khách cũ",
+  oldCustomerCallCount: "Số DATA khách cũ gọi",
 };
 
 export function parseSaleNumber(value: string) {
@@ -141,11 +144,14 @@ export function sumSaleForms(forms: Record<SaleReportSlotId, SaleReportFormValue
       newCustomerRevenue: String(
         parseSaleNumber(total.newCustomerRevenue) + parseSaleNumber(values.newCustomerRevenue),
       ),
+      videoCallDataCount: String(
+        parseSaleNumber(total.videoCallDataCount) + parseSaleNumber(values.videoCallDataCount),
+      ),
       floatingRevenue: String(
         parseSaleNumber(total.floatingRevenue) + parseSaleNumber(values.floatingRevenue),
       ),
-      oldCustomers: String(
-        parseSaleNumber(total.oldCustomers) + parseSaleNumber(values.oldCustomers),
+      oldCustomerCallCount: String(
+        parseSaleNumber(total.oldCustomerCallCount) + parseSaleNumber(values.oldCustomerCallCount),
       ),
       note: "",
     };

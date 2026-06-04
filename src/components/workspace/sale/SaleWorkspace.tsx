@@ -11,16 +11,20 @@ import {
   Lock,
   Pencil,
   PhoneCall,
+  Plus,
   RefreshCw,
   Save,
   Target,
   Trophy,
+  TrendingUp,
+  Trash2,
   UserPlus,
   UsersRound,
 } from "lucide-react";
 import {
   Bar,
   BarChart,
+  CartesianGrid,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -31,7 +35,7 @@ import {
 import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
 import { useMemo, useState, type ReactNode } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -45,10 +49,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
-import type { Tables } from "@/integrations/supabase/types";
+import type { Tables, TablesInsert } from "@/integrations/supabase/types";
 import { cn } from "@/lib/utils";
 import { SaleReportForm } from "@/components/workspace/sale/SaleReportForm";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
@@ -58,6 +70,7 @@ import { formatKpiMetricValue, metricProgress, saleMetrics } from "@/lib/kpiMetr
 import { APP_ROLES } from "@/lib/roles";
 import {
   fetchSaleReportsInRange,
+  getSaleReportOldCustomerCallCount,
   groupSaleReportsByDate,
   latestSaleActivities,
   summarizeSaleReports,
@@ -169,38 +182,63 @@ function LeaderSaleDashboardWorkspace() {
         normalizedRange.from,
         normalizedRange.to,
       );
-      const memberIds = teamData.members.map((member) => member.id);
-      const reports = await fetchSaleReportsForUsers(
-        memberIds,
-        normalizedRange.from,
-        normalizedRange.to,
-      );
-      return { teamData, reports };
+      const memberIds = getLeaderSaleTeamMemberIds(teamData);
+      const [reports, todayReports] = await Promise.all([
+        fetchSaleReportsForUsers(memberIds, normalizedRange.from, normalizedRange.to),
+        fetchSaleReportsForUsers(memberIds, todayStr(), todayStr()),
+      ]);
+      return { teamData, reports, todayReports };
     },
   });
 
   const members = useMemo(() => data?.teamData.members ?? [], [data?.teamData.members]);
-  const leads = useMemo(() => data?.teamData.leads ?? [], [data?.teamData.leads]);
   const reports = useMemo(() => data?.reports ?? [], [data?.reports]);
-  const summary = useMemo(() => summarizeSaleReports(reports), [reports]);
-  const leadStats = useMemo(() => summarizeFloatingLeadTeam(leads), [leads]);
-  const salesPerformance = useMemo(
-    () => buildSaleMemberPerformance(members, leads, reports),
-    [leads, members, reports],
+  const todayReports = useMemo(() => data?.todayReports ?? [], [data?.todayReports]);
+  const submittedReports = useMemo(
+    () => reports.filter((report) => report.status === "submitted"),
+    [reports],
   );
-  const dailyTrend = useMemo(() => groupSaleReportsByDate(reports), [reports]);
-  const warnings = useMemo(
-    () => buildLeaderSaleWarnings(members, leads, reports, normalizedRange.to),
-    [leads, members, normalizedRange.to, reports],
+  const summary = useMemo(() => summarizeSaleReports(submittedReports), [submittedReports]);
+  const performance = useMemo(
+    () => buildLeaderSaleDashboardPerformance(submittedReports, members),
+    [members, submittedReports],
+  );
+  const dailyRevenue = useMemo(
+    () => buildLeaderSaleDailyRevenue(submittedReports),
+    [submittedReports],
+  );
+  const dailyData = useMemo(() => buildLeaderSaleDailyData(submittedReports), [submittedReports]);
+  const hasSubmittedReports = submittedReports.length > 0;
+  const topRevenueRows = useMemo(
+    () =>
+      hasSubmittedReports
+        ? [...performance]
+            .sort((a, b) => b.summary.totalRevenue - a.summary.totalRevenue)
+            .slice(0, 5)
+        : [],
+    [hasSubmittedReports, performance],
+  );
+  const topCloseRateRows = useMemo(
+    () =>
+      hasSubmittedReports
+        ? [...performance]
+            .filter((row) => row.summary.totalDataReceived > 0)
+            .sort((a, b) => (b.summary.closeRate ?? 0) - (a.summary.closeRate ?? 0))
+            .slice(0, 5)
+        : [],
+    [hasSubmittedReports, performance],
+  );
+  const warningStats = useMemo(
+    () => buildTeamReportWarningStats(members, todayReports, todayStr()),
+    [members, todayReports],
   );
 
   return (
-    <div className="space-y-4 pb-4">
+    <div className="space-y-4">
       <WorkspacePageHeader
-        icon={<BarChart3 className="h-5 w-5" />}
-        title="Tổng quan Leader Sale"
-        subtitle={`Hiệu suất team Sale · ${formatRangeLabel(normalizedRange)}`}
-        badge={<Badge className="bg-blue-50 text-blue-700 hover:bg-blue-50">Leader Sale</Badge>}
+        icon={<TrendingUp className="h-5 w-5" />}
+        title="Dashboard Sale"
+        subtitle="Dữ liệu nhân viên kinh doanh"
         actions={<DateRangeFilter value={range} onChange={setRange} hideLabel />}
       />
 
@@ -210,92 +248,160 @@ function LeaderSaleDashboardWorkspace() {
         </div>
       ) : (
         <>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <LeaderSaleMetricCard
-              label="Tổng doanh thu team"
-              value={formatMoney(summary.totalRevenue)}
-            />
-            <LeaderSaleMetricCard
-              label="Tỉ lệ chốt team"
-              value={formatNullablePercent(summary.closeRate)}
-            />
-            <LeaderSaleMetricCard
-              label="Tổng data nhận"
-              value={formatInteger(summary.totalDataReceived)}
-            />
-            <LeaderSaleMetricCard
-              label="Tổng data chốt"
-              value={formatInteger(summary.totalDataClosed)}
-            />
-            <LeaderSaleMetricCard label="Lead đang giữ" value={formatInteger(leadStats.claimed)} />
-            <LeaderSaleMetricCard
-              label="Lead quá 24h"
-              value={formatInteger(leadStats.overdue)}
+          <div className="grid gap-3 md:grid-cols-3">
+            <TeamReportInsightCard
               tone="amber"
+              icon={<AlertTriangle className="h-4 w-4" />}
+              value={warningStats.missingReports}
+              label="Sale chưa báo cáo hôm nay"
             />
-            <LeaderSaleMetricCard
-              label="Lead đã chốt"
-              value={formatInteger(leadStats.closed)}
+            <TeamReportInsightCard
+              tone="orange"
+              icon={<ClipboardList className="h-4 w-4" />}
+              value={warningStats.incompleteReports}
+              label="Sale báo cáo thiếu dữ liệu"
+            />
+            <TeamReportInsightCard
+              tone="red"
+              icon={<AlertTriangle className="h-4 w-4" />}
+              value={warningStats.zeroRevenueWithData}
+              label="Sale có data nhưng doanh số bằng 0"
+            />
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <LeaderSaleDashboardMetric
+              title="Tổng doanh số"
+              value={formatMoney(summary.totalRevenue)}
               tone="green"
             />
-            <LeaderSaleMetricCard label="Sale active" value={formatInteger(members.length)} />
+            <LeaderSaleDashboardMetric
+              title="Tổng data nhận"
+              value={formatInteger(summary.totalDataReceived)}
+            />
+            <LeaderSaleDashboardMetric
+              title="Tổng data chốt"
+              value={formatInteger(summary.totalDataClosed)}
+            />
+            <LeaderSaleDashboardMetric
+              title="Tỷ lệ chốt toàn bộ"
+              value={formatNullablePercent(summary.closeRate)}
+              tone="blue"
+            />
+            <LeaderSaleDashboardMetric
+              title="TB doanh số / data"
+              value={
+                summary.totalDataReceived
+                  ? formatMoney(summary.totalRevenue / summary.totalDataReceived)
+                  : "—"
+              }
+              tone="amber"
+            />
+            <LeaderSaleDashboardMetric
+              title="TB doanh số / đơn"
+              value={summary.averageOrder ? formatMoney(summary.averageOrder) : "—"}
+            />
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <Card className="rounded-2xl border-slate-200 shadow-sm">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Doanh thu theo ngày</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-56">
-                  {dailyTrend.length ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={dailyTrend}>
-                        <XAxis dataKey="date" tickFormatter={shortDate} />
-                        <YAxis hide />
-                        <Tooltip formatter={(value) => formatMoney(Number(value))} />
-                        <Line
-                          type="monotone"
-                          dataKey="revenue"
-                          stroke="#2563eb"
-                          strokeWidth={3}
-                          dot={false}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <EmptySaleState />
+          <div className="grid gap-4 xl:grid-cols-2">
+            <LeaderSaleDashboardChartCard title="Doanh số theo ngày">
+              {dailyRevenue.length ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={dailyRevenue}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="dateLabel" tickLine={false} axisLine={false} />
+                    <YAxis hide />
+                    <Tooltip formatter={(value) => formatMoney(Number(value))} />
+                    <Line
+                      type="monotone"
+                      dataKey="revenue"
+                      stroke="#2563eb"
+                      strokeWidth={3}
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <LeaderSaleDashboardEmptyState />
+              )}
+            </LeaderSaleDashboardChartCard>
+
+            <LeaderSaleDashboardChartCard title="Data nhận vs Data chốt">
+              {dailyData.length ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={dailyData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="dateLabel" tickLine={false} axisLine={false} />
+                    <YAxis hide />
+                    <Tooltip formatter={(value) => formatInteger(Number(value))} />
+                    <Bar dataKey="received" name="Data nhận" fill="#60a5fa" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="closed" name="Data chốt" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <LeaderSaleDashboardEmptyState />
+              )}
+            </LeaderSaleDashboardChartCard>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <LeaderSaleDashboardRankingCard
+              title="Top doanh số"
+              rows={topRevenueRows}
+              metric="revenue"
+            />
+            <LeaderSaleDashboardRankingCard
+              title="Top tỷ lệ chốt"
+              rows={topCloseRateRows}
+              metric="closeRate"
+            />
+          </div>
+
+          <Card className="rounded-2xl">
+            <CardHeader>
+              <CardTitle className="text-base">Hiệu suất theo nhân viên Sale</CardTitle>
+            </CardHeader>
+            <CardContent className="overflow-auto p-0">
+              <table className="w-full min-w-[780px] text-sm">
+                <thead className="bg-slate-50 text-left text-xs uppercase text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3">Sale</th>
+                    <th className="px-3 py-3">Doanh số</th>
+                    <th className="px-3 py-3">Data nhận</th>
+                    <th className="px-3 py-3">Data chốt</th>
+                    <th className="px-3 py-3">Tỷ lệ chốt</th>
+                    <th className="px-3 py-3">TB đơn</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hasSubmittedReports &&
+                    performance.map((row) => (
+                      <tr key={row.saleId} className="border-t">
+                        <td className="px-4 py-3 font-semibold">{row.name}</td>
+                        <td className="px-3 py-3">{formatMoney(row.summary.totalRevenue)}</td>
+                        <td className="px-3 py-3">
+                          {formatInteger(row.summary.totalDataReceived)}
+                        </td>
+                        <td className="px-3 py-3">{formatInteger(row.summary.totalDataClosed)}</td>
+                        <td className="px-3 py-3">
+                          {formatNullablePercent(row.summary.closeRate)}
+                        </td>
+                        <td className="px-3 py-3">
+                          {row.summary.averageOrder ? formatMoney(row.summary.averageOrder) : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  {!hasSubmittedReports && (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
+                        Không có nhân viên Sale phù hợp.
+                      </td>
+                    </tr>
                   )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-2xl border-slate-200 shadow-sm">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <AlertTriangle className="h-4 w-4 text-amber-600" />
-                  Cảnh báo team
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {warnings.map((warning) => (
-                  <div
-                    key={warning}
-                    className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800"
-                  >
-                    {warning}
-                  </div>
-                ))}
-                {!warnings.length && (
-                  <div className="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
-                    Chưa có cảnh báo nổi bật trong khoảng này.
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <LeaderSaleTeamPerformanceCard stats={leadStats} rows={salesPerformance} />
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
         </>
       )}
     </div>
@@ -454,7 +560,7 @@ function LeaderSaleTeamReportsWorkspace() {
     queryFn: async () => {
       const teamData = await fetchLeaderSaleTeamData(profile!.id);
       const reports = await fetchSaleReportsForUsers(
-        teamData.members.map((member) => member.id),
+        getLeaderSaleTeamMemberIds(teamData),
         normalizedRange.from,
         normalizedRange.to,
       );
@@ -555,8 +661,9 @@ function LeaderSaleTeamReportsWorkspace() {
                       "Data thả nổi nhận",
                       "Data thả nổi chốt",
                       "DS khách mới",
+                      "Số DATA khách gọi video",
                       "DS thả nổi",
-                      "Khách cũ",
+                      "Số DATA khách cũ gọi",
                       "Tổng DS",
                       "Tỉ lệ chốt",
                       "TB đơn",
@@ -601,10 +708,13 @@ function LeaderSaleTeamReportsWorkspace() {
                           {formatReportMoney(row, row.newCustomerRevenue)}
                         </td>
                         <td className="px-3 py-3 text-right">
+                          {formatReportInteger(row, row.videoCallDataCount)}
+                        </td>
+                        <td className="px-3 py-3 text-right">
                           {formatReportMoney(row, row.floatingRevenue)}
                         </td>
                         <td className="px-3 py-3 text-right">
-                          {formatReportInteger(row, row.oldCustomers)}
+                          {formatReportInteger(row, row.oldCustomerCallCount)}
                         </td>
                         <td className="px-3 py-3 text-right font-bold">
                           {formatReportMoney(row, row.totalRevenue)}
@@ -620,7 +730,7 @@ function LeaderSaleTeamReportsWorkspace() {
                   })}
                   {!visibleReportRows.length && (
                     <tr>
-                      <td colSpan={11} className="px-4 py-10 text-center text-muted-foreground">
+                      <td colSpan={12} className="px-4 py-10 text-center text-muted-foreground">
                         Chưa có báo cáo team phù hợp bộ lọc.
                       </td>
                     </tr>
@@ -685,10 +795,27 @@ function isLeaderSaleTeamRole(role: string | null | undefined): role is LeaderSa
   return LEADER_SALE_TEAM_ROLES.has(role as LeaderSaleTeamRole);
 }
 
+function isActiveSaleTeamMember(member: LeaderSaleTeamMember) {
+  return !member.profileMissing && member.status === "active" && member.role === APP_ROLES.SALE;
+}
+
+function getLeaderSaleTeamMembers(teamData: LeaderSaleTeamData) {
+  return teamData.members.filter(isActiveSaleTeamMember);
+}
+
+function getLeaderSaleTeamMemberIds(teamData: LeaderSaleTeamData) {
+  return getLeaderSaleTeamMembers(teamData).map((member) => member.id);
+}
+
 export function SaleKpiWorkspace() {
   const { profile, role } = useAuth();
+  const queryClient = useQueryClient();
   const [range, setRange] = useState<DateRangeValue>(() => initialDateRange("month"));
   const [kpiMode, setKpiMode] = useState<"personal" | "team">("personal");
+  const [leaderKpiFormOpen, setLeaderKpiFormOpen] = useState(false);
+  const [leaderKpiForm, setLeaderKpiForm] = useState<LeaderSaleKpiForm>(() =>
+    createLeaderSaleKpiForm(),
+  );
   const normalizedRange = normalizeDateRange(range);
   const { data, isLoading } = useQuery({
     queryKey: [
@@ -703,7 +830,7 @@ export function SaleKpiWorkspace() {
     queryFn: async () => {
       if (role === APP_ROLES.SALE_LEADER && kpiMode === "team") {
         const teamData = await fetchLeaderSaleTeamData(profile!.id);
-        const memberIds = teamData.members.map((member) => member.id);
+        const memberIds = getLeaderSaleTeamMemberIds(teamData);
         const reports = await fetchSaleReportsForUsers(
           memberIds,
           normalizedRange.from,
@@ -734,6 +861,35 @@ export function SaleKpiWorkspace() {
   const summary = useMemo(() => summarizeSaleReports(reports), [reports]);
   const trend = useMemo(() => groupSaleReportsByDate(reports), [reports]);
   const target = useMemo(() => pickLatestSaleKpiTarget(data?.targets ?? []), [data?.targets]);
+  const isLeaderTeamKpi = role === APP_ROLES.SALE_LEADER && kpiMode === "team";
+  const leaderDefaultTeamId = data?.teamData?.teams[0]?.id ?? "";
+  const openLeaderKpiCreate = () => {
+    setLeaderKpiForm(createLeaderSaleKpiForm(undefined, leaderDefaultTeamId));
+    setLeaderKpiFormOpen(true);
+  };
+  const openLeaderKpiEdit = (target: SaleKpiTargetRow) => {
+    setLeaderKpiForm(createLeaderSaleKpiForm(target, leaderDefaultTeamId));
+    setLeaderKpiFormOpen(true);
+  };
+  const saveLeaderKpi = useMutation({
+    mutationFn: async () =>
+      upsertLeaderSaleKpiTarget(leaderKpiForm, data?.teamData ?? null, profile?.id ?? ""),
+    onSuccess: () => {
+      toast.success(leaderKpiForm.id ? "Đã cập nhật KPI Sale" : "Đã tạo KPI Sale");
+      setLeaderKpiFormOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["sale-kpi-workspace"] });
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const deleteLeaderKpi = useMutation({
+    mutationFn: async (target: SaleKpiTargetRow) =>
+      deleteLeaderSaleKpiTarget(target, data?.teamData ?? null),
+    onSuccess: () => {
+      toast.success("Đã xóa KPI Sale");
+      queryClient.invalidateQueries({ queryKey: ["sale-kpi-workspace"] });
+    },
+    onError: (error) => toast.error(error.message),
+  });
   return (
     <div className="space-y-4">
       <WorkspacePageHeader
@@ -760,6 +916,16 @@ export function SaleKpiWorkspace() {
         <div className="flex min-h-64 items-center justify-center">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
+      ) : isLeaderTeamKpi ? (
+        <LeaderSaleTeamKpiDashboard
+          members={data?.teamData?.members ?? []}
+          teams={data?.teamData?.teams ?? []}
+          reports={reports}
+          targets={data?.targets ?? []}
+          onCreate={openLeaderKpiCreate}
+          onEdit={openLeaderKpiEdit}
+          onDelete={(target) => deleteLeaderKpi.mutate(target)}
+        />
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
           <KpiDetailCard
@@ -805,23 +971,437 @@ export function SaleKpiWorkspace() {
               })}
             </CardContent>
           </Card>
-          {role === APP_ROLES.SALE_LEADER && kpiMode === "team" ? (
-            <LeaderSalePerformanceTable
-              rows={buildSaleMemberPerformance(
-                data?.teamData?.members ?? [],
-                data?.teamData?.leads ?? [],
-                reports,
-              )}
-            />
-          ) : null}
         </div>
       )}
+      {isLeaderTeamKpi ? (
+        <LeaderSaleKpiTargetDialog
+          open={leaderKpiFormOpen}
+          form={leaderKpiForm}
+          teams={data?.teamData?.teams ?? []}
+          members={getLeaderSaleTeamMembers(
+            data?.teamData ?? { teams: [], members: [], leads: [] },
+          )}
+          isSaving={saveLeaderKpi.isPending}
+          onOpenChange={setLeaderKpiFormOpen}
+          onChange={setLeaderKpiForm}
+          onSave={() => saveLeaderKpi.mutate()}
+        />
+      ) : null}
     </div>
   );
 }
 
 export function SaleFloatingPoolWorkspace() {
   return <SaleFloatingPoolBoard />;
+}
+
+type SaleKpiTargetRow = Tables<"sale_kpi_targets">;
+type LeaderSaleKpiForm = {
+  id?: string;
+  scope: "team" | "user";
+  teamId: string;
+  userId: string;
+  periodType: Tables<"sale_kpi_targets">["period_type"];
+  periodStart: string;
+  periodEnd: string;
+  closeRateTarget: string;
+  averageOrderTarget: string;
+};
+
+function createLeaderSaleKpiForm(target?: SaleKpiTargetRow, defaultTeamId = ""): LeaderSaleKpiForm {
+  const range = initialDateRange("month");
+  return {
+    id: target?.id,
+    scope: target?.user_id ? "user" : "team",
+    teamId: target?.team_id ?? defaultTeamId,
+    userId: target?.user_id ?? "",
+    periodType: target?.period_type ?? "month",
+    periodStart: target?.period_start ?? range.from,
+    periodEnd: target?.period_end ?? range.to,
+    closeRateTarget: String(target?.close_rate_target ?? ""),
+    averageOrderTarget: String(target?.average_order_target ?? ""),
+  };
+}
+
+function isSaleKpiPeriod(value: string): value is LeaderSaleKpiForm["periodType"] {
+  return value === "day" || value === "week" || value === "month";
+}
+
+function LeaderSaleTeamKpiDashboard({
+  members,
+  onCreate,
+  onDelete,
+  onEdit,
+  teams,
+  reports,
+  targets,
+}: {
+  members: LeaderSaleTeamMember[];
+  onCreate: () => void;
+  onDelete: (target: SaleKpiTargetRow) => void;
+  onEdit: (target: SaleKpiTargetRow) => void;
+  teams: LeaderSaleTeam[];
+  reports: SaleReportRow[];
+  targets: SaleKpiTargetRow[];
+}) {
+  const submittedReports = useMemo(
+    () => reports.filter((report) => report.status === "submitted"),
+    [reports],
+  );
+  const rows = useMemo(
+    () =>
+      buildLeaderSaleDashboardPerformance(submittedReports, members).sort(
+        (left, right) => right.summary.totalRevenue - left.summary.totalRevenue,
+      ),
+    [members, submittedReports],
+  );
+  const targetBySaleId = useMemo(() => {
+    const map = new Map<string, SaleKpiTargetRow>();
+    for (const target of targets) {
+      if (!target.user_id) continue;
+      const current = map.get(target.user_id);
+      const targetTime = new Date(target.updated_at ?? target.created_at ?? 0).getTime();
+      const currentTime = current
+        ? new Date(current.updated_at ?? current.created_at ?? 0).getTime()
+        : -1;
+      if (!current || targetTime > currentTime) map.set(target.user_id, target);
+    }
+    return map;
+  }, [targets]);
+  const teamTargets = useMemo(() => targets.filter((target) => !target.user_id), [targets]);
+  const teamNameById = useMemo(() => new Map(teams.map((team) => [team.id, team.name])), [teams]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button onClick={onCreate}>
+          <Plus className="mr-2 h-4 w-4" />
+          Tạo KPI Sale
+        </Button>
+      </div>
+      <Card className="rounded-2xl">
+        <CardHeader>
+          <CardTitle className="text-base">KPI Team Sale</CardTitle>
+          <p className="text-sm text-muted-foreground">Mục tiêu theo team, kỳ ngày/tuần/tháng.</p>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {teamTargets.map((target) => (
+            <div key={target.id} className="rounded-2xl border bg-slate-50/70 p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-black">
+                    {target.team_id ? teamNameById.get(target.team_id) : "Tổng công ty"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatShortDate(target.period_start)} - {formatShortDate(target.period_end)}
+                  </p>
+                </div>
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="icon" onClick={() => onEdit(target)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={() => onDelete(target)}>
+                    <Trash2 className="h-4 w-4 text-rose-500" />
+                  </Button>
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                {saleMetrics.map((metric) => (
+                  <LeaderSaleKpiMiniStat key={metric.key} metric={metric} target={target} />
+                ))}
+              </div>
+            </div>
+          ))}
+          {!teamTargets.length && (
+            <div className="rounded-2xl border border-dashed p-5 text-sm text-muted-foreground">
+              Chưa có KPI team Sale trong kỳ này.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-2xl">
+        <CardHeader>
+          <CardTitle className="text-base">KPI cá nhân Sale</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Xếp hạng theo doanh số, tỉ lệ chốt và số data chốt.
+          </p>
+        </CardHeader>
+        <CardContent className="overflow-auto p-0">
+          <table className="w-full min-w-[900px] text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3">#</th>
+                <th className="px-3 py-3">SALE</th>
+                <th className="px-3 py-3">DOANH SỐ</th>
+                <th className="px-3 py-3">TỔNG ĐƠN</th>
+                <th className="px-3 py-3">TỈ LỆ CHỐT</th>
+                <th className="px-3 py-3">TB ĐƠN</th>
+                <th className="px-3 py-3">PROGRESS</th>
+                <th className="px-3 py-3 text-right">THAO TÁC</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, index) => {
+                const target = targetBySaleId.get(row.saleId);
+                const revenueProgress = metricProgress({
+                  actual: row.summary.totalRevenue,
+                  target: target?.revenue_target,
+                });
+                return (
+                  <tr key={row.saleId} className="border-t">
+                    <td className="px-4 py-3 font-black">{index + 1}</td>
+                    <td className="px-3 py-3 font-semibold">{row.name}</td>
+                    <td className="px-3 py-3">{formatMoney(row.summary.totalRevenue)}</td>
+                    <td className="px-3 py-3">{formatInteger(row.summary.totalDataClosed)}</td>
+                    <td className="px-3 py-3">{formatNullablePercent(row.summary.closeRate)}</td>
+                    <td className="px-3 py-3">
+                      {row.summary.averageOrder === null
+                        ? "—"
+                        : formatMoney(row.summary.averageOrder)}
+                    </td>
+                    <td className="px-3 py-3">
+                      {revenueProgress == null ? "Chưa đặt mục tiêu" : `${revenueProgress}%`}
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex justify-end gap-1">
+                        {target ? (
+                          <>
+                            <Button variant="ghost" size="icon" onClick={() => onEdit(target)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => onDelete(target)}>
+                              <Trash2 className="h-4 w-4 text-rose-500" />
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              onEdit({
+                                id: "",
+                                team_id:
+                                  members.find((member) => member.id === row.saleId)?.team_id ??
+                                  teams[0]?.id ??
+                                  null,
+                                user_id: row.saleId,
+                                period_type: "month",
+                                period_start: initialDateRange("month").from,
+                                period_end: initialDateRange("month").to,
+                                revenue_target: 0,
+                                orders_target: 0,
+                                close_rate_target: 0,
+                                average_order_target: 0,
+                                note: null,
+                                created_by: null,
+                                created_at: new Date().toISOString(),
+                                updated_at: new Date().toISOString(),
+                              } as SaleKpiTargetRow)
+                            }
+                          >
+                            Tạo target
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {!rows.length && (
+                <tr>
+                  <td colSpan={8} className="px-4 py-10 text-center text-muted-foreground">
+                    Chưa có dữ liệu báo cáo Sale trong khoảng này.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function LeaderSaleKpiMiniStat({
+  metric,
+  target,
+}: {
+  metric: (typeof saleMetrics)[number];
+  target: SaleKpiTargetRow;
+}) {
+  const targetValue = metric.target(target);
+  return (
+    <div className="rounded-xl border bg-white p-3">
+      <p className="text-[11px] font-semibold uppercase text-muted-foreground">{metric.label}</p>
+      <p className="mt-1 text-base font-black">{formatKpiMetricValue(targetValue, metric.kind)}</p>
+    </div>
+  );
+}
+
+function LeaderSaleKpiTargetDialog({
+  form,
+  isSaving,
+  members,
+  onChange,
+  onOpenChange,
+  onSave,
+  open,
+  teams,
+}: {
+  form: LeaderSaleKpiForm;
+  isSaving: boolean;
+  members: LeaderSaleTeamMember[];
+  onChange: (form: LeaderSaleKpiForm) => void;
+  onOpenChange: (open: boolean) => void;
+  onSave: () => void;
+  open: boolean;
+  teams: LeaderSaleTeam[];
+}) {
+  const teamBySaleId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const member of members) map.set(member.id, member.team_id);
+    return map;
+  }, [members]);
+  const setNumber = (field: keyof LeaderSaleKpiForm, value: string, allowDecimal = false) => {
+    onChange({ ...form, [field]: value.replace(allowDecimal ? /[^\d.]/g : /[^\d]/g, "") });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{form.id ? "Sửa KPI Sale" : "Tạo KPI Sale"}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-3 md:grid-cols-2">
+          <SaleKpiField label="Phạm vi">
+            <Select
+              value={form.scope}
+              onValueChange={(value) =>
+                onChange({
+                  ...form,
+                  scope: value as "team" | "user",
+                  userId: "",
+                  teamId: value === "team" ? form.teamId || teams[0]?.id || "" : "",
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="team">KPI Team Sale</SelectItem>
+                <SelectItem value="user">KPI cá nhân Sale</SelectItem>
+              </SelectContent>
+            </Select>
+          </SaleKpiField>
+
+          <SaleKpiField label="Team Sale">
+            <Select value={form.teamId} onValueChange={(teamId) => onChange({ ...form, teamId })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Chọn team Sale" />
+              </SelectTrigger>
+              <SelectContent>
+                {teams.map((team) => (
+                  <SelectItem key={team.id} value={team.id}>
+                    {team.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SaleKpiField>
+
+          {form.scope === "user" ? (
+            <SaleKpiField label="Nhân viên Sale">
+              <Select
+                value={form.userId}
+                onValueChange={(userId) =>
+                  onChange({
+                    ...form,
+                    userId,
+                    teamId: teamBySaleId.get(userId) ?? form.teamId,
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Chọn nhân viên Sale" />
+                </SelectTrigger>
+                <SelectContent>
+                  {members.map((member) => (
+                    <SelectItem key={member.id} value={member.id}>
+                      {member.full_name || member.username || "Nhân viên Sale"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </SaleKpiField>
+          ) : null}
+
+          <SaleKpiField label="Kỳ">
+            <Select
+              value={form.periodType}
+              onValueChange={(value) => {
+                if (isSaleKpiPeriod(value)) onChange({ ...form, periodType: value });
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="day">Ngày</SelectItem>
+                <SelectItem value="week">Tuần</SelectItem>
+                <SelectItem value="month">Tháng</SelectItem>
+              </SelectContent>
+            </Select>
+          </SaleKpiField>
+
+          <SaleKpiField label="Từ ngày">
+            <Input
+              type="date"
+              value={form.periodStart}
+              onChange={(event) => onChange({ ...form, periodStart: event.target.value })}
+            />
+          </SaleKpiField>
+          <SaleKpiField label="Đến ngày">
+            <Input
+              type="date"
+              value={form.periodEnd}
+              onChange={(event) => onChange({ ...form, periodEnd: event.target.value })}
+            />
+          </SaleKpiField>
+          <SaleKpiField label="Target tỉ lệ chốt (%)">
+            <Input
+              value={form.closeRateTarget}
+              inputMode="decimal"
+              onChange={(event) => setNumber("closeRateTarget", event.target.value, true)}
+            />
+          </SaleKpiField>
+          <SaleKpiField label="Target trung bình đơn">
+            <Input
+              value={form.averageOrderTarget}
+              inputMode="numeric"
+              onChange={(event) => setNumber("averageOrderTarget", event.target.value)}
+            />
+          </SaleKpiField>
+        </div>
+        <DialogFooter>
+          <Button onClick={onSave} disabled={isSaving}>
+            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            {form.id ? "Lưu KPI" : "Tạo KPI"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SaleKpiField({ children, label }: { children: ReactNode; label: string }) {
+  return (
+    <label className="grid gap-1.5">
+      <span className="text-sm font-semibold">{label}</span>
+      {children}
+    </label>
+  );
 }
 
 function SaleFloatingPoolBoard() {
@@ -1779,8 +2359,9 @@ type AggregatedSaleTeamReportRow = {
   floatingDataReceived: number;
   floatingDataClosed: number;
   newCustomerRevenue: number;
+  videoCallDataCount: number;
   floatingRevenue: number;
-  oldCustomers: number;
+  oldCustomerCallCount: number;
   totalRevenue: number;
   closeRate: number | null;
   averageOrder: number | null;
@@ -1818,12 +2399,16 @@ function aggregateSaleReportsByUser(
         (sum, report) => sum + Number(report.new_customer_revenue ?? 0),
         0,
       ),
+      videoCallDataCount: memberReports.reduce(
+        (sum, report) => sum + Number(report.video_call_data_count ?? 0),
+        0,
+      ),
       floatingRevenue: memberReports.reduce(
         (sum, report) => sum + Number(report.floating_revenue ?? 0),
         0,
       ),
-      oldCustomers: memberReports.reduce(
-        (sum, report) => sum + Number(report.old_customers ?? 0),
+      oldCustomerCallCount: memberReports.reduce(
+        (sum, report) => sum + getSaleReportOldCustomerCallCount(report),
         0,
       ),
       totalRevenue: summary.totalRevenue,
@@ -1886,6 +2471,152 @@ function CloseRateBadge({ value, hasReports }: { value: number | null; hasReport
   return (
     <Badge className={cn("min-w-14 justify-center", tone)}>{formatNullablePercent(value)}</Badge>
   );
+}
+
+type LeaderSaleDashboardPerformanceRow = ReturnType<
+  typeof buildLeaderSaleDashboardPerformance
+>[number];
+
+function LeaderSaleDashboardMetric({
+  title,
+  value,
+  tone = "slate",
+}: {
+  title: string;
+  value: string;
+  tone?: "slate" | "green" | "blue" | "amber";
+}) {
+  const tones = {
+    slate: "bg-white",
+    green: "bg-emerald-50 text-emerald-900",
+    blue: "bg-blue-50 text-blue-900",
+    amber: "bg-amber-50 text-amber-900",
+  };
+  return (
+    <Card className={cn("rounded-2xl", tones[tone])}>
+      <CardContent className="p-4">
+        <p className="text-xs font-semibold text-muted-foreground">{title}</p>
+        <p className="mt-1 text-2xl font-black">{value}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LeaderSaleDashboardChartCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Card className="rounded-2xl border-slate-200 shadow-sm">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="h-56">{children}</div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LeaderSaleDashboardEmptyState() {
+  return (
+    <div className="flex h-full items-center justify-center rounded-xl border border-dashed bg-slate-50 text-sm font-medium text-muted-foreground">
+      Chưa có dữ liệu báo cáo Sale trong khoảng này.
+    </div>
+  );
+}
+
+function LeaderSaleDashboardRankingCard({
+  title,
+  rows,
+  metric,
+}: {
+  title: string;
+  rows: LeaderSaleDashboardPerformanceRow[];
+  metric: "revenue" | "closeRate";
+}) {
+  return (
+    <Card className="rounded-2xl border-slate-200 shadow-sm">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <TrendingUp className="h-4 w-4 text-primary" />
+          {title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {rows.map((row, index) => (
+          <div
+            key={row.saleId}
+            className="flex items-center justify-between gap-3 rounded-xl border bg-white px-3 py-2"
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <LeaderSaleRankBadge rank={index + 1} />
+              <p className="truncate font-semibold text-slate-900">{row.name}</p>
+            </div>
+            <p className="shrink-0 font-black text-slate-900">
+              {metric === "revenue"
+                ? formatMoney(row.summary.totalRevenue)
+                : formatNullablePercent(row.summary.closeRate)}
+            </p>
+          </div>
+        ))}
+        {!rows.length && (
+          <div className="rounded-xl border border-dashed bg-slate-50 px-3 py-6 text-center text-sm font-medium text-muted-foreground">
+            Chưa có dữ liệu.
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function LeaderSaleRankBadge({ rank }: { rank: number }) {
+  return (
+    <span
+      title={`Hạng ${rank}`}
+      className="inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-sky-50 px-2 text-xs font-extrabold text-sky-700 ring-1 ring-sky-100"
+    >
+      {rank}
+    </span>
+  );
+}
+
+function buildLeaderSaleDashboardPerformance(
+  reports: SaleReportRow[],
+  members: LeaderSaleTeamMember[],
+) {
+  return members.map((member) => {
+    const memberReports = reports.filter((row) => row.user_id === member.id);
+    return {
+      saleId: member.id,
+      name: getLeaderSaleMemberName(member),
+      summary: summarizeSaleReports(memberReports),
+    };
+  });
+}
+
+function buildLeaderSaleDailyRevenue(reports: SaleReportRow[]) {
+  return buildLeaderSaleDailySummary(reports).map((row) => ({
+    date: row.date,
+    dateLabel: formatShortDate(row.date),
+    revenue: row.summary.totalRevenue,
+  }));
+}
+
+function buildLeaderSaleDailyData(reports: SaleReportRow[]) {
+  return buildLeaderSaleDailySummary(reports).map((row) => ({
+    date: row.date,
+    dateLabel: formatShortDate(row.date),
+    received: row.summary.totalDataReceived,
+    closed: row.summary.totalDataClosed,
+  }));
+}
+
+function buildLeaderSaleDailySummary(reports: SaleReportRow[]) {
+  const grouped = new Map<string, SaleReportRow[]>();
+  for (const row of reports.filter((report) => report.status === "submitted")) {
+    grouped.set(row.report_date, [...(grouped.get(row.report_date) ?? []), row]);
+  }
+  return Array.from(grouped.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([date, rows]) => ({ date, summary: summarizeSaleReports(rows) }));
 }
 
 function getLeaderSaleMemberName(member: LeaderSaleTeamMember) {
@@ -2224,6 +2955,64 @@ async function fetchSaleKpiTargetsForScope({
   return (data ?? []) as Tables<"sale_kpi_targets">[];
 }
 
+async function upsertLeaderSaleKpiTarget(
+  form: LeaderSaleKpiForm,
+  teamData: LeaderSaleTeamData | null,
+  profileId: string,
+) {
+  if (!teamData) throw new Error("Không có dữ liệu team Sale.");
+  const teamIds = new Set(teamData.teams.map((team) => team.id));
+  const memberIds = new Set(getLeaderSaleTeamMemberIds(teamData));
+  if (form.scope === "team" && !form.teamId) throw new Error("Chọn team Sale.");
+  if (form.scope === "user" && !form.userId) throw new Error("Chọn nhân viên Sale.");
+  if (!form.periodStart || !form.periodEnd) throw new Error("Chọn kỳ KPI.");
+  if (form.teamId && !teamIds.has(form.teamId)) {
+    throw new Error("Leader Sale chỉ được tạo KPI trong team mình phụ trách.");
+  }
+  if (form.scope === "user" && !memberIds.has(form.userId)) {
+    throw new Error("Chỉ được tạo KPI cho nhân viên Sale active trong team.");
+  }
+
+  const payload: TablesInsert<"sale_kpi_targets"> = {
+    team_id: form.teamId || null,
+    user_id: form.scope === "user" ? form.userId : null,
+    period_type: form.periodType,
+    period_start: form.periodStart,
+    period_end: form.periodEnd,
+    revenue_target: 0,
+    orders_target: 0,
+    close_rate_target: Number(form.closeRateTarget || 0),
+    average_order_target: Number(form.averageOrderTarget || 0),
+    note: null,
+    created_by: profileId || null,
+  };
+
+  if (form.id) {
+    const { error } = await supabase.from("sale_kpi_targets").update(payload).eq("id", form.id);
+    if (error) throw error;
+    return;
+  }
+
+  const { error } = await supabase.from("sale_kpi_targets").insert(payload);
+  if (error) throw error;
+}
+
+async function deleteLeaderSaleKpiTarget(
+  target: SaleKpiTargetRow,
+  teamData: LeaderSaleTeamData | null,
+) {
+  if (!teamData) throw new Error("Không có dữ liệu team Sale.");
+  const teamIds = new Set(teamData.teams.map((team) => team.id));
+  const memberIds = new Set(getLeaderSaleTeamMemberIds(teamData));
+  const canDelete =
+    (!!target.team_id && teamIds.has(target.team_id)) ||
+    (!!target.user_id && memberIds.has(target.user_id));
+  if (!canDelete) throw new Error("Không được xóa KPI ngoài team phụ trách.");
+
+  const { error } = await supabase.from("sale_kpi_targets").delete().eq("id", target.id);
+  if (error) throw error;
+}
+
 function pickLatestSaleKpiTarget(targets: Tables<"sale_kpi_targets">[]) {
   return [...targets].sort((a, b) => {
     const aTime = new Date(a.updated_at ?? a.created_at ?? 0).getTime();
@@ -2322,7 +3111,8 @@ async function fetchLeaderSaleTeamData(
           normalizedRoleInTeam,
         profileMissing: !profile,
       };
-    });
+    })
+    .filter(isActiveSaleTeamMember);
   const memberIds = Array.from(new Set(members.map((member) => member.id)));
   if (!memberIds.length) return { teams: typedTeams, members, leads: [] };
 
@@ -2535,7 +3325,8 @@ function DataOverviewCard({ summary }: { summary: ReturnType<typeof summarizeSal
     ["Data thả nổi nhận", summary.floatingDataReceived],
     ["Data mới chốt", summary.newDataClosed],
     ["Data thả nổi chốt", summary.floatingDataClosed],
-    ["Khách cũ", summary.oldCustomers],
+    ["Số DATA khách gọi video", summary.videoCallDataCount],
+    ["Số DATA khách cũ gọi", summary.oldCustomerCallCount],
   ];
   return (
     <Card className="rounded-2xl">
@@ -2571,7 +3362,7 @@ function RecentActivityCard({ activities }: { activities: SaleReportRow[] }) {
           activities.map((item) => (
             <div key={item.id} className="flex gap-3">
               <div className="flex w-12 shrink-0 justify-center rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">
-                {item.slot_time}
+                {saleReportSlots.find((slot) => slot.id === item.slot_key)?.time ?? item.slot_time}
               </div>
               <div className="min-w-0">
                 <p className="font-semibold text-slate-950">
