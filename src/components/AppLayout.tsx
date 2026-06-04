@@ -29,6 +29,7 @@ import {
   FolderOpen,
   GraduationCap,
   Megaphone,
+  WalletCards,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -204,6 +205,7 @@ const NAV: NavItem[] = [
     roles: ["employee"],
   },
   { to: "/employee/ads-dashboard", label: "Ads Dashboard", icon: BarChart3, roles: ["employee"] },
+  { to: "/employee/budget", label: "Ngân sách", icon: WalletCards, roles: ["employee"] },
   { to: "/employee/report", label: "Nhập báo cáo", icon: FileText, roles: ["employee"] },
   { to: "/employee/floating-pool", label: "Kho thả nổi", icon: Warehouse, roles: ["employee"] },
   { to: "/employee/kpi", label: "KPI Marketing", icon: Target, roles: ["employee"] },
@@ -236,6 +238,7 @@ const NAV: NavItem[] = [
   },
   { to: "/sale/tasks", label: "Công việc", icon: CheckSquare, roles: [...SALE_ROLES] },
   { to: "/sale/products", label: "Sản phẩm", icon: Package, roles: [...SALE_ROLES] },
+  { to: "/sale/invoices", label: "Hoá đơn", icon: Receipt, roles: [...SALE_ROLES] },
   {
     to: "/sale/team",
     label: "Thành viên team",

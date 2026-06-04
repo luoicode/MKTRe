@@ -65,6 +65,7 @@ import { Route as AuthenticatedEmployeeKpiRouteImport } from './routes/_authenti
 import { Route as AuthenticatedEmployeeHistoryRouteImport } from './routes/_authenticated/employee/history'
 import { Route as AuthenticatedEmployeeFloatingPoolRouteImport } from './routes/_authenticated/employee/floating-pool'
 import { Route as AuthenticatedEmployeeDashboardRouteImport } from './routes/_authenticated/employee/dashboard'
+import { Route as AuthenticatedEmployeeBudgetRouteImport } from './routes/_authenticated/employee/budget'
 import { Route as AuthenticatedEmployeeAttendanceRouteImport } from './routes/_authenticated/employee/attendance'
 import { Route as AuthenticatedEmployeeAssetsRouteImport } from './routes/_authenticated/employee/assets'
 import { Route as AuthenticatedEmployeeAdsDashboardRouteImport } from './routes/_authenticated/employee/ads-dashboard'
@@ -413,6 +414,12 @@ const AuthenticatedEmployeeDashboardRoute =
     path: '/employee/dashboard',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedEmployeeBudgetRoute =
+  AuthenticatedEmployeeBudgetRouteImport.update({
+    id: '/employee/budget',
+    path: '/employee/budget',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedEmployeeAttendanceRoute =
   AuthenticatedEmployeeAttendanceRouteImport.update({
     id: '/employee/attendance',
@@ -561,6 +568,7 @@ export interface FileRoutesByFullPath {
   '/employee/ads-dashboard': typeof AuthenticatedEmployeeAdsDashboardRoute
   '/employee/assets': typeof AuthenticatedEmployeeAssetsRoute
   '/employee/attendance': typeof AuthenticatedEmployeeAttendanceRoute
+  '/employee/budget': typeof AuthenticatedEmployeeBudgetRoute
   '/employee/dashboard': typeof AuthenticatedEmployeeDashboardRoute
   '/employee/floating-pool': typeof AuthenticatedEmployeeFloatingPoolRoute
   '/employee/history': typeof AuthenticatedEmployeeHistoryRoute
@@ -639,6 +647,7 @@ export interface FileRoutesByTo {
   '/employee/ads-dashboard': typeof AuthenticatedEmployeeAdsDashboardRoute
   '/employee/assets': typeof AuthenticatedEmployeeAssetsRoute
   '/employee/attendance': typeof AuthenticatedEmployeeAttendanceRoute
+  '/employee/budget': typeof AuthenticatedEmployeeBudgetRoute
   '/employee/dashboard': typeof AuthenticatedEmployeeDashboardRoute
   '/employee/floating-pool': typeof AuthenticatedEmployeeFloatingPoolRoute
   '/employee/history': typeof AuthenticatedEmployeeHistoryRoute
@@ -719,6 +728,7 @@ export interface FileRoutesById {
   '/_authenticated/employee/ads-dashboard': typeof AuthenticatedEmployeeAdsDashboardRoute
   '/_authenticated/employee/assets': typeof AuthenticatedEmployeeAssetsRoute
   '/_authenticated/employee/attendance': typeof AuthenticatedEmployeeAttendanceRoute
+  '/_authenticated/employee/budget': typeof AuthenticatedEmployeeBudgetRoute
   '/_authenticated/employee/dashboard': typeof AuthenticatedEmployeeDashboardRoute
   '/_authenticated/employee/floating-pool': typeof AuthenticatedEmployeeFloatingPoolRoute
   '/_authenticated/employee/history': typeof AuthenticatedEmployeeHistoryRoute
@@ -799,6 +809,7 @@ export interface FileRouteTypes {
     | '/employee/ads-dashboard'
     | '/employee/assets'
     | '/employee/attendance'
+    | '/employee/budget'
     | '/employee/dashboard'
     | '/employee/floating-pool'
     | '/employee/history'
@@ -877,6 +888,7 @@ export interface FileRouteTypes {
     | '/employee/ads-dashboard'
     | '/employee/assets'
     | '/employee/attendance'
+    | '/employee/budget'
     | '/employee/dashboard'
     | '/employee/floating-pool'
     | '/employee/history'
@@ -956,6 +968,7 @@ export interface FileRouteTypes {
     | '/_authenticated/employee/ads-dashboard'
     | '/_authenticated/employee/assets'
     | '/_authenticated/employee/attendance'
+    | '/_authenticated/employee/budget'
     | '/_authenticated/employee/dashboard'
     | '/_authenticated/employee/floating-pool'
     | '/_authenticated/employee/history'
@@ -1410,6 +1423,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedEmployeeDashboardRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/employee/budget': {
+      id: '/_authenticated/employee/budget'
+      path: '/employee/budget'
+      fullPath: '/employee/budget'
+      preLoaderRoute: typeof AuthenticatedEmployeeBudgetRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/employee/attendance': {
       id: '/_authenticated/employee/attendance'
       path: '/employee/attendance'
@@ -1583,6 +1603,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedEmployeeAdsDashboardRoute: typeof AuthenticatedEmployeeAdsDashboardRoute
   AuthenticatedEmployeeAssetsRoute: typeof AuthenticatedEmployeeAssetsRoute
   AuthenticatedEmployeeAttendanceRoute: typeof AuthenticatedEmployeeAttendanceRoute
+  AuthenticatedEmployeeBudgetRoute: typeof AuthenticatedEmployeeBudgetRoute
   AuthenticatedEmployeeDashboardRoute: typeof AuthenticatedEmployeeDashboardRoute
   AuthenticatedEmployeeFloatingPoolRoute: typeof AuthenticatedEmployeeFloatingPoolRoute
   AuthenticatedEmployeeHistoryRoute: typeof AuthenticatedEmployeeHistoryRoute
@@ -1662,6 +1683,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedEmployeeAdsDashboardRoute,
   AuthenticatedEmployeeAssetsRoute: AuthenticatedEmployeeAssetsRoute,
   AuthenticatedEmployeeAttendanceRoute: AuthenticatedEmployeeAttendanceRoute,
+  AuthenticatedEmployeeBudgetRoute: AuthenticatedEmployeeBudgetRoute,
   AuthenticatedEmployeeDashboardRoute: AuthenticatedEmployeeDashboardRoute,
   AuthenticatedEmployeeFloatingPoolRoute:
     AuthenticatedEmployeeFloatingPoolRoute,
