@@ -150,6 +150,23 @@ export function SaleReportForm() {
     const { error } = await supabase
       .from("sale_reports")
       .upsert(payload, { onConflict: "user_id,report_date,slot_key" });
+    if (error && isMissingSaleReportCallColumnError(error.message)) {
+      const compatiblePayload = { ...payload };
+      delete compatiblePayload.old_customer_call_count;
+      delete compatiblePayload.video_call_data_count;
+      const { error: retryError } = await supabase
+        .from("sale_reports")
+        .upsert(compatiblePayload, { onConflict: "user_id,report_date,slot_key" });
+      setSaving(false);
+      if (retryError) {
+        toast.error(`Không thể lưu báo cáo Sale: ${retryError.message}`);
+        return false;
+      }
+      await qc.invalidateQueries({ queryKey: ["sale-reports", profile.id] });
+      await qc.invalidateQueries({ queryKey: ["sale-dashboard", profile.id] });
+      toast.success(submit ? "Đã gửi báo cáo Sale" : "Đã lưu nháp báo cáo Sale");
+      return true;
+    }
     setSaving(false);
     if (error) {
       toast.error(`Không thể lưu báo cáo Sale: ${error.message}`);
@@ -394,6 +411,13 @@ export function SaleReportForm() {
         onRecapture={() => void capturePreview()}
       />
     </div>
+  );
+}
+
+function isMissingSaleReportCallColumnError(message: string) {
+  return (
+    message.includes("'old_customer_call_count' column") ||
+    message.includes("'video_call_data_count' column")
   );
 }
 
