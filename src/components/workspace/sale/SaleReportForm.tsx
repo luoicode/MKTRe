@@ -58,7 +58,6 @@ export function SaleReportForm() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
-  const [previewMode, setPreviewMode] = useState<"capture" | "submit">("capture");
   const previewRef = useRef<HTMLDivElement | null>(null);
   const activeSlotConfig =
     saleReportSlots.find((slot) => slot.id === activeSlot) ?? saleReportSlots[0];
@@ -166,11 +165,10 @@ export function SaleReportForm() {
     return true;
   };
 
-  const capturePreview = async (mode: "capture" | "submit" = previewMode) => {
+  const capturePreview = async () => {
     if (previewImageUrl) {
       URL.revokeObjectURL(previewImageUrl);
     }
-    setPreviewMode(mode);
     setPreviewImageUrl(null);
     setPreviewBlob(null);
     setPreviewOpen(true);
@@ -200,11 +198,6 @@ export function SaleReportForm() {
     }
     setPreviewImageUrl(null);
     setPreviewBlob(null);
-  };
-
-  const confirmSubmitFromPreview = async () => {
-    const saved = await handleSave(true);
-    if (saved) closePreview();
   };
 
   return (
@@ -352,7 +345,7 @@ export function SaleReportForm() {
                       Lưu nháp
                     </Button>
                     <Button
-                      onClick={() => void capturePreview("submit")}
+                      onClick={() => void handleSave(true)}
                       disabled={saving || !activeSlotEditable}
                     >
                       {saving ? (
@@ -364,7 +357,7 @@ export function SaleReportForm() {
                     </Button>
                     <Button
                       variant="secondary"
-                      onClick={() => void capturePreview("capture")}
+                      onClick={() => void capturePreview()}
                       disabled={capturing}
                     >
                       {capturing ? (
@@ -397,10 +390,8 @@ export function SaleReportForm() {
         filename={reportFilename}
         isCapturing={capturing}
         isSubmitting={saving}
-        showSubmitAction={previewMode === "submit"}
         onClose={closePreview}
-        onRecapture={() => void capturePreview(previewMode)}
-        onConfirmSubmit={() => void confirmSubmitFromPreview()}
+        onRecapture={() => void capturePreview()}
       />
     </div>
   );

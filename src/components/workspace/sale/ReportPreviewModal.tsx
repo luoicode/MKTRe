@@ -1,4 +1,4 @@
-import { Copy, Download, ImageIcon, Loader2, RotateCcw, Send } from "lucide-react";
+import { Copy, Download, ImageIcon, Loader2, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -18,10 +18,8 @@ export function ReportPreviewModal({
   filename,
   isCapturing,
   isSubmitting,
-  showSubmitAction,
   onClose,
   onRecapture,
-  onConfirmSubmit,
 }: {
   open: boolean;
   imageUrl: string | null;
@@ -29,10 +27,8 @@ export function ReportPreviewModal({
   filename: string;
   isCapturing: boolean;
   isSubmitting: boolean;
-  showSubmitAction: boolean;
   onClose: () => void;
   onRecapture: () => void;
-  onConfirmSubmit: () => void;
 }) {
   const [downloading, setDownloading] = useState(false);
   const [copying, setCopying] = useState(false);
@@ -139,21 +135,6 @@ export function ReportPreviewModal({
           >
             Đóng
           </Button>
-          {showSubmitAction && (
-            <Button
-              type="button"
-              onClick={onConfirmSubmit}
-              disabled={!blob || isCapturing || isSubmitting}
-              size="sm"
-            >
-              {isSubmitting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="mr-2 h-4 w-4" />
-              )}
-              Xác nhận gửi báo cáo
-            </Button>
-          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
