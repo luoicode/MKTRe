@@ -1,12 +1,22 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Database, Loader2, Search } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Database, Loader2, Plus, Search } from "lucide-react";
+import { toast } from "sonner";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
-import { FloatingLeadLifecycleDashboard } from "@/components/FloatingLeadLifecycleDashboard";
+import { TablePagination } from "@/components/TablePagination";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { RefreshButton } from "@/components/RefreshButton";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -14,13 +24,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
 import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib/dateRange";
+import { getLeaderTeamIds } from "@/lib/dailyAggregates";
 import {
+  createMarketingFloatingLeads,
   getFloatingLeadDisplayStatus,
+  todayYmd,
   type FloatingLeadDisplayStatus,
   type FloatingLeadRow,
 } from "@/lib/floatingLeads";
+import { MARKETING_ROLES } from "@/lib/roles";
+import { usePagination } from "@/lib/usePagination";
 import { cn } from "@/lib/utils";
 
 type LeaderFloatingLeadStatus =
@@ -37,46 +54,64 @@ type LeadProfileOption = {
   name: string;
 };
 
+type LeaderFloatingPoolData = {
+  leads: FloatingLeadRow[];
+  marketers: LeadProfileOption[];
+  sales: LeadProfileOption[];
+};
+
 export function LeaderFloatingPoolWorkspace() {
+  const { profile } = useAuth();
+  const queryClient = useQueryClient();
   const [range, setRange] = useState<DateRangeValue>(() => initialDateRange("today"));
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [phoneText, setPhoneText] = useState("");
+  const [invalidPhones, setInvalidPhones] = useState<string[]>([]);
+  const [duplicatePhones, setDuplicatePhones] = useState<string[]>([]);
   const [marketingId, setMarketingId] = useState("all");
   const [saleId, setSaleId] = useState("all");
   const [status, setStatus] = useState<LeaderFloatingLeadStatus>("all");
   const [search, setSearch] = useState("");
   const normalizedRange = normalizeDateRange(range);
 
-  const {
-    data: leads = [],
-    isLoading,
-    isFetching,
-    refetch,
-  } = useQuery({
-    queryKey: ["leader-floating-leads", normalizedRange.from, normalizedRange.to],
-    queryFn: () => fetchLeaderFloatingLeads(normalizedRange.from, normalizedRange.to),
+  const { data, isLoading, isFetching, refetch } = useQuery({
+    queryKey: ["leader-floating-leads", profile?.id, normalizedRange.from, normalizedRange.to],
+    queryFn: () =>
+      fetchLeaderFloatingPoolData(profile!.id, normalizedRange.from, normalizedRange.to),
+    enabled: !!profile?.id,
   });
+  const leads = useMemo(() => data?.leads ?? [], [data?.leads]);
+  const marketers = useMemo(() => data?.marketers ?? [], [data?.marketers]);
+  const sales = useMemo(() => data?.sales ?? [], [data?.sales]);
 
-  const marketers = useMemo(
-    () =>
-      uniqueProfileOptions(
-        leads.map((lead) => ({
-          id: lead.created_by,
-          name: lead.created_by_name || "Marketing",
-        })),
-      ),
-    [leads],
-  );
-  const sales = useMemo(
-    () =>
-      uniqueProfileOptions(
-        leads
-          .map((lead) => ({
-            id: lead.assigned_sale_id || lead.closed_by || "",
-            name: lead.assigned_sale_name || "Sale",
-          }))
-          .filter((item) => item.id),
-      ),
-    [leads],
-  );
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      if (!profile) throw new Error("Không tìm thấy hồ sơ người dùng.");
+      const { phones, invalid, duplicates } = parseLeaderLeadPhones(phoneText);
+      setInvalidPhones(invalid);
+      setDuplicatePhones(duplicates);
+      if (!phones.length && !invalid.length) throw new Error("Nhập ít nhất 1 số điện thoại.");
+      if (invalid.length) throw new Error("Vui lòng kiểm tra các số điện thoại không hợp lệ.");
+
+      return createMarketingFloatingLeads({
+        phones,
+        profileId: profile.id,
+        profileName: profile.full_name || profile.username || "Leader Marketing",
+        leadDate: todayYmd(),
+      });
+    },
+    onSuccess: async (rows) => {
+      await queryClient.invalidateQueries({ queryKey: ["leader-floating-leads"] });
+      setPhoneText("");
+      setInvalidPhones([]);
+      setDuplicatePhones([]);
+      setDialogOpen(false);
+      toast.success(`Đã thêm ${rows.length} số vào kho thả nổi`);
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Không thể thêm số");
+    },
+  });
 
   const visibleLeads = useMemo(
     () =>
@@ -95,18 +130,23 @@ export function LeaderFloatingPoolWorkspace() {
   const stats = useMemo(
     () => ({
       total: visibleLeads.length,
-      assigned: visibleLeads.filter((lead) => !!lead.assigned_sale_id).length,
+      unassigned: visibleLeads.filter((lead) => !lead.assigned_sale_id && !lead.is_closed).length,
+      assigned: visibleLeads.filter((lead) => !!lead.assigned_sale_id && !lead.is_closed).length,
       closed: visibleLeads.filter((lead) => lead.is_closed).length,
     }),
     [visibleLeads],
   );
+  const leadPagination = usePagination({
+    items: visibleLeads,
+    resetKey: `${normalizedRange.from}|${normalizedRange.to}|${search}|${status}|${marketingId}|${saleId}`,
+  });
 
   return (
     <div className="space-y-4">
       <WorkspacePageHeader
         icon={<Database className="h-5 w-5" />}
-        title="Kho thả nổi Team"
-        subtitle="Theo dõi data thả nổi do team Marketing của bạn đẩy cho Sale"
+        title="Kho thả nổi"
+        subtitle="Theo dõi data thả nổi của team Marketing"
         rightContent={
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
             <RefreshButton
@@ -115,12 +155,19 @@ export function LeaderFloatingPoolWorkspace() {
                 await refetch();
               }}
             />
-            <div className="grid min-w-0 grid-cols-3 gap-2">
-              <LeaderLeadStat label="Tổng số" value={stats.total} tone="slate" />
-              <LeaderLeadStat label="Sale nhận" value={stats.assigned} tone="blue" />
+            <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4">
+              <LeaderLeadStat label="Tổng lead" value={stats.total} tone="slate" />
+              <LeaderLeadStat label="Chưa nhận" value={stats.unassigned} tone="amber" />
+              <LeaderLeadStat label="Đã nhận" value={stats.assigned} tone="blue" />
               <LeaderLeadStat label="Đã chốt" value={stats.closed} tone="green" />
             </div>
           </div>
+        }
+        actions={
+          <Button className="gap-2" onClick={() => setDialogOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Thêm số
+          </Button>
         }
       />
 
@@ -175,14 +222,6 @@ export function LeaderFloatingPoolWorkspace() {
         </CardContent>
       </Card>
 
-      <FloatingLeadLifecycleDashboard
-        leads={visibleLeads}
-        people={marketers}
-        personRole="marketing"
-        title="Analytics lifecycle lead Marketing"
-        subtitle="Lead do team Marketing upload và trạng thái Sale xử lý trong khoảng lọc."
-      />
-
       {isLoading ? (
         <LoadingState />
       ) : (
@@ -196,7 +235,7 @@ export function LeaderFloatingPoolWorkspace() {
                     "Ngày",
                     "Số điện thoại",
                     "Marketing",
-                    "Sale nhận",
+                    "Sale nhận hiện tại",
                     "Cuộc gọi lần 1",
                     "Cuộc gọi lần 2",
                     "Cuộc gọi lần 3",
@@ -209,33 +248,234 @@ export function LeaderFloatingPoolWorkspace() {
                 </tr>
               </thead>
               <tbody>
-                {visibleLeads.map((lead, index) => (
-                  <LeaderLeadRow key={lead.id} lead={lead} index={index} />
+                {leadPagination.paginatedItems.map((lead, index) => (
+                  <LeaderLeadRow
+                    key={lead.id}
+                    lead={lead}
+                    index={(leadPagination.page - 1) * leadPagination.pageSize + index}
+                    marketers={marketers}
+                    sales={sales}
+                  />
+                ))}
+                {Array.from({ length: leadPagination.emptyRowsCount }).map((_, index) => (
+                  <tr key={`empty-${index}`} className="h-[52px] border-t border-slate-100">
+                    <td colSpan={9} />
+                  </tr>
                 ))}
                 {!visibleLeads.length && <EmptyTableRow colSpan={9} />}
               </tbody>
             </table>
           </CardContent>
+          <TablePagination
+            page={leadPagination.page}
+            totalPages={leadPagination.totalPages}
+            onPageChange={leadPagination.setPage}
+          />
         </Card>
       )}
+
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (open) {
+            setInvalidPhones([]);
+            setDuplicatePhones([]);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Thêm số vào kho thả nổi</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid gap-2">
+              <Label htmlFor="leader-floating-phone-list">Danh sách số điện thoại</Label>
+              <Textarea
+                id="leader-floating-phone-list"
+                value={phoneText}
+                inputMode="tel"
+                className="min-h-44 resize-y rounded-xl"
+                placeholder={`Nhập mỗi số một dòng\nVí dụ:\n0988123123\n0977333772\n0855519019`}
+                onChange={(event) => {
+                  setPhoneText(event.target.value);
+                  if (invalidPhones.length) setInvalidPhones([]);
+                  if (duplicatePhones.length) setDuplicatePhones([]);
+                }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Mỗi dòng là một số. Dòng trống sẽ được bỏ qua, số trùng trong cùng lần nhập sẽ tự bỏ
+              qua.
+            </p>
+            {invalidPhones.length ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                <p className="font-semibold">Số không hợp lệ:</p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                  {invalidPhones.map((phone) => (
+                    <li key={phone}>{phone}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {duplicatePhones.length ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                <p className="font-semibold">Đã bỏ qua số trùng:</p>
+                <p className="mt-1 break-words">{duplicatePhones.join(", ")}</p>
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              Hủy
+            </Button>
+            <Button
+              className="gap-2"
+              disabled={createMutation.isPending}
+              onClick={() => createMutation.mutate()}
+            >
+              {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Lưu số
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-async function fetchLeaderFloatingLeads(from: string, to: string) {
+function parseLeaderLeadPhones(input: string) {
+  const rawLines = input
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  const phones: string[] = [];
+  const invalid: string[] = [];
+  const duplicates: string[] = [];
+
+  rawLines.forEach((rawPhone) => {
+    const normalizedPhone = rawPhone.replace(/\s+/g, " ");
+    const digits = normalizedPhone.replace(/\D/g, "");
+    if (digits.length < 8 || digits.length > 15) {
+      invalid.push(rawPhone);
+      return;
+    }
+
+    if (seen.has(digits)) {
+      duplicates.push(normalizedPhone);
+      return;
+    }
+
+    seen.add(digits);
+    phones.push(normalizedPhone);
+  });
+
+  return { phones, invalid, duplicates };
+}
+
+async function fetchLeaderFloatingPoolData(
+  profileId: string,
+  from: string,
+  to: string,
+): Promise<LeaderFloatingPoolData> {
+  const leaderTeamIds = await getLeaderTeamIds(profileId);
+  if (!leaderTeamIds.length) return { leads: [], marketers: [], sales: [] };
+
+  const { data: marketingTeams, error: teamsError } = await supabase
+    .from("teams")
+    .select("id")
+    .in("id", leaderTeamIds)
+    .eq("department", "marketing");
+  if (teamsError) throw teamsError;
+
+  const marketingTeamIds = (marketingTeams ?? []).map((team) => team.id);
+  if (!marketingTeamIds.length) return { leads: [], marketers: [], sales: [] };
+
+  const { data: memberships, error: membershipsError } = await supabase
+    .from("team_memberships")
+    .select("team_id, user_id, role_in_team")
+    .in("team_id", marketingTeamIds)
+    .eq("is_active", true);
+  if (membershipsError) throw membershipsError;
+
+  const membershipUserIds = Array.from(
+    new Set(
+      (memberships ?? [])
+        .filter((membership) =>
+          ["leader", "employee", "member"].includes(String(membership.role_in_team)),
+        )
+        .map((membership) => membership.user_id),
+    ),
+  );
+  if (!membershipUserIds.length) return { leads: [], marketers: [], sales: [] };
+
+  const { data: roles, error: rolesError } = await supabase
+    .from("user_roles")
+    .select("user_id, role")
+    .in("user_id", membershipUserIds)
+    .in("role", [...MARKETING_ROLES]);
+  if (rolesError) throw rolesError;
+
+  const marketingUserIds = Array.from(new Set((roles ?? []).map((role) => role.user_id)));
+  if (!marketingUserIds.length) return { leads: [], marketers: [], sales: [] };
+
+  const { data: profiles, error: profilesError } = await supabase
+    .from("profiles")
+    .select("id, full_name, username")
+    .in("id", marketingUserIds)
+    .eq("status", "active")
+    .order("full_name");
+  if (profilesError) throw profilesError;
+
+  const marketers = uniqueProfileOptions(
+    (profiles ?? []).map((profile) => ({
+      id: profile.id,
+      name: displayProfileName(profile),
+    })),
+  );
+  const marketerIds = marketers.map((marketer) => marketer.id);
+  if (!marketerIds.length) return { leads: [], marketers, sales: [] };
+
   const { data, error } = await supabase
     .from("floating_leads")
     .select("*")
+    .in("created_by", marketerIds)
     .gte("lead_date", from)
     .lte("lead_date", to)
     .order("lead_date", { ascending: false })
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []) as FloatingLeadRow[];
+  const leads = (data ?? []) as FloatingLeadRow[];
+  const sales = uniqueProfileOptions(
+    leads
+      .map((lead) => ({
+        id: lead.assigned_sale_id || lead.closed_by || "",
+        name: lead.assigned_sale_name || "Sale",
+      }))
+      .filter((item) => item.id),
+  );
+
+  return { leads, marketers, sales };
 }
 
-function LeaderLeadRow({ lead, index }: { lead: FloatingLeadRow; index: number }) {
+function LeaderLeadRow({
+  lead,
+  index,
+  marketers,
+  sales,
+}: {
+  lead: FloatingLeadRow;
+  index: number;
+  marketers: LeadProfileOption[];
+  sales: LeadProfileOption[];
+}) {
   const status = getFloatingLeadDisplayStatus(lead);
+  const marketerName =
+    lead.created_by_name || marketers.find((item) => item.id === lead.created_by)?.name;
+  const saleName =
+    lead.assigned_sale_name ||
+    sales.find((item) => item.id === lead.assigned_sale_id || item.id === lead.closed_by)?.name;
 
   return (
     <tr className="border-t border-slate-100 hover:bg-slate-50/70">
@@ -248,10 +488,8 @@ function LeaderLeadRow({ lead, index }: { lead: FloatingLeadRow; index: number }
           {lead.phone}
         </span>
       </td>
-      <td className="px-3 py-2.5 font-medium text-slate-700">
-        {lead.created_by_name || "Marketing"}
-      </td>
-      <td className="px-3 py-2.5 text-slate-700">{lead.assigned_sale_name || "Chưa có"}</td>
+      <td className="px-3 py-2.5 font-medium text-slate-700">{marketerName || "Marketing"}</td>
+      <td className="px-3 py-2.5 text-slate-700">{saleName || "Chưa có"}</td>
       <td className="max-w-48 truncate px-3 py-2.5 text-slate-700">{lead.call_1 || "—"}</td>
       <td className="max-w-48 truncate px-3 py-2.5 text-slate-700">{lead.call_2 || "—"}</td>
       <td className="max-w-48 truncate px-3 py-2.5 text-slate-700">{lead.call_3 || "—"}</td>
@@ -314,10 +552,11 @@ function LeaderLeadStat({
 }: {
   label: string;
   value: number;
-  tone: "slate" | "blue" | "green";
+  tone: "slate" | "amber" | "blue" | "green";
 }) {
   const styles = {
     slate: "from-slate-900 to-slate-700 text-white",
+    amber: "from-amber-50 to-orange-50 text-amber-800",
     blue: "from-blue-50 to-cyan-50 text-blue-800",
     green: "from-emerald-50 to-teal-50 text-emerald-800",
   };
@@ -375,6 +614,14 @@ function uniqueProfileOptions(items: LeadProfileOption[]) {
     map.set(item.id, item);
   });
   return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function displayProfileName(profile?: {
+  full_name?: string | null;
+  username?: string | null;
+  name?: string | null;
+}) {
+  return profile?.full_name || profile?.name || profile?.username || "Chưa rõ";
 }
 
 function formatVietnameseDate(value: string) {
