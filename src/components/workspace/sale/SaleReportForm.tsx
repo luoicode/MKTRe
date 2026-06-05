@@ -30,6 +30,7 @@ import {
   type SaleReportSlotId,
 } from "@/lib/saleReportUtils";
 import {
+  canEditSaleSubmittedReport,
   fetchSaleReportsForDate,
   findPreferredSaleSlot,
   getSaleSlotStatus,
@@ -38,7 +39,6 @@ import {
   todayYmd,
   type SaleSlotStatus,
 } from "@/lib/saleReports";
-import { canEditSubmittedReport } from "@/lib/reportSlotGating";
 
 const initialForms = saleReportSlots.reduce<Record<SaleReportSlotId, SaleReportFormValues>>(
   (acc, slot) => ({ ...acc, [slot.id]: { ...emptySaleReportForm } }),
@@ -87,7 +87,7 @@ export function SaleReportForm() {
   );
   const activeSlotStatus = slotStatuses[activeSlot];
   const activeReport = reportsBySlot[activeSlot];
-  const activeSubmittedEditable = canEditSubmittedReport(activeReport, now);
+  const activeSubmittedEditable = canEditSaleSubmittedReport(activeReport, now);
   const activeSlotEditable = activeSlotStatus === "available" || activeSubmittedEditable;
   const activeValues = forms[activeSlot];
   const activeMetrics = calculateSaleComputedMetrics(activeValues);
@@ -112,7 +112,7 @@ export function SaleReportForm() {
       (slotStatuses[activeSlot] === "not_open" ||
         slotStatuses[activeSlot] === "locked" ||
         (slotStatuses[activeSlot] === "submitted" &&
-          !canEditSubmittedReport(reportsBySlot[activeSlot], now)))
+          !canEditSaleSubmittedReport(reportsBySlot[activeSlot], now)))
     ) {
       setActiveSlot(preferredSlot);
     }
@@ -133,7 +133,7 @@ export function SaleReportForm() {
     if (!activeSlotEditable) {
       toast.error(
         activeSlotStatus === "submitted"
-          ? "Khung này đã gửi quá 2 tiếng, không thể sửa lại."
+          ? "Khung này đã hết thời gian chỉnh sửa, không thể sửa lại."
           : "Khung này chưa mở hoặc đã khóa theo thời gian báo cáo.",
       );
       return false;

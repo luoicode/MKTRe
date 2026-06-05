@@ -8,7 +8,7 @@ import {
   type SaleReportFormValues,
   type SaleReportSlotId,
 } from "@/lib/saleReportUtils";
-import type { ReportSlotState } from "@/lib/reportSlotGating";
+import { canEditSubmittedReport, type ReportSlotState } from "@/lib/reportSlotGating";
 
 export type SaleReportRow = Tables<"sale_reports">;
 export type SaleReportStatus = "draft" | "submitted";
@@ -50,8 +50,14 @@ export function getSaleSlotWindow(reportDate: string, slotTime: string) {
   const [hourPart = "0", minutePart = "0"] = slotTime.replace("h", ":").split(":");
   const [year, month, day] = reportDate.split("-").map(Number);
   const dueAt = new Date(year, month - 1, day, Number(hourPart), Number(minutePart), 0, 0);
-  const openAt = new Date(dueAt.getTime() - 60 * 60_000);
-  const closeAt = new Date(dueAt.getTime() + 60 * 60_000);
+  const slotKey = resolveSaleReportSlotId(undefined, slotTime);
+  const slotWindow = slotKey ? SALE_SLOT_WINDOWS[slotKey] : null;
+  const openAt = slotWindow
+    ? new Date(year, month - 1, day, Math.floor(slotWindow.open / 60), slotWindow.open % 60, 0, 0)
+    : new Date(dueAt.getTime() - 60 * 60_000);
+  const closeAt = slotWindow
+    ? new Date(year, month - 1, day, Math.floor(slotWindow.close / 60), slotWindow.close % 60, 0, 0)
+    : new Date(dueAt.getTime() + 60 * 60_000);
   return { openAt, dueAt, closeAt };
 }
 
@@ -79,6 +85,21 @@ export function getSaleSlotStatus({
   const window = SALE_SLOT_WINDOWS[slotKey];
   if (minutes >= window.open && minutes <= window.close) return "available";
   return minutes < window.open ? "not_open" : "locked";
+}
+
+export function canEditSaleSubmittedReport(
+  report: SaleReportRow | null | undefined,
+  now = new Date(),
+) {
+  if (report?.status !== "submitted") return false;
+
+  const slotKey = resolveSaleReportSlotId(report.slot_key, report.slot_time);
+  if (slotKey === "morning" && report.report_date === formatYmd(now)) {
+    const minutes = now.getHours() * 60 + now.getMinutes();
+    return minutes <= SALE_SLOT_WINDOWS.morning.close;
+  }
+
+  return canEditSubmittedReport(report, now);
 }
 
 export function findPreferredSaleSlot(
@@ -294,7 +315,7 @@ function isSaleReportSlotId(value: string): value is SaleReportSlotId {
 }
 
 const SALE_SLOT_WINDOWS: Record<SaleReportSlotId, { open: number; close: number }> = {
-  morning: { open: 0, close: 11 * 60 + 50 },
+  morning: { open: 0, close: 15 * 60 + 50 },
   afternoon: { open: 17 * 60, close: 20 * 60 + 24 },
   evening: { open: 20 * 60 + 25, close: 24 * 60 - 1 },
 };
