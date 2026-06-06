@@ -9,6 +9,8 @@ export type SaleReportSlotId = (typeof saleReportSlots)[number]["id"];
 export interface SaleReportFormValues {
   newDataReceived: string;
   newDataClosed: string;
+  newDataReachCount: string;
+  newDataZaloFriendCount: string;
   floatingDataReceived: string;
   floatingDataClosed: string;
   newCustomerRevenue: string;
@@ -31,6 +33,8 @@ export interface SaleComputedMetrics {
 export const emptySaleReportForm: SaleReportFormValues = {
   newDataReceived: "",
   newDataClosed: "",
+  newDataReachCount: "",
+  newDataZaloFriendCount: "",
   floatingDataReceived: "",
   floatingDataClosed: "",
   newCustomerRevenue: "",
@@ -43,6 +47,8 @@ export const emptySaleReportForm: SaleReportFormValues = {
 export const saleReportFieldLabels: Record<keyof Omit<SaleReportFormValues, "note">, string> = {
   newDataReceived: "Tổng data mới nhận",
   newDataClosed: "Tổng data mới chốt",
+  newDataReachCount: "Tổng DATA mới tiếp cận",
+  newDataZaloFriendCount: "Tổng DATA mới kết bạn ZL",
   floatingDataClosed: "Tổng data thả nổi chốt",
   floatingDataReceived: "Tổng data thả nổi nhận",
   newCustomerRevenue: "Doanh số khách mới",
@@ -134,6 +140,13 @@ export function sumSaleForms(forms: Record<SaleReportSlotId, SaleReportFormValue
       ),
       newDataClosed: String(
         parseSaleNumber(total.newDataClosed) + parseSaleNumber(values.newDataClosed),
+      ),
+      newDataReachCount: String(
+        parseSaleNumber(total.newDataReachCount) + parseSaleNumber(values.newDataReachCount),
+      ),
+      newDataZaloFriendCount: String(
+        parseSaleNumber(total.newDataZaloFriendCount) +
+          parseSaleNumber(values.newDataZaloFriendCount),
       ),
       floatingDataClosed: String(
         parseSaleNumber(total.floatingDataClosed) + parseSaleNumber(values.floatingDataClosed),

@@ -24,6 +24,17 @@ import {
   type ReportMetricTotals,
 } from "@/lib/analytics";
 import { kpiPercent, kpiStatus } from "@/lib/kpi";
+import {
+  distributeKpiTarget,
+  getCurrentKpiPeriodSelection,
+  getDbPeriodTypeFromMode,
+  getKpiMonthRange,
+  getKpiPeriodRange,
+  getKpiWeekSegments,
+  getKpiYearOptions,
+  inferKpiPeriodSelection,
+  type KpiPeriodMode,
+} from "@/lib/kpiPeriod";
 import { formatKpiMetricValue, marketingMetrics, metricProgress } from "@/lib/kpiMetrics";
 import { fmtVndDong, formatDateVN } from "@/lib/reports";
 import { APP_ROLES, MARKETING_ROLES } from "@/lib/roles";
@@ -67,6 +78,11 @@ type KpiFormState = {
   period_type: KpiPeriod;
   period_start: string;
   period_end: string;
+  period_mode: KpiPeriodMode;
+  period_year: string;
+  period_quarter: string;
+  period_month: string;
+  weekly_revenue_targets: Record<number, string>;
   revenue_target: string;
   cost_percent: string;
   data_target: string;
@@ -85,12 +101,9 @@ type MemberKpiRow = {
   status: "none" | "done" | "near" | "low";
 };
 
-function isKpiPeriod(value: string): value is KpiPeriod {
-  return value === "day" || value === "week" || value === "month";
-}
-
 function createDefaultForm(teamId = ""): KpiFormState {
-  const range = monthRange();
+  const selection = getCurrentKpiPeriodSelection();
+  const range = getKpiPeriodRange(selection);
   return {
     target_scope: "personal",
     team_id: teamId,
@@ -98,17 +111,62 @@ function createDefaultForm(teamId = ""): KpiFormState {
     period_type: "month",
     period_start: range.from,
     period_end: range.to,
+    period_mode: selection.mode,
+    period_year: String(selection.year),
+    period_quarter: String(selection.quarter),
+    period_month: String(selection.month),
+    weekly_revenue_targets: {},
     revenue_target: "",
     cost_percent: "",
     data_target: "",
   };
 }
 
-function createFormFromKpi(kpi: KpiTargetRow): KpiFormState {
+function kpiScopeMatches(a: KpiTargetRow, b: KpiTargetRow) {
+  return (a.user_id ?? "") === (b.user_id ?? "") && (a.team_id ?? "") === (b.team_id ?? "");
+}
+
+function getKpiWeekIndex(kpi: KpiTargetRow) {
+  const selection = inferKpiPeriodSelection(kpi.period_start, kpi.period_end, kpi.period_type);
+  if (selection.mode !== "week") return null;
+  const week = getKpiWeekSegments(selection.year, selection.month).find(
+    (segment) => segment.from === kpi.period_start && segment.to === kpi.period_end,
+  );
+  return week?.index ?? null;
+}
+
+function getRelatedWeeklyKpis(kpi: KpiTargetRow, allKpis: KpiTargetRow[]) {
+  const selection = inferKpiPeriodSelection(kpi.period_start, kpi.period_end, kpi.period_type);
+  if (selection.mode !== "week") return [kpi];
+  const monthRange = getKpiMonthRange(selection.year, selection.month);
+  return allKpis.filter(
+    (row) =>
+      row.period_type === "week" &&
+      kpiScopeMatches(row, kpi) &&
+      row.period_start >= monthRange.from &&
+      row.period_end <= monthRange.to,
+  );
+}
+
+function createFormFromKpi(kpi: KpiTargetRow, relatedKpis: KpiTargetRow[] = [kpi]): KpiFormState {
   const revenueTarget = Number(kpi.revenue_target ?? 0);
   const adsTarget = Number(kpi.ads_target ?? 0);
   const costPercent =
     revenueTarget > 0 ? String(Math.round((adsTarget / revenueTarget) * 100)) : "";
+  const selection = inferKpiPeriodSelection(kpi.period_start, kpi.period_end, kpi.period_type);
+  const weeklyTargets =
+    selection.mode === "week"
+      ? Object.fromEntries(
+          relatedKpis
+            .map((row) => {
+              const weekIndex = getKpiWeekIndex(row);
+              return weekIndex
+                ? ([weekIndex, formatVndInput(String(Number(row.revenue_target ?? 0)))] as const)
+                : null;
+            })
+            .filter((row): row is readonly [number, string] => !!row),
+        )
+      : {};
   return {
     target_scope: isSystemStrategicKpi(kpi) ? "system" : kpi.user_id ? "personal" : "team",
     team_id: kpi.team_id ?? "",
@@ -116,6 +174,11 @@ function createFormFromKpi(kpi: KpiTargetRow): KpiFormState {
     period_type: kpi.period_type,
     period_start: kpi.period_start,
     period_end: kpi.period_end,
+    period_mode: selection.mode,
+    period_year: String(selection.year),
+    period_quarter: String(selection.quarter),
+    period_month: String(selection.month),
+    weekly_revenue_targets: weeklyTargets,
     revenue_target: revenueTarget ? formatVndInput(String(revenueTarget)) : "",
     cost_percent: costPercent,
     data_target: kpi.data_target ? formatVndInput(String(kpi.data_target)) : "",
@@ -124,6 +187,23 @@ function createFormFromKpi(kpi: KpiTargetRow): KpiFormState {
 
 function parseNumberInput(value: string) {
   return Number(value.replace(/[^\d]/g, "")) || 0;
+}
+
+function withKpiPeriodRange(form: KpiFormState, patch: Partial<KpiFormState>): KpiFormState {
+  const next = { ...form, ...patch };
+  const selection = {
+    mode: next.period_mode,
+    year: Number(next.period_year) || new Date().getFullYear(),
+    quarter: Number(next.period_quarter) || 1,
+    month: Number(next.period_month) || 1,
+  };
+  const range = getKpiPeriodRange(selection);
+  return {
+    ...next,
+    period_type: getDbPeriodTypeFromMode(selection.mode),
+    period_start: range.from,
+    period_end: range.to,
+  };
 }
 
 function formatVndInput(value: string) {
@@ -254,6 +334,17 @@ function pickLatestKpi(rows: KpiTargetRow[]) {
     const bTime = new Date(b.updated_at ?? b.created_at ?? 0).getTime();
     return bTime - aTime;
   })[0];
+}
+
+function getResolvedKpiRevenueTarget(kpi: KpiTargetRow | undefined, range: KpiRangeState) {
+  if (!kpi) return 0;
+  if (range.preset !== "week" || kpi.period_type === "week") return Number(kpi.revenue_target ?? 0);
+  const selection = inferKpiPeriodSelection(kpi.period_start, kpi.period_end, kpi.period_type);
+  if (selection.mode !== "month") return Number(kpi.revenue_target ?? 0);
+  const weeks = getKpiWeekSegments(selection.year, selection.month);
+  const weekIndex = weeks.findIndex((week) => range.from >= week.from && range.from <= week.to);
+  const distributed = distributeKpiTarget(Number(kpi.revenue_target ?? 0), weeks.length);
+  return weekIndex >= 0 ? (distributed[weekIndex] ?? 0) : Number(kpi.revenue_target ?? 0);
 }
 
 function isSystemStrategicKpi(kpi: KpiTargetRow) {
@@ -484,9 +575,9 @@ export function KpiWorkspace() {
       const personalKpi = pickLatestKpi(
         (data.kpis ?? []).filter((row) => row.user_id === user.id && isPersonalKpi(row)),
       );
-      return sum + Number(personalKpi?.revenue_target ?? 0);
+      return sum + getResolvedKpiRevenueTarget(personalKpi, currentPeriod);
     }, 0);
-  }, [data, teamFilter]);
+  }, [currentPeriod, data, teamFilter]);
   const manualTeamTarget = useMemo(() => {
     if (!data) return undefined;
     const targetTeamIds =
@@ -519,7 +610,7 @@ export function KpiWorkspace() {
       )
       .map((user) => {
         const kpi = pickLatestKpi((data?.kpis ?? []).filter((row) => row.user_id === user.id));
-        const target = Number(kpi?.revenue_target ?? 0);
+        const target = getResolvedKpiRevenueTarget(kpi, currentPeriod);
         const actualTotals = actualByUser.get(user.id) ?? emptyMetricTotals();
         const actual = actualTotals.total_revenue;
         const percent = kpiPercent(actual, target);
@@ -544,10 +635,32 @@ export function KpiWorkspace() {
     data?.teamReports,
     data?.teams,
     data?.users,
+    currentPeriod,
     memberSearch,
     teamFilter,
     userFilter,
   ]);
+
+  const totalPersonalTarget = useMemo(() => {
+    if (!data) return 0;
+    const teamById = new Map((data.teams ?? []).map((team) => [team.id, team]));
+    const teamByUserId = new Map(
+      (data.memberships ?? []).map((membership) => [
+        membership.user_id,
+        teamById.get(membership.team_id),
+      ]),
+    );
+    return data.users
+      .filter(
+        (user) =>
+          (teamFilter === "all" || teamByUserId.get(user.id)?.id === teamFilter) &&
+          (userFilter === "all" || user.id === userFilter),
+      )
+      .reduce((sum, user) => {
+        const kpi = pickLatestKpi(data.kpis.filter((row) => row.user_id === user.id));
+        return sum + getResolvedKpiRevenueTarget(kpi, currentPeriod);
+      }, 0);
+  }, [currentPeriod, data, teamFilter, userFilter]);
 
   const usersForFilter = useMemo(() => {
     if (teamFilter === "all") return data?.users ?? [];
@@ -596,8 +709,9 @@ export function KpiWorkspace() {
   };
 
   const openEditDialog = (kpi: KpiTargetRow) => {
+    const relatedWeeklyKpis = getRelatedWeeklyKpis(kpi, data?.kpis ?? []);
     setEditingKpi(kpi);
-    setForm(createFormFromKpi(kpi));
+    setForm(createFormFromKpi(kpi, relatedWeeklyKpis));
     setCreateOpen(true);
   };
 
@@ -610,10 +724,7 @@ export function KpiWorkspace() {
   };
 
   const save = async () => {
-    if (!form.period_start || !form.period_end) {
-      toast.error("Chọn kỳ KPI");
-      return;
-    }
+    const periodForm = withKpiPeriodRange(form, {});
     if (form.target_scope === "system" && role !== "admin") {
       toast.error("Chỉ Admin được tạo KPI toàn hệ thống");
       return;
@@ -633,24 +744,72 @@ export function KpiWorkspace() {
     const revenueTarget = parseNumberInput(form.revenue_target);
     const costPercent = Number(form.cost_percent || 0);
     const adsTarget = Math.round((revenueTarget * costPercent) / 100);
-    const payload: TablesInsert<"kpi_targets"> = {
-      team_id: form.target_scope === "system" ? null : form.team_id || null,
-      user_id: form.target_scope === "personal" ? form.user_id : null,
-      period_type: form.period_type,
-      period_start: form.period_start,
-      period_end: form.period_end,
-      revenue_target: revenueTarget,
-      ads_target: adsTarget,
+    const buildPayload = (
+      periodStart = periodForm.period_start,
+      periodEnd = periodForm.period_end,
+      periodType = periodForm.period_type,
+      target = revenueTarget,
+    ): TablesInsert<"kpi_targets"> => ({
+      team_id: periodForm.target_scope === "system" ? null : periodForm.team_id || null,
+      user_id: periodForm.target_scope === "personal" ? periodForm.user_id : null,
+      period_type: periodType,
+      period_start: periodStart,
+      period_end: periodEnd,
+      revenue_target: target,
+      ads_target: Math.round((target * costPercent) / 100),
       mess_target: 0,
-      data_target: parseNumberInput(form.data_target),
+      data_target: parseNumberInput(periodForm.data_target),
       orders_target: 0,
       roas_target: 0,
       note: null,
-    };
+    });
     let error: Error | null = null;
-    if (editingKpi) {
+    if (editingKpi && periodForm.period_mode === "week") {
+      const weeks = getKpiWeekSegments(
+        Number(periodForm.period_year),
+        Number(periodForm.period_month),
+      );
+      const relatedWeeklyKpis = getRelatedWeeklyKpis(editingKpi, data?.kpis ?? []);
+      const existingByWeek = new Map(
+        relatedWeeklyKpis
+          .map((row) => {
+            const weekIndex = getKpiWeekIndex(row);
+            return weekIndex ? ([weekIndex, row] as const) : null;
+          })
+          .filter((row): row is readonly [number, KpiTargetRow] => !!row),
+      );
+      for (const week of weeks) {
+        const target = parseNumberInput(periodForm.weekly_revenue_targets[week.index] ?? "");
+        const existing = existingByWeek.get(week.index);
+        if (existing) {
+          const updatePayload: TablesUpdate<"kpi_targets"> = {
+            ...buildPayload(week.from, week.to, "week", target),
+            revenue_target: target,
+            updated_at: new Date().toISOString(),
+          };
+          const result = await supabase
+            .from("kpi_targets")
+            .update(updatePayload)
+            .eq("id", existing.id);
+          if (result.error) {
+            error = result.error;
+            break;
+          }
+        } else if (target > 0) {
+          const result = await supabase.from("kpi_targets").insert({
+            ...buildPayload(week.from, week.to, "week", target),
+            revenue_target: target,
+            created_by: profile?.id ?? null,
+          });
+          if (result.error) {
+            error = result.error;
+            break;
+          }
+        }
+      }
+    } else if (editingKpi) {
       const updatePayload: TablesUpdate<"kpi_targets"> = {
-        ...payload,
+        ...buildPayload(),
         updated_at: new Date().toISOString(),
       };
       const result = await supabase
@@ -658,10 +817,32 @@ export function KpiWorkspace() {
         .update(updatePayload)
         .eq("id", editingKpi.id);
       error = result.error;
+    } else if (periodForm.period_mode === "week") {
+      const weeks = getKpiWeekSegments(
+        Number(periodForm.period_year),
+        Number(periodForm.period_month),
+      );
+      const rows = weeks
+        .map((week) => ({
+          week,
+          target: parseNumberInput(periodForm.weekly_revenue_targets[week.index] ?? ""),
+        }))
+        .filter((row) => row.target > 0)
+        .map(({ week, target }) => ({
+          ...buildPayload(week.from, week.to, "week", target),
+          revenue_target: target,
+          created_by: profile?.id ?? null,
+        }));
+      if (!rows.length) {
+        toast.error("Nhập KPI cho ít nhất một tuần");
+        return;
+      }
+      const result = await supabase.from("kpi_targets").insert(rows);
+      error = result.error;
     } else {
       const result = await supabase
         .from("kpi_targets")
-        .insert({ ...payload, created_by: profile?.id ?? null });
+        .insert({ ...buildPayload(), created_by: profile?.id ?? null });
       error = result.error;
     }
     if (error) {
@@ -675,7 +856,7 @@ export function KpiWorkspace() {
 
   const personalPercent = kpiPercent(
     data?.personalActual.total_revenue ?? 0,
-    Number(personalKpi?.revenue_target ?? 0),
+    getResolvedKpiRevenueTarget(personalKpi, currentPeriod),
   );
   const personalStatus = kpiStatus(personalPercent);
   const refreshData = async () => {
@@ -690,6 +871,21 @@ export function KpiWorkspace() {
         subtitle={`${profile?.full_name ?? "Nhân sự"} · ${periodLabel}`}
         actions={
           <>
+            {showScopeFilters && (
+              <KpiHeaderFilters
+                periodRange={periodRange}
+                onPeriodRangeChange={setPeriodRange}
+                teamFilter={teamFilter}
+                onTeamChange={(value) => {
+                  setTeamFilter(value);
+                  setUserFilter("all");
+                }}
+                userFilter={userFilter}
+                onUserChange={setUserFilter}
+                teams={data?.teams ?? []}
+                users={usersForFilter}
+              />
+            )}
             <RefreshButton isRefreshing={isFetching} onRefresh={refreshData} />
             {(role === "employee" || role === "leader") && (
               <Badge className={statusClass(personalStatus)}>
@@ -740,26 +936,12 @@ export function KpiWorkspace() {
                 }
               />
             )}
-            {showScopeFilters && (
-              <KpiScopeFilters
-                periodRange={periodRange}
-                onPeriodRangeChange={setPeriodRange}
-                teamFilter={teamFilter}
-                onTeamChange={(value) => {
-                  setTeamFilter(value);
-                  setUserFilter("all");
-                }}
-                userFilter={userFilter}
-                onUserChange={setUserFilter}
-                teams={data?.teams ?? []}
-                users={usersForFilter}
-              />
-            )}
             {(role === "employee" || role === "leader") && (
               <>
                 <PersonalKpiPanel
                   kpi={personalKpi}
                   actual={data?.personalActual}
+                  revenueTarget={getResolvedKpiRevenueTarget(personalKpi, currentPeriod)}
                   percent={personalPercent}
                   status={personalStatus}
                   canEdit={canEdit}
@@ -780,6 +962,7 @@ export function KpiWorkspace() {
                 <TeamKpiPanel
                   teamName={teamSummaryName}
                   target={displayedTeamTarget}
+                  personalTargetTotal={totalPersonalTarget}
                   actual={role === "leader" ? data?.teamActual : filteredTeamActual}
                   isCompanyScope={role === "admin" && teamFilter === "all"}
                   manualTarget={manualTeamTarget}
@@ -815,7 +998,7 @@ export function KpiWorkspace() {
   );
 }
 
-function KpiScopeFilters({
+function KpiHeaderFilters({
   periodRange,
   onPeriodRangeChange,
   teamFilter,
@@ -839,78 +1022,77 @@ function KpiScopeFilters({
   };
 
   return (
-    <section className="rounded-2xl border bg-card p-4 shadow-sm">
-      <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr_1fr]">
-        <Field label="Thời gian">
-          <div className="grid gap-2">
-            <Select
-              value={periodRange.preset}
-              onValueChange={(value) => setPreset(value as KpiRangePreset)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="today">Hôm nay</SelectItem>
-                <SelectItem value="week">Tuần này</SelectItem>
-                <SelectItem value="month">Tháng này</SelectItem>
-                <SelectItem value="quarter">Quý này</SelectItem>
-                <SelectItem value="year">Năm nay</SelectItem>
-                <SelectItem value="custom">Tuỳ chỉnh</SelectItem>
-              </SelectContent>
-            </Select>
-            {periodRange.preset === "custom" && (
-              <div className="grid gap-2 sm:grid-cols-2">
-                <Input
-                  type="date"
-                  value={periodRange.from}
-                  onChange={(event) =>
-                    onPeriodRangeChange({ ...periodRange, from: event.target.value })
-                  }
-                />
-                <Input
-                  type="date"
-                  value={periodRange.to}
-                  onChange={(event) =>
-                    onPeriodRangeChange({ ...periodRange, to: event.target.value })
-                  }
-                />
-              </div>
-            )}
-          </div>
-        </Field>
-        <Field label="Team">
-          <Select value={teamFilter} onValueChange={onTeamChange}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tất cả team</SelectItem>
-              {teams.map((team) => (
-                <SelectItem key={team.id} value={team.id}>
-                  {team.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field label="Nhân sự">
-          <Select value={userFilter} onValueChange={onUserChange}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tất cả nhân sự</SelectItem>
-              {users.map((user) => (
-                <SelectItem key={user.id} value={user.id}>
-                  {user.full_name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      </div>
-    </section>
+    <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+      <Select
+        value={periodRange.preset}
+        onValueChange={(value) => setPreset(value as KpiRangePreset)}
+      >
+        <SelectTrigger
+          aria-label="Thời gian"
+          className="h-9 w-[136px] rounded-xl bg-white/90 text-sm shadow-sm"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="today">Hôm nay</SelectItem>
+          <SelectItem value="week">Tuần này</SelectItem>
+          <SelectItem value="month">Tháng này</SelectItem>
+          <SelectItem value="quarter">Quý này</SelectItem>
+          <SelectItem value="year">Năm nay</SelectItem>
+          <SelectItem value="custom">Tuỳ chỉnh</SelectItem>
+        </SelectContent>
+      </Select>
+      {periodRange.preset === "custom" && (
+        <>
+          <Input
+            aria-label="Từ ngày"
+            className="h-9 w-[135px] rounded-xl bg-white/90 text-sm shadow-sm"
+            type="date"
+            value={periodRange.from}
+            onChange={(event) => onPeriodRangeChange({ ...periodRange, from: event.target.value })}
+          />
+          <Input
+            aria-label="Đến ngày"
+            className="h-9 w-[135px] rounded-xl bg-white/90 text-sm shadow-sm"
+            type="date"
+            value={periodRange.to}
+            onChange={(event) => onPeriodRangeChange({ ...periodRange, to: event.target.value })}
+          />
+        </>
+      )}
+      <Select value={teamFilter} onValueChange={onTeamChange}>
+        <SelectTrigger
+          aria-label="Team"
+          className="h-9 w-[170px] rounded-xl bg-white/90 text-sm shadow-sm"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Tất cả team</SelectItem>
+          {teams.map((team) => (
+            <SelectItem key={team.id} value={team.id}>
+              {team.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select value={userFilter} onValueChange={onUserChange}>
+        <SelectTrigger
+          aria-label="Nhân sự"
+          className="h-9 w-[180px] rounded-xl bg-white/90 text-sm shadow-sm"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Tất cả nhân sự</SelectItem>
+          {users.map((user) => (
+            <SelectItem key={user.id} value={user.id}>
+              {user.full_name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
@@ -943,13 +1125,21 @@ function KpiCreateDialog({
   const selectedUserTeam = form.user_id
     ? teams.find((team) => team.id === teamByUserId.get(form.user_id))
     : null;
+  const yearOptions = getKpiYearOptions();
+  const weeklySegments = getKpiWeekSegments(Number(form.period_year), Number(form.period_month));
+  const updatePeriod = (patch: Partial<KpiFormState>) => setForm(withKpiPeriodRange(form, patch));
 
   return (
     <DialogContent className="max-w-3xl">
       <DialogHeader>
         <DialogTitle>{isEditing ? "Sửa KPI" : "Tạo KPI"}</DialogTitle>
       </DialogHeader>
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="md:col-span-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Loại KPI / Đối tượng
+          </p>
+        </div>
         {(role === "admin" || role === "leader") && (
           <Field label="Loại KPI">
             <Select
@@ -1035,47 +1225,126 @@ function KpiCreateDialog({
             </p>
           </div>
         )}
+        <div className="border-t pt-4 md:col-span-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Kỳ KPI
+          </p>
+        </div>
         <Field label="Kỳ">
           <Select
-            value={form.period_type}
-            onValueChange={(value) => {
-              if (isKpiPeriod(value)) setForm({ ...form, period_type: value });
-            }}
+            value={form.period_mode}
+            onValueChange={(value) => updatePeriod({ period_mode: value as KpiPeriodMode })}
           >
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="day">Ngày</SelectItem>
-              <SelectItem value="week">Tuần</SelectItem>
+              <SelectItem value="year">Năm</SelectItem>
+              <SelectItem value="quarter">Quý</SelectItem>
               <SelectItem value="month">Tháng</SelectItem>
+              <SelectItem value="week">Tuần</SelectItem>
             </SelectContent>
           </Select>
         </Field>
-        <Field label="Doanh thu">
-          <Input
-            value={form.revenue_target}
-            onChange={(event) =>
-              setForm({ ...form, revenue_target: formatVndInput(event.target.value) })
-            }
-            inputMode="numeric"
-            placeholder="1.200.000.000"
-          />
+        <Field label="Năm">
+          <Select
+            value={form.period_year}
+            onValueChange={(value) => updatePeriod({ period_year: value })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {yearOptions.map((year) => (
+                <SelectItem key={year} value={String(year)}>
+                  {year}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </Field>
-        <Field label="Từ ngày">
-          <Input
-            type="date"
-            value={form.period_start}
-            onChange={(event) => setForm({ ...form, period_start: event.target.value })}
-          />
-        </Field>
-        <Field label="Đến ngày">
-          <Input
-            type="date"
-            value={form.period_end}
-            onChange={(event) => setForm({ ...form, period_end: event.target.value })}
-          />
-        </Field>
+        {form.period_mode === "quarter" && (
+          <Field label="Quý">
+            <Select
+              value={form.period_quarter}
+              onValueChange={(value) => updatePeriod({ period_quarter: value })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[1, 2, 3, 4].map((quarter) => (
+                  <SelectItem key={quarter} value={String(quarter)}>
+                    Quý {quarter}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        )}
+        {(form.period_mode === "month" || form.period_mode === "week") && (
+          <Field label="Tháng">
+            <Select
+              value={form.period_month}
+              onValueChange={(value) => updatePeriod({ period_month: value })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
+                  <SelectItem key={month} value={String(month)}>
+                    Tháng {month}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        )}
+        <div className="rounded-xl border bg-muted/30 px-3 py-2 text-sm text-muted-foreground md:col-span-2">
+          Kỳ áp dụng: {formatDateVN(form.period_start)} → {formatDateVN(form.period_end)}
+        </div>
+        <div className="border-t pt-4 md:col-span-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Chỉ số KPI
+          </p>
+        </div>
+        {form.period_mode === "week" ? (
+          <div className="grid gap-3 md:col-span-2 md:grid-cols-2">
+            {weeklySegments.map((week) => (
+              <Field
+                key={week.index}
+                label={`${week.label} (${formatDateVN(week.from)} - ${formatDateVN(week.to)})`}
+              >
+                <Input
+                  value={form.weekly_revenue_targets[week.index] ?? ""}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      weekly_revenue_targets: {
+                        ...form.weekly_revenue_targets,
+                        [week.index]: formatVndInput(event.target.value),
+                      },
+                    })
+                  }
+                  inputMode="numeric"
+                  placeholder="100.000.000"
+                />
+              </Field>
+            ))}
+          </div>
+        ) : (
+          <Field label="Doanh thu">
+            <Input
+              value={form.revenue_target}
+              onChange={(event) =>
+                setForm({ ...form, revenue_target: formatVndInput(event.target.value) })
+              }
+              inputMode="numeric"
+              placeholder="1.200.000.000"
+            />
+          </Field>
+        )}
         {form.target_scope !== "system" && (
           <>
             <Field label="% chi phí">
@@ -1119,6 +1388,7 @@ function KpiCreateDialog({
 function PersonalKpiPanel({
   kpi,
   actual,
+  revenueTarget,
   percent,
   status,
   canEdit,
@@ -1128,6 +1398,7 @@ function PersonalKpiPanel({
 }: {
   kpi?: KpiTargetRow;
   actual?: ReportMetricTotals;
+  revenueTarget: number;
   percent: number | null;
   status: ReturnType<typeof kpiStatus>;
   canEdit: boolean;
@@ -1199,7 +1470,7 @@ function PersonalKpiPanel({
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Mục tiêu</p>
-                <p className="mt-1 font-semibold">{fmtVndDong(kpi.revenue_target)}</p>
+                <p className="mt-1 font-semibold">{fmtVndDong(revenueTarget)}</p>
               </div>
             </div>
             <Badge className={statusClass(status)}>{statusLabel(status)}</Badge>
@@ -1279,6 +1550,7 @@ function TeamKpiPanel({
   canEdit,
   teamName,
   target,
+  personalTargetTotal,
   actual,
   isCompanyScope,
   manualTarget,
@@ -1287,6 +1559,7 @@ function TeamKpiPanel({
   canEdit?: boolean;
   teamName: string;
   target: number;
+  personalTargetTotal: number;
   actual?: ReportMetricTotals;
   isCompanyScope?: boolean;
   manualTarget?: KpiTargetRow;
@@ -1315,17 +1588,18 @@ function TeamKpiPanel({
           ) : null}
         </div>
       </div>
-      <div className="mt-5 grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+      <div className="mt-4 grid gap-2 md:grid-cols-3 xl:grid-cols-6">
         <LightMetric
           label={
             manualTarget
-              ? "KPI team đã đặt"
+              ? "KPI team"
               : isCompanyScope
                 ? "SUM KPI cá nhân active"
                 : "SUM KPI cá nhân trong team"
           }
           value={fmtVndDong(target)}
         />
+        <LightMetric label="Tổng KPI mục tiêu cá nhân" value={fmtVndDong(personalTargetTotal)} />
         <LightMetric
           label="Tổng doanh thu thực tế team"
           value={fmtVndDong(actualTotals.total_revenue)}
@@ -1573,9 +1847,13 @@ function DarkMetric({
 
 function LightMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border bg-muted/30 p-4">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-lg font-bold">{value}</p>
+    <div className="min-w-0 rounded-xl border bg-muted/30 px-3 py-3">
+      <p className="truncate text-xs text-muted-foreground" title={label}>
+        {label}
+      </p>
+      <p className="mt-1 truncate text-base font-bold" title={value}>
+        {value}
+      </p>
     </div>
   );
 }

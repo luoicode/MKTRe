@@ -154,6 +154,8 @@ export function SaleReportForm() {
       const compatiblePayload = { ...payload };
       delete compatiblePayload.old_customer_call_count;
       delete compatiblePayload.video_call_data_count;
+      delete compatiblePayload.new_data_reach_count;
+      delete compatiblePayload.new_data_zalo_friend_count;
       const { error: retryError } = await supabase
         .from("sale_reports")
         .upsert(compatiblePayload, { onConflict: "user_id,report_date,slot_key" });
@@ -301,6 +303,18 @@ export function SaleReportForm() {
                       onChange={(value) => updateActiveField("newDataClosed", value)}
                     />
                     <SaleNumberField
+                      label={saleReportFieldLabels.newDataReachCount}
+                      value={activeValues.newDataReachCount}
+                      disabled={!activeSlotEditable}
+                      onChange={(value) => updateActiveField("newDataReachCount", value)}
+                    />
+                    <SaleNumberField
+                      label={saleReportFieldLabels.newDataZaloFriendCount}
+                      value={activeValues.newDataZaloFriendCount}
+                      disabled={!activeSlotEditable}
+                      onChange={(value) => updateActiveField("newDataZaloFriendCount", value)}
+                    />
+                    <SaleNumberField
                       label={saleReportFieldLabels.floatingDataReceived}
                       value={activeValues.floatingDataReceived}
                       disabled={!activeSlotEditable}
@@ -417,7 +431,9 @@ export function SaleReportForm() {
 function isMissingSaleReportCallColumnError(message: string) {
   return (
     message.includes("'old_customer_call_count' column") ||
-    message.includes("'video_call_data_count' column")
+    message.includes("'video_call_data_count' column") ||
+    message.includes("'new_data_reach_count' column") ||
+    message.includes("'new_data_zalo_friend_count' column")
   );
 }
 
@@ -652,6 +668,8 @@ function buildExportRows(
       parseSaleNumber(value.newDataClosed) + parseSaleNumber(value.floatingDataClosed),
       totalDataReceived(value),
     );
+  const newReachRate = (value: SaleReportFormValues) =>
+    percent(parseSaleNumber(value.newDataClosed), parseSaleNumber(value.newDataReachCount));
 
   const rows: Array<Omit<SaleExportRow, "values"> & { values: string[] }> = [
     {
@@ -662,42 +680,54 @@ function buildExportRows(
     },
     {
       stt: 2,
+      label: "Tỉ lệ DATA mới tiếp cận",
+      values: slotValues.map((value) => newReachRate(value)),
+      tone: "data",
+    },
+    {
+      stt: 3,
       label: "Data mới chốt",
       values: slotValues.map((value) => integer(value.newDataClosed)),
       tone: "data",
     },
     {
-      stt: 3,
+      stt: 4,
       label: "Data thả nổi nhận",
       values: slotValues.map((value) => integer(value.floatingDataReceived)),
       tone: "data",
     },
     {
-      stt: 4,
+      stt: 5,
       label: "Data thả nổi chốt",
       values: slotValues.map((value) => integer(value.floatingDataClosed)),
       tone: "data",
     },
     {
-      stt: 5,
+      stt: 6,
+      label: "Tổng DATA mới kết bạn ZL",
+      values: slotValues.map((value) => integer(value.newDataZaloFriendCount)),
+      tone: "data",
+    },
+    {
+      stt: 7,
       label: "Tổng Data nhận",
       values: slotValues.map((value) => formatSheetNumber(totalDataReceived(value))),
       tone: "data",
     },
     {
-      stt: 6,
+      stt: 8,
       label: "Doanh số khách mới",
       values: slotValues.map((value) => money(value.newCustomerRevenue)),
       tone: "calc",
     },
     {
-      stt: 7,
+      stt: 9,
       label: "Số DATA khách gọi video",
       values: slotValues.map((value) => integer(value.videoCallDataCount)),
       tone: "calc",
     },
     {
-      stt: 8,
+      stt: 10,
       label: "Tỷ lệ chốt mới",
       values: slotValues.map((value) =>
         percent(parseSaleNumber(value.newDataClosed), parseSaleNumber(value.newDataReceived)),
@@ -705,7 +735,7 @@ function buildExportRows(
       tone: "calc",
     },
     {
-      stt: 9,
+      stt: 11,
       label: "TB đơn Data mới",
       values: slotValues.map((value) => {
         const revenue = parseSaleNumber(value.newCustomerRevenue);
@@ -715,19 +745,19 @@ function buildExportRows(
       tone: "calc",
     },
     {
-      stt: 10,
+      stt: 12,
       label: "Doanh Số Thả Nổi",
       values: slotValues.map((value) => money(value.floatingRevenue)),
       tone: "calc",
     },
     {
-      stt: 11,
+      stt: 13,
       label: "Tổng tỷ lệ chốt",
       values: slotValues.map((value) => totalCloseRate(value)),
       tone: "calc",
     },
     {
-      stt: 12,
+      stt: 14,
       label: "Tổng doanh số",
       values: slotValues.map((value) =>
         formatSheetNumber(
@@ -737,7 +767,7 @@ function buildExportRows(
       tone: "calc",
     },
     {
-      stt: 13,
+      stt: 15,
       label: "Số DATA khách cũ gọi",
       values: slotValues.map((value) => integer(value.oldCustomerCallCount)),
       tone: "calc",
@@ -765,6 +795,8 @@ function getDailyExportValue(
 ) {
   const newDataReceived = parseSaleNumber(dailyTotals.newDataReceived);
   const newDataClosed = parseSaleNumber(dailyTotals.newDataClosed);
+  const newDataReachCount = parseSaleNumber(dailyTotals.newDataReachCount);
+  const newDataZaloFriendCount = parseSaleNumber(dailyTotals.newDataZaloFriendCount);
   const floatingDataClosed = parseSaleNumber(dailyTotals.floatingDataClosed);
   const floatingDataReceived = parseSaleNumber(dailyTotals.floatingDataReceived);
   const newCustomerRevenue = parseSaleNumber(dailyTotals.newCustomerRevenue);
@@ -776,28 +808,32 @@ function getDailyExportValue(
     case 1:
       return formatSheetNumber(newDataReceived);
     case 2:
-      return formatSheetNumber(newDataClosed);
+      return percent(newDataClosed, newDataReachCount);
     case 3:
-      return formatSheetNumber(floatingDataClosed);
+      return formatSheetNumber(newDataClosed);
     case 4:
       return formatSheetNumber(floatingDataReceived);
     case 5:
-      return formatSheetNumber(newDataReceived + floatingDataReceived);
+      return formatSheetNumber(floatingDataClosed);
     case 6:
-      return formatSheetNumber(newCustomerRevenue);
+      return formatSheetNumber(newDataZaloFriendCount);
     case 7:
-      return formatSheetNumber(videoCallDataCount);
+      return formatSheetNumber(newDataReceived + floatingDataReceived);
     case 8:
-      return percent(newDataClosed, newDataReceived);
+      return formatSheetNumber(newCustomerRevenue);
     case 9:
-      return average(newCustomerRevenue, newDataClosed);
+      return formatSheetNumber(videoCallDataCount);
     case 10:
-      return formatSheetNumber(floatingRevenue);
+      return percent(newDataClosed, newDataReceived);
     case 11:
-      return percent(newDataClosed + floatingDataClosed, newDataReceived + floatingDataReceived);
+      return average(newCustomerRevenue, newDataClosed);
     case 12:
-      return formatSheetNumber(newCustomerRevenue + floatingRevenue);
+      return formatSheetNumber(floatingRevenue);
     case 13:
+      return percent(newDataClosed + floatingDataClosed, newDataReceived + floatingDataReceived);
+    case 14:
+      return formatSheetNumber(newCustomerRevenue + floatingRevenue);
+    case 15:
       return formatSheetNumber(oldCustomerCallCount);
     default:
       return "";

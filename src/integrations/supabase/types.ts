@@ -1697,6 +1697,8 @@ export type Database = {
           new_customer_revenue: number;
           new_data_closed: number;
           new_data_received: number;
+          new_data_reach_count: number;
+          new_data_zalo_friend_count: number;
           note: string | null;
           old_customer_call_count: number;
           old_customers: number;
@@ -1718,6 +1720,8 @@ export type Database = {
           new_customer_revenue?: number;
           new_data_closed?: number;
           new_data_received?: number;
+          new_data_reach_count?: number;
+          new_data_zalo_friend_count?: number;
           note?: string | null;
           old_customer_call_count?: number;
           old_customers?: number;
@@ -1739,6 +1743,8 @@ export type Database = {
           new_customer_revenue?: number;
           new_data_closed?: number;
           new_data_received?: number;
+          new_data_reach_count?: number;
+          new_data_zalo_friend_count?: number;
           note?: string | null;
           old_customer_call_count?: number;
           old_customers?: number;

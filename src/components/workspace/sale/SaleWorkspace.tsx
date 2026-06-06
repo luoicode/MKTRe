@@ -66,6 +66,16 @@ import { SaleReportForm } from "@/components/workspace/sale/SaleReportForm";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib/dateRange";
 import { todayStr } from "@/lib/reports";
+import {
+  getCurrentKpiPeriodSelection,
+  getDbPeriodTypeFromMode,
+  getKpiMonthRange,
+  getKpiPeriodRange,
+  getKpiWeekSegments,
+  getKpiYearOptions,
+  inferKpiPeriodSelection,
+  type KpiPeriodMode,
+} from "@/lib/kpiPeriod";
 import { formatKpiMetricValue, metricProgress, saleMetrics } from "@/lib/kpiMetrics";
 import { APP_ROLES } from "@/lib/roles";
 import {
@@ -658,6 +668,8 @@ function LeaderSaleTeamReportsWorkspace() {
                       "Sale",
                       "Data mới nhận",
                       "Data mới chốt",
+                      "DATA mới tiếp cận",
+                      "DATA mới kết bạn ZL",
                       "Data thả nổi nhận",
                       "Data thả nổi chốt",
                       "DS khách mới",
@@ -699,6 +711,12 @@ function LeaderSaleTeamReportsWorkspace() {
                           {formatReportInteger(row, row.newDataClosed)}
                         </td>
                         <td className="px-3 py-3 text-right">
+                          {formatReportInteger(row, row.newDataReachCount)}
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          {formatReportInteger(row, row.newDataZaloFriendCount)}
+                        </td>
+                        <td className="px-3 py-3 text-right">
                           {formatReportInteger(row, row.floatingDataReceived)}
                         </td>
                         <td className="px-3 py-3 text-right">
@@ -730,7 +748,7 @@ function LeaderSaleTeamReportsWorkspace() {
                   })}
                   {!visibleReportRows.length && (
                     <tr>
-                      <td colSpan={12} className="px-4 py-10 text-center text-muted-foreground">
+                      <td colSpan={14} className="px-4 py-10 text-center text-muted-foreground">
                         Chưa có báo cáo team phù hợp bộ lọc.
                       </td>
                     </tr>
@@ -868,7 +886,13 @@ export function SaleKpiWorkspace() {
     setLeaderKpiFormOpen(true);
   };
   const openLeaderKpiEdit = (target: SaleKpiTargetRow) => {
-    setLeaderKpiForm(createLeaderSaleKpiForm(target, leaderDefaultTeamId));
+    setLeaderKpiForm(
+      createLeaderSaleKpiForm(
+        target,
+        leaderDefaultTeamId,
+        getRelatedWeeklyLeaderSaleKpis(target, data?.targets ?? []),
+      ),
+    );
     setLeaderKpiFormOpen(true);
   };
   const saveLeaderKpi = useMutation({
@@ -1004,27 +1028,122 @@ type LeaderSaleKpiForm = {
   periodType: Tables<"sale_kpi_targets">["period_type"];
   periodStart: string;
   periodEnd: string;
+  periodMode: KpiPeriodMode;
+  periodYear: string;
+  periodQuarter: string;
+  periodMonth: string;
+  weeklyCloseRateTargets: Record<number, string>;
+  weeklyAverageOrderTargets: Record<number, string>;
   closeRateTarget: string;
   averageOrderTarget: string;
 };
 
-function createLeaderSaleKpiForm(target?: SaleKpiTargetRow, defaultTeamId = ""): LeaderSaleKpiForm {
-  const range = initialDateRange("month");
+function leaderSaleKpiScopeMatches(a: SaleKpiTargetRow, b: SaleKpiTargetRow) {
+  return (a.user_id ?? "") === (b.user_id ?? "") && (a.team_id ?? "") === (b.team_id ?? "");
+}
+
+function getLeaderSaleKpiWeekIndex(target: SaleKpiTargetRow) {
+  const selection = inferKpiPeriodSelection(
+    target.period_start,
+    target.period_end,
+    target.period_type,
+  );
+  if (selection.mode !== "week") return null;
+  const week = getKpiWeekSegments(selection.year, selection.month).find(
+    (segment) => segment.from === target.period_start && segment.to === target.period_end,
+  );
+  return week?.index ?? null;
+}
+
+function getRelatedWeeklyLeaderSaleKpis(target: SaleKpiTargetRow, allTargets: SaleKpiTargetRow[]) {
+  const selection = inferKpiPeriodSelection(
+    target.period_start,
+    target.period_end,
+    target.period_type,
+  );
+  if (selection.mode !== "week") return [target];
+  const monthRange = getKpiMonthRange(selection.year, selection.month);
+  return allTargets.filter(
+    (row) =>
+      row.period_type === "week" &&
+      leaderSaleKpiScopeMatches(row, target) &&
+      row.period_start >= monthRange.from &&
+      row.period_end <= monthRange.to,
+  );
+}
+
+function createLeaderSaleKpiForm(
+  target?: SaleKpiTargetRow,
+  defaultTeamId = "",
+  relatedTargets: SaleKpiTargetRow[] = [],
+): LeaderSaleKpiForm {
+  const selection = target
+    ? inferKpiPeriodSelection(target.period_start, target.period_end, target.period_type)
+    : getCurrentKpiPeriodSelection();
+  const range = target
+    ? { from: target.period_start, to: target.period_end }
+    : getKpiPeriodRange(selection);
+  const weeklyCloseTargets =
+    target && selection.mode === "week"
+      ? Object.fromEntries(
+          (relatedTargets.length ? relatedTargets : [target])
+            .map((row) => {
+              const weekIndex = getLeaderSaleKpiWeekIndex(row);
+              return weekIndex ? ([weekIndex, String(row.close_rate_target ?? "")] as const) : null;
+            })
+            .filter((row): row is readonly [number, string] => !!row),
+        )
+      : {};
+  const weeklyAverageTargets =
+    target && selection.mode === "week"
+      ? Object.fromEntries(
+          (relatedTargets.length ? relatedTargets : [target])
+            .map((row) => {
+              const weekIndex = getLeaderSaleKpiWeekIndex(row);
+              return weekIndex
+                ? ([weekIndex, String(row.average_order_target ?? "")] as const)
+                : null;
+            })
+            .filter((row): row is readonly [number, string] => !!row),
+        )
+      : {};
   return {
     id: target?.id,
     scope: target?.user_id ? "user" : "team",
     teamId: target?.team_id ?? defaultTeamId,
     userId: target?.user_id ?? "",
     periodType: target?.period_type ?? "month",
-    periodStart: target?.period_start ?? range.from,
-    periodEnd: target?.period_end ?? range.to,
+    periodStart: range.from,
+    periodEnd: range.to,
+    periodMode: selection.mode,
+    periodYear: String(selection.year),
+    periodQuarter: String(selection.quarter),
+    periodMonth: String(selection.month),
+    weeklyCloseRateTargets: weeklyCloseTargets,
+    weeklyAverageOrderTargets: weeklyAverageTargets,
     closeRateTarget: String(target?.close_rate_target ?? ""),
     averageOrderTarget: String(target?.average_order_target ?? ""),
   };
 }
 
-function isSaleKpiPeriod(value: string): value is LeaderSaleKpiForm["periodType"] {
-  return value === "day" || value === "week" || value === "month";
+function withLeaderSaleKpiPeriodRange(
+  form: LeaderSaleKpiForm,
+  patch: Partial<LeaderSaleKpiForm>,
+): LeaderSaleKpiForm {
+  const next = { ...form, ...patch };
+  const selection = {
+    mode: next.periodMode,
+    year: Number(next.periodYear) || new Date().getFullYear(),
+    quarter: Number(next.periodQuarter) || 1,
+    month: Number(next.periodMonth) || 1,
+  };
+  const range = getKpiPeriodRange(selection);
+  return {
+    ...next,
+    periodType: getDbPeriodTypeFromMode(selection.mode),
+    periodStart: range.from,
+    periodEnd: range.to,
+  };
 }
 
 function LeaderSaleTeamKpiDashboard({
@@ -1266,6 +1385,10 @@ function LeaderSaleKpiTargetDialog({
   const setNumber = (field: keyof LeaderSaleKpiForm, value: string, allowDecimal = false) => {
     onChange({ ...form, [field]: value.replace(allowDecimal ? /[^\d.]/g : /[^\d]/g, "") });
   };
+  const yearOptions = getKpiYearOptions();
+  const weeklySegments = getKpiWeekSegments(Number(form.periodYear), Number(form.periodMonth));
+  const updatePeriod = (patch: Partial<LeaderSaleKpiForm>) =>
+    onChange(withLeaderSaleKpiPeriodRange(form, patch));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1273,7 +1396,12 @@ function LeaderSaleKpiTargetDialog({
         <DialogHeader>
           <DialogTitle>{form.id ? "Sửa KPI Sale" : "Tạo KPI Sale"}</DialogTitle>
         </DialogHeader>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="md:col-span-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Loại KPI / Đối tượng
+            </p>
+          </div>
           <SaleKpiField label="Phạm vi">
             <Select
               value={form.scope}
@@ -1337,52 +1465,147 @@ function LeaderSaleKpiTargetDialog({
             </SaleKpiField>
           ) : null}
 
+          <div className="border-t pt-4 md:col-span-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Kỳ KPI
+            </p>
+          </div>
           <SaleKpiField label="Kỳ">
             <Select
-              value={form.periodType}
-              onValueChange={(value) => {
-                if (isSaleKpiPeriod(value)) onChange({ ...form, periodType: value });
-              }}
+              value={form.periodMode}
+              onValueChange={(value) => updatePeriod({ periodMode: value as KpiPeriodMode })}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="day">Ngày</SelectItem>
-                <SelectItem value="week">Tuần</SelectItem>
+                <SelectItem value="year">Năm</SelectItem>
+                <SelectItem value="quarter">Quý</SelectItem>
                 <SelectItem value="month">Tháng</SelectItem>
+                <SelectItem value="week">Tuần</SelectItem>
               </SelectContent>
             </Select>
           </SaleKpiField>
 
-          <SaleKpiField label="Từ ngày">
-            <Input
-              type="date"
-              value={form.periodStart}
-              onChange={(event) => onChange({ ...form, periodStart: event.target.value })}
-            />
+          <SaleKpiField label="Năm">
+            <Select
+              value={form.periodYear}
+              onValueChange={(value) => updatePeriod({ periodYear: value })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {yearOptions.map((year) => (
+                  <SelectItem key={year} value={String(year)}>
+                    {year}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </SaleKpiField>
-          <SaleKpiField label="Đến ngày">
-            <Input
-              type="date"
-              value={form.periodEnd}
-              onChange={(event) => onChange({ ...form, periodEnd: event.target.value })}
-            />
-          </SaleKpiField>
-          <SaleKpiField label="Target tỉ lệ chốt (%)">
-            <Input
-              value={form.closeRateTarget}
-              inputMode="decimal"
-              onChange={(event) => setNumber("closeRateTarget", event.target.value, true)}
-            />
-          </SaleKpiField>
-          <SaleKpiField label="Target trung bình đơn">
-            <Input
-              value={form.averageOrderTarget}
-              inputMode="numeric"
-              onChange={(event) => setNumber("averageOrderTarget", event.target.value)}
-            />
-          </SaleKpiField>
+          {form.periodMode === "quarter" && (
+            <SaleKpiField label="Quý">
+              <Select
+                value={form.periodQuarter}
+                onValueChange={(value) => updatePeriod({ periodQuarter: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3, 4].map((quarter) => (
+                    <SelectItem key={quarter} value={String(quarter)}>
+                      Quý {quarter}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </SaleKpiField>
+          )}
+          {(form.periodMode === "month" || form.periodMode === "week") && (
+            <SaleKpiField label="Tháng">
+              <Select
+                value={form.periodMonth}
+                onValueChange={(value) => updatePeriod({ periodMonth: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
+                    <SelectItem key={month} value={String(month)}>
+                      Tháng {month}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </SaleKpiField>
+          )}
+          <div className="rounded-xl border bg-muted/30 px-3 py-2 text-sm text-muted-foreground md:col-span-2">
+            Kỳ áp dụng: {formatShortDate(form.periodStart)} - {formatShortDate(form.periodEnd)}
+          </div>
+          <div className="border-t pt-4 md:col-span-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Chỉ số KPI
+            </p>
+          </div>
+          {form.periodMode === "week" ? (
+            <div className="grid gap-3 md:col-span-2 md:grid-cols-2">
+              {weeklySegments.map((week) => (
+                <div key={week.index} className="grid gap-2 rounded-xl border p-3">
+                  <p className="text-sm font-semibold">
+                    {week.label} ({formatShortDate(week.from)} - {formatShortDate(week.to)})
+                  </p>
+                  <Input
+                    value={form.weeklyCloseRateTargets[week.index] ?? ""}
+                    inputMode="decimal"
+                    placeholder="Tỉ lệ chốt (%)"
+                    onChange={(event) =>
+                      onChange({
+                        ...form,
+                        weeklyCloseRateTargets: {
+                          ...form.weeklyCloseRateTargets,
+                          [week.index]: event.target.value.replace(/[^\d.]/g, ""),
+                        },
+                      })
+                    }
+                  />
+                  <Input
+                    value={form.weeklyAverageOrderTargets[week.index] ?? ""}
+                    inputMode="numeric"
+                    placeholder="Trung bình đơn"
+                    onChange={(event) =>
+                      onChange({
+                        ...form,
+                        weeklyAverageOrderTargets: {
+                          ...form.weeklyAverageOrderTargets,
+                          [week.index]: event.target.value.replace(/[^\d]/g, ""),
+                        },
+                      })
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <>
+              <SaleKpiField label="Target tỉ lệ chốt (%)">
+                <Input
+                  value={form.closeRateTarget}
+                  inputMode="decimal"
+                  onChange={(event) => setNumber("closeRateTarget", event.target.value, true)}
+                />
+              </SaleKpiField>
+              <SaleKpiField label="Target trung bình đơn">
+                <Input
+                  value={form.averageOrderTarget}
+                  inputMode="numeric"
+                  onChange={(event) => setNumber("averageOrderTarget", event.target.value)}
+                />
+              </SaleKpiField>
+            </>
+          )}
         </div>
         <DialogFooter>
           <Button onClick={onSave} disabled={isSaving}>
@@ -2356,6 +2579,8 @@ type AggregatedSaleTeamReportRow = {
   hasReports: boolean;
   newDataReceived: number;
   newDataClosed: number;
+  newDataReachCount: number;
+  newDataZaloFriendCount: number;
   floatingDataReceived: number;
   floatingDataClosed: number;
   newCustomerRevenue: number;
@@ -2385,6 +2610,14 @@ function aggregateSaleReportsByUser(
       ),
       newDataClosed: memberReports.reduce(
         (sum, report) => sum + Number(report.new_data_closed ?? 0),
+        0,
+      ),
+      newDataReachCount: memberReports.reduce(
+        (sum, report) => sum + Number(report.new_data_reach_count ?? 0),
+        0,
+      ),
+      newDataZaloFriendCount: memberReports.reduce(
+        (sum, report) => sum + Number(report.new_data_zalo_friend_count ?? 0),
         0,
       ),
       floatingDataReceived: memberReports.reduce(
@@ -2961,39 +3194,114 @@ async function upsertLeaderSaleKpiTarget(
   profileId: string,
 ) {
   if (!teamData) throw new Error("Không có dữ liệu team Sale.");
+  const periodForm = withLeaderSaleKpiPeriodRange(form, {});
   const teamIds = new Set(teamData.teams.map((team) => team.id));
   const memberIds = new Set(getLeaderSaleTeamMemberIds(teamData));
-  if (form.scope === "team" && !form.teamId) throw new Error("Chọn team Sale.");
-  if (form.scope === "user" && !form.userId) throw new Error("Chọn nhân viên Sale.");
-  if (!form.periodStart || !form.periodEnd) throw new Error("Chọn kỳ KPI.");
-  if (form.teamId && !teamIds.has(form.teamId)) {
+  if (periodForm.scope === "team" && !periodForm.teamId) throw new Error("Chọn team Sale.");
+  if (periodForm.scope === "user" && !periodForm.userId) throw new Error("Chọn nhân viên Sale.");
+  if (periodForm.teamId && !teamIds.has(periodForm.teamId)) {
     throw new Error("Leader Sale chỉ được tạo KPI trong team mình phụ trách.");
   }
-  if (form.scope === "user" && !memberIds.has(form.userId)) {
+  if (periodForm.scope === "user" && !memberIds.has(periodForm.userId)) {
     throw new Error("Chỉ được tạo KPI cho nhân viên Sale active trong team.");
   }
 
-  const payload: TablesInsert<"sale_kpi_targets"> = {
-    team_id: form.teamId || null,
-    user_id: form.scope === "user" ? form.userId : null,
-    period_type: form.periodType,
-    period_start: form.periodStart,
-    period_end: form.periodEnd,
+  const buildPayload = (
+    periodStart = periodForm.periodStart,
+    periodEnd = periodForm.periodEnd,
+    periodType = periodForm.periodType,
+    closeRate = Number(periodForm.closeRateTarget || 0),
+    averageOrder = Number(periodForm.averageOrderTarget || 0),
+  ): TablesInsert<"sale_kpi_targets"> => ({
+    team_id: periodForm.teamId || null,
+    user_id: periodForm.scope === "user" ? periodForm.userId : null,
+    period_type: periodType,
+    period_start: periodStart,
+    period_end: periodEnd,
     revenue_target: 0,
     orders_target: 0,
-    close_rate_target: Number(form.closeRateTarget || 0),
-    average_order_target: Number(form.averageOrderTarget || 0),
+    close_rate_target: closeRate,
+    average_order_target: averageOrder,
     note: null,
     created_by: profileId || null,
-  };
+  });
+
+  if (form.id && periodForm.periodMode === "week") {
+    const monthRange = getKpiMonthRange(
+      Number(periodForm.periodYear),
+      Number(periodForm.periodMonth),
+    );
+    let query = supabase
+      .from("sale_kpi_targets")
+      .select("*")
+      .eq("period_type", "week")
+      .gte("period_start", monthRange.from)
+      .lte("period_end", monthRange.to);
+    if (periodForm.scope === "user") {
+      query = query.eq("user_id", periodForm.userId);
+    } else {
+      query = query.is("user_id", null).eq("team_id", periodForm.teamId);
+    }
+    const { data: existingTargets, error: existingError } = await query;
+    if (existingError) throw existingError;
+    const existingByWeek = new Map(
+      ((existingTargets ?? []) as SaleKpiTargetRow[])
+        .map((target) => {
+          const weekIndex = getLeaderSaleKpiWeekIndex(target);
+          return weekIndex ? ([weekIndex, target] as const) : null;
+        })
+        .filter((target): target is readonly [number, SaleKpiTargetRow] => !!target),
+    );
+    for (const week of getKpiWeekSegments(
+      Number(periodForm.periodYear),
+      Number(periodForm.periodMonth),
+    )) {
+      const closeRate = Number(periodForm.weeklyCloseRateTargets[week.index] || 0);
+      const averageOrder = Number(periodForm.weeklyAverageOrderTargets[week.index] || 0);
+      const existing = existingByWeek.get(week.index);
+      if (existing) {
+        const { error } = await supabase
+          .from("sale_kpi_targets")
+          .update(buildPayload(week.from, week.to, "week", closeRate, averageOrder))
+          .eq("id", existing.id);
+        if (error) throw error;
+      } else if (closeRate > 0 || averageOrder > 0) {
+        const { error } = await supabase
+          .from("sale_kpi_targets")
+          .insert(buildPayload(week.from, week.to, "week", closeRate, averageOrder));
+        if (error) throw error;
+      }
+    }
+    return;
+  }
 
   if (form.id) {
-    const { error } = await supabase.from("sale_kpi_targets").update(payload).eq("id", form.id);
+    const { error } = await supabase
+      .from("sale_kpi_targets")
+      .update(buildPayload())
+      .eq("id", form.id);
     if (error) throw error;
     return;
   }
 
-  const { error } = await supabase.from("sale_kpi_targets").insert(payload);
+  if (periodForm.periodMode === "week") {
+    const rows = getKpiWeekSegments(Number(periodForm.periodYear), Number(periodForm.periodMonth))
+      .map((week) => ({
+        week,
+        closeRate: Number(periodForm.weeklyCloseRateTargets[week.index] || 0),
+        averageOrder: Number(periodForm.weeklyAverageOrderTargets[week.index] || 0),
+      }))
+      .filter((row) => row.closeRate > 0 || row.averageOrder > 0)
+      .map(({ week, closeRate, averageOrder }) =>
+        buildPayload(week.from, week.to, "week", closeRate, averageOrder),
+      );
+    if (!rows.length) throw new Error("Nhập KPI cho ít nhất một tuần.");
+    const { error } = await supabase.from("sale_kpi_targets").insert(rows);
+    if (error) throw error;
+    return;
+  }
+
+  const { error } = await supabase.from("sale_kpi_targets").insert(buildPayload());
   if (error) throw error;
 }
 
@@ -3322,8 +3630,10 @@ function SaleTrendCard({
 function DataOverviewCard({ summary }: { summary: ReturnType<typeof summarizeSaleReports> }) {
   const rows = [
     ["Data mới nhận", summary.newDataReceived],
-    ["Data thả nổi nhận", summary.floatingDataReceived],
     ["Data mới chốt", summary.newDataClosed],
+    ["DATA mới tiếp cận", summary.newDataReachCount],
+    ["DATA mới kết bạn ZL", summary.newDataZaloFriendCount],
+    ["Data thả nổi nhận", summary.floatingDataReceived],
     ["Data thả nổi chốt", summary.floatingDataClosed],
     ["Số DATA khách gọi video", summary.videoCallDataCount],
     ["Số DATA khách cũ gọi", summary.oldCustomerCallCount],

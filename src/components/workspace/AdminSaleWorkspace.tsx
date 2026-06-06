@@ -51,6 +51,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import type { Enums, Tables, TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
 import { initialDateRange, normalizeDateRange, type DateRangeValue } from "@/lib/dateRange";
+import {
+  getCurrentKpiPeriodSelection,
+  getDbPeriodTypeFromMode,
+  getKpiMonthRange,
+  getKpiPeriodRange,
+  getKpiWeekSegments,
+  getKpiYearOptions,
+  inferKpiPeriodSelection,
+  type KpiPeriodMode,
+} from "@/lib/kpiPeriod";
 import { formatKpiMetricValue, metricProgress, saleMetrics } from "@/lib/kpiMetrics";
 import { MARKETING_ROLES, SALE_ROLES, type AppRole } from "@/lib/roles";
 import {
@@ -68,6 +78,7 @@ import {
   formatSalePercent,
   formatSaleRatioCurrency,
   formatSaleVnd,
+  type SaleReportSlotId,
 } from "@/lib/saleReportUtils";
 import {
   getSaleReportOldCustomerCallCount,
@@ -96,6 +107,12 @@ type SaleKpiForm = {
   periodType: SaleKpiPeriod;
   periodStart: string;
   periodEnd: string;
+  periodMode: KpiPeriodMode;
+  periodYear: string;
+  periodQuarter: string;
+  periodMonth: string;
+  weeklyCloseRateTargets: Record<number, string>;
+  weeklyAverageOrderTargets: Record<number, string>;
   closeRateTarget: string;
   averageOrderTarget: string;
 };
@@ -134,23 +151,108 @@ type AdminLeadEditForm = {
 
 const COMPANY_SCOPE_VALUE = "__company__";
 
-function createSaleKpiForm(target?: SaleKpiTarget): SaleKpiForm {
-  const range = initialDateRange("month");
+function saleKpiScopeMatches(a: SaleKpiTarget, b: SaleKpiTarget) {
+  return (a.user_id ?? "") === (b.user_id ?? "") && (a.team_id ?? "") === (b.team_id ?? "");
+}
+
+function getSaleKpiWeekIndex(target: SaleKpiTarget) {
+  const selection = inferKpiPeriodSelection(
+    target.period_start,
+    target.period_end,
+    target.period_type,
+  );
+  if (selection.mode !== "week") return null;
+  const week = getKpiWeekSegments(selection.year, selection.month).find(
+    (segment) => segment.from === target.period_start && segment.to === target.period_end,
+  );
+  return week?.index ?? null;
+}
+
+function getRelatedWeeklySaleKpis(target: SaleKpiTarget, allTargets: SaleKpiTarget[]) {
+  const selection = inferKpiPeriodSelection(
+    target.period_start,
+    target.period_end,
+    target.period_type,
+  );
+  if (selection.mode !== "week") return [target];
+  const monthRange = getKpiMonthRange(selection.year, selection.month);
+  return allTargets.filter(
+    (row) =>
+      row.period_type === "week" &&
+      saleKpiScopeMatches(row, target) &&
+      row.period_start >= monthRange.from &&
+      row.period_end <= monthRange.to,
+  );
+}
+
+function createSaleKpiForm(
+  target?: SaleKpiTarget,
+  relatedTargets: SaleKpiTarget[] = [],
+): SaleKpiForm {
+  const selection = target
+    ? inferKpiPeriodSelection(target.period_start, target.period_end, target.period_type)
+    : getCurrentKpiPeriodSelection();
+  const range = target
+    ? { from: target.period_start, to: target.period_end }
+    : getKpiPeriodRange(selection);
+  const weeklyCloseTargets =
+    target && selection.mode === "week"
+      ? Object.fromEntries(
+          (relatedTargets.length ? relatedTargets : [target])
+            .map((row) => {
+              const weekIndex = getSaleKpiWeekIndex(row);
+              return weekIndex ? ([weekIndex, String(row.close_rate_target ?? "")] as const) : null;
+            })
+            .filter((row): row is readonly [number, string] => !!row),
+        )
+      : {};
+  const weeklyAverageTargets =
+    target && selection.mode === "week"
+      ? Object.fromEntries(
+          (relatedTargets.length ? relatedTargets : [target])
+            .map((row) => {
+              const weekIndex = getSaleKpiWeekIndex(row);
+              return weekIndex
+                ? ([weekIndex, String(row.average_order_target ?? "")] as const)
+                : null;
+            })
+            .filter((row): row is readonly [number, string] => !!row),
+        )
+      : {};
   return {
     id: target?.id,
     scope: target?.user_id ? "user" : "team",
     teamId: target?.team_id ?? "",
     userId: target?.user_id ?? "",
     periodType: target?.period_type ?? "month",
-    periodStart: target?.period_start ?? range.from,
-    periodEnd: target?.period_end ?? range.to,
+    periodStart: range.from,
+    periodEnd: range.to,
+    periodMode: selection.mode,
+    periodYear: String(selection.year),
+    periodQuarter: String(selection.quarter),
+    periodMonth: String(selection.month),
+    weeklyCloseRateTargets: weeklyCloseTargets,
+    weeklyAverageOrderTargets: weeklyAverageTargets,
     closeRateTarget: String(target?.close_rate_target ?? ""),
     averageOrderTarget: String(target?.average_order_target ?? ""),
   };
 }
 
-function isSaleKpiPeriod(value: string): value is SaleKpiPeriod {
-  return value === "day" || value === "week" || value === "month";
+function withSaleKpiPeriodRange(form: SaleKpiForm, patch: Partial<SaleKpiForm>): SaleKpiForm {
+  const next = { ...form, ...patch };
+  const selection = {
+    mode: next.periodMode,
+    year: Number(next.periodYear) || new Date().getFullYear(),
+    quarter: Number(next.periodQuarter) || 1,
+    month: Number(next.periodMonth) || 1,
+  };
+  const range = getKpiPeriodRange(selection);
+  return {
+    ...next,
+    periodType: getDbPeriodTypeFromMode(selection.mode),
+    periodStart: range.from,
+    periodEnd: range.to,
+  };
 }
 
 export function AdminMarketingSaleTabs({
@@ -363,10 +465,56 @@ export function AdminSaleOverview() {
   );
 }
 
+function getSaleReportSlotRank(row: SaleReportRow) {
+  const slotIndex = saleReportSlots.findIndex((slot) => slot.id === row.slot_key);
+  if (slotIndex >= 0) return slotIndex;
+
+  const timeIndex = saleReportSlots.findIndex((slot) => slot.time === row.slot_time);
+  return timeIndex >= 0 ? timeIndex : -1;
+}
+
+function getSaleReportUpdatedAtMs(row: SaleReportRow) {
+  return new Date(
+    row.updated_at ?? row.submitted_at ?? row.created_at ?? row.report_date,
+  ).getTime();
+}
+
+function compareSaleReportRecency(a: SaleReportRow, b: SaleReportRow) {
+  const dateDiff = a.report_date.localeCompare(b.report_date);
+  if (dateDiff !== 0) return dateDiff;
+
+  const slotDiff = getSaleReportSlotRank(a) - getSaleReportSlotRank(b);
+  if (slotDiff !== 0) return slotDiff;
+
+  return getSaleReportUpdatedAtMs(a) - getSaleReportUpdatedAtMs(b);
+}
+
+function pickLatestSaleReportByUser(reports: SaleReportRow[]) {
+  const latestByUserId = new Map<string, SaleReportRow>();
+
+  for (const report of reports) {
+    const current = latestByUserId.get(report.user_id);
+    if (!current || compareSaleReportRecency(report, current) > 0) {
+      latestByUserId.set(report.user_id, report);
+    }
+  }
+
+  return Array.from(latestByUserId.values()).sort((a, b) => {
+    const dateDiff = b.report_date.localeCompare(a.report_date);
+    if (dateDiff !== 0) return dateDiff;
+
+    const slotDiff = getSaleReportSlotRank(b) - getSaleReportSlotRank(a);
+    if (slotDiff !== 0) return slotDiff;
+
+    return getSaleReportUpdatedAtMs(b) - getSaleReportUpdatedAtMs(a);
+  });
+}
+
 export function AdminSaleReports() {
   const [range, setRange] = useState<DateRangeValue>(() => initialDateRange("today"));
   const [saleId, setSaleId] = useState("all");
   const [status, setStatus] = useState("all");
+  const [slotFilter, setSlotFilter] = useState<"all" | SaleReportSlotId>("all");
   const normalizedRange = normalizeDateRange(range);
   const { data, isLoading } = useQuery({
     queryKey: ["admin-sale-reports", normalizedRange.from, normalizedRange.to, saleId, status],
@@ -379,15 +527,16 @@ export function AdminSaleReports() {
     },
   });
 
-  const visibleReports = useMemo(
-    () =>
-      (data?.reports ?? []).filter((row) => {
-        if (saleId !== "all" && row.user_id !== saleId) return false;
-        if (status !== "all" && row.status !== status) return false;
-        return true;
-      }),
-    [data?.reports, saleId, status],
-  );
+  const visibleReports = useMemo(() => {
+    const filteredReports = (data?.reports ?? []).filter((row) => {
+      if (saleId !== "all" && row.user_id !== saleId) return false;
+      if (status !== "all" && row.status !== status) return false;
+      if (slotFilter !== "all" && row.slot_key !== slotFilter) return false;
+      return true;
+    });
+
+    return pickLatestSaleReportByUser(filteredReports);
+  }, [data?.reports, saleId, status, slotFilter]);
   const profileMap = useMemo(
     () => new Map((data?.sales ?? []).map((sale) => [sale.id, sale])),
     [data?.sales],
@@ -415,6 +564,18 @@ export function AdminSaleReports() {
               <SelectItem value="all">Tất cả</SelectItem>
               <SelectItem value="submitted">Đã gửi</SelectItem>
               <SelectItem value="draft">Nháp</SelectItem>
+            </CompactSelect>
+            <CompactSelect
+              value={slotFilter}
+              onValueChange={(value) => setSlotFilter(value as "all" | SaleReportSlotId)}
+              label="Khung báo cáo"
+            >
+              <SelectItem value="all">Tất cả khung</SelectItem>
+              {saleReportSlots.map((slot) => (
+                <SelectItem key={slot.id} value={slot.id}>
+                  {slot.time}
+                </SelectItem>
+              ))}
             </CompactSelect>
           </div>
         }
@@ -454,9 +615,10 @@ export function AdminSaleReports() {
                       "Ngày",
                       "Khung",
                       "Sale",
-                      "Trạng thái",
                       "Data mới nhận",
                       "Data mới chốt",
+                      "DATA mới tiếp cận",
+                      "DATA mới kết bạn ZL",
                       "Data nổi nhận",
                       "Data nổi chốt",
                       "DS khách mới",
@@ -482,17 +644,20 @@ export function AdminSaleReports() {
                           {formatDate(row.report_date)}
                         </td>
                         <td className="px-3 py-3">
-                          {saleReportSlots.find((slot) => slot.id === row.slot_key)?.tableLabel ??
+                          {saleReportSlots.find((slot) => slot.id === row.slot_key)?.time ??
                             row.slot_time}
                         </td>
                         <td className="px-3 py-3 font-semibold">
                           {displayProfileName(profileMap.get(row.user_id))}
                         </td>
-                        <td className="px-3 py-3">
-                          {row.status === "submitted" ? "Đã gửi" : "Nháp"}
-                        </td>
                         <td className="px-3 py-3">{formatSaleInteger(row.new_data_received)}</td>
                         <td className="px-3 py-3">{formatSaleInteger(row.new_data_closed)}</td>
+                        <td className="px-3 py-3">
+                          {formatSaleInteger(Number(row.new_data_reach_count ?? 0))}
+                        </td>
+                        <td className="px-3 py-3">
+                          {formatSaleInteger(Number(row.new_data_zalo_friend_count ?? 0))}
+                        </td>
                         <td className="px-3 py-3">
                           {formatSaleInteger(row.floating_data_received)}
                         </td>
@@ -521,7 +686,7 @@ export function AdminSaleReports() {
                       </tr>
                     );
                   })}
-                  {!visibleReports.length && <EmptyTableRow colSpan={15} />}
+                  {!visibleReports.length && <EmptyTableRow colSpan={16} />}
                 </tbody>
               </table>
             </CardContent>
@@ -604,7 +769,7 @@ export function AdminSaleKpi() {
   };
 
   const openEdit = (target: SaleKpiTarget) => {
-    setForm(createSaleKpiForm(target));
+    setForm(createSaleKpiForm(target, getRelatedWeeklySaleKpis(target, data?.targets ?? [])));
     setFormOpen(true);
   };
 
@@ -831,6 +996,10 @@ function SaleKpiTargetDialog({
     }
     return map;
   }, [memberships]);
+  const yearOptions = getKpiYearOptions();
+  const weeklySegments = getKpiWeekSegments(Number(form.periodYear), Number(form.periodMonth));
+  const updatePeriod = (patch: Partial<SaleKpiForm>) =>
+    onChange(withSaleKpiPeriodRange(form, patch));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -838,7 +1007,12 @@ function SaleKpiTargetDialog({
         <DialogHeader>
           <DialogTitle>{form.id ? "Sửa KPI Sale" : "Tạo KPI Sale"}</DialogTitle>
         </DialogHeader>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="md:col-span-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Loại KPI / Đối tượng
+            </p>
+          </div>
           <Field label="Phạm vi">
             <Select
               value={form.scope}
@@ -902,49 +1076,142 @@ function SaleKpiTargetDialog({
               </Select>
             </Field>
           )}
+          <div className="border-t pt-4 md:col-span-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Kỳ KPI
+            </p>
+          </div>
           <Field label="Kỳ">
             <Select
-              value={form.periodType}
-              onValueChange={(value) => {
-                if (isSaleKpiPeriod(value)) onChange({ ...form, periodType: value });
-              }}
+              value={form.periodMode}
+              onValueChange={(value) => updatePeriod({ periodMode: value as KpiPeriodMode })}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="day">Ngày</SelectItem>
-                <SelectItem value="week">Tuần</SelectItem>
+                <SelectItem value="year">Năm</SelectItem>
+                <SelectItem value="quarter">Quý</SelectItem>
                 <SelectItem value="month">Tháng</SelectItem>
+                <SelectItem value="week">Tuần</SelectItem>
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Từ ngày">
-            <Input
-              type="date"
-              value={form.periodStart}
-              onChange={(event) => onChange({ ...form, periodStart: event.target.value })}
-            />
+          <Field label="Năm">
+            <Select
+              value={form.periodYear}
+              onValueChange={(value) => updatePeriod({ periodYear: value })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {yearOptions.map((year) => (
+                  <SelectItem key={year} value={String(year)}>
+                    {year}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
-          <Field label="Đến ngày">
-            <Input
-              type="date"
-              value={form.periodEnd}
-              onChange={(event) => onChange({ ...form, periodEnd: event.target.value })}
-            />
-          </Field>
-          <Field label="Target tỉ lệ chốt (%)">
-            <Input
-              value={form.closeRateTarget}
-              onChange={(event) => setNumber("closeRateTarget", event.target.value, true)}
-            />
-          </Field>
-          <Field label="Target trung bình đơn">
-            <Input
-              value={form.averageOrderTarget}
-              onChange={(event) => setNumber("averageOrderTarget", event.target.value)}
-            />
-          </Field>
+          {form.periodMode === "quarter" && (
+            <Field label="Quý">
+              <Select
+                value={form.periodQuarter}
+                onValueChange={(value) => updatePeriod({ periodQuarter: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3, 4].map((quarter) => (
+                    <SelectItem key={quarter} value={String(quarter)}>
+                      Quý {quarter}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
+          {(form.periodMode === "month" || form.periodMode === "week") && (
+            <Field label="Tháng">
+              <Select
+                value={form.periodMonth}
+                onValueChange={(value) => updatePeriod({ periodMonth: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
+                    <SelectItem key={month} value={String(month)}>
+                      Tháng {month}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
+          <div className="rounded-xl border bg-muted/30 px-3 py-2 text-sm text-muted-foreground md:col-span-2">
+            Kỳ áp dụng: {formatDateShort(form.periodStart)} - {formatDateShort(form.periodEnd)}
+          </div>
+          <div className="border-t pt-4 md:col-span-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Chỉ số KPI
+            </p>
+          </div>
+          {form.periodMode === "week" ? (
+            <div className="grid gap-3 md:col-span-2 md:grid-cols-2">
+              {weeklySegments.map((week) => (
+                <div key={week.index} className="grid gap-2 rounded-xl border p-3">
+                  <p className="text-sm font-semibold">
+                    {week.label} ({formatDateShort(week.from)} - {formatDateShort(week.to)})
+                  </p>
+                  <Input
+                    value={form.weeklyCloseRateTargets[week.index] ?? ""}
+                    placeholder="Tỉ lệ chốt (%)"
+                    onChange={(event) =>
+                      onChange({
+                        ...form,
+                        weeklyCloseRateTargets: {
+                          ...form.weeklyCloseRateTargets,
+                          [week.index]: event.target.value.replace(/[^\d.]/g, ""),
+                        },
+                      })
+                    }
+                  />
+                  <Input
+                    value={form.weeklyAverageOrderTargets[week.index] ?? ""}
+                    placeholder="Trung bình đơn"
+                    onChange={(event) =>
+                      onChange({
+                        ...form,
+                        weeklyAverageOrderTargets: {
+                          ...form.weeklyAverageOrderTargets,
+                          [week.index]: event.target.value.replace(/[^\d]/g, ""),
+                        },
+                      })
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <>
+              <Field label="Target tỉ lệ chốt (%)">
+                <Input
+                  value={form.closeRateTarget}
+                  onChange={(event) => setNumber("closeRateTarget", event.target.value, true)}
+                />
+              </Field>
+              <Field label="Target trung bình đơn">
+                <Input
+                  value={form.averageOrderTarget}
+                  onChange={(event) => setNumber("averageOrderTarget", event.target.value)}
+                />
+              </Field>
+            </>
+          )}
         </div>
         <DialogFooter>
           <Button onClick={onSave} disabled={isSaving}>
@@ -1789,29 +2056,108 @@ async function fetchSaleKpiTargets(from: string, to: string) {
 }
 
 async function upsertSaleKpiTarget(form: SaleKpiForm) {
-  if (form.scope === "team" && !form.teamId) throw new Error("Chọn phạm vi KPI Sale");
-  if (form.scope === "user" && !form.userId) throw new Error("Chọn nhân viên Sale");
-  if (!form.periodStart || !form.periodEnd) throw new Error("Chọn kỳ KPI");
+  const periodForm = withSaleKpiPeriodRange(form, {});
+  if (periodForm.scope === "team" && !periodForm.teamId) throw new Error("Chọn phạm vi KPI Sale");
+  if (periodForm.scope === "user" && !periodForm.userId) throw new Error("Chọn nhân viên Sale");
 
-  const payload: TablesInsert<"sale_kpi_targets"> = {
+  const buildPayload = (
+    periodStart = periodForm.periodStart,
+    periodEnd = periodForm.periodEnd,
+    periodType = periodForm.periodType,
+    closeRate = Number(periodForm.closeRateTarget || 0),
+    averageOrder = Number(periodForm.averageOrderTarget || 0),
+  ): TablesInsert<"sale_kpi_targets"> => ({
     team_id: form.teamId === COMPANY_SCOPE_VALUE ? null : form.teamId || null,
     user_id: form.scope === "user" ? form.userId : null,
-    period_type: form.periodType,
-    period_start: form.periodStart,
-    period_end: form.periodEnd,
+    period_type: periodType,
+    period_start: periodStart,
+    period_end: periodEnd,
     revenue_target: 0,
     orders_target: 0,
-    close_rate_target: Number(form.closeRateTarget || 0),
-    average_order_target: Number(form.averageOrderTarget || 0),
+    close_rate_target: closeRate,
+    average_order_target: averageOrder,
     note: null,
-  };
+  });
+
+  if (form.id && periodForm.periodMode === "week") {
+    const monthRange = getKpiMonthRange(
+      Number(periodForm.periodYear),
+      Number(periodForm.periodMonth),
+    );
+    let query = supabase
+      .from("sale_kpi_targets")
+      .select("*")
+      .eq("period_type", "week")
+      .gte("period_start", monthRange.from)
+      .lte("period_end", monthRange.to);
+    if (periodForm.scope === "user") {
+      query = query.eq("user_id", periodForm.userId);
+    } else {
+      query = query.is("user_id", null);
+      if (periodForm.teamId === COMPANY_SCOPE_VALUE) {
+        query = query.is("team_id", null);
+      } else {
+        query = query.eq("team_id", periodForm.teamId);
+      }
+    }
+    const { data: existingTargets, error: existingError } = await query;
+    if (existingError) throw existingError;
+    const existingByWeek = new Map(
+      ((existingTargets ?? []) as SaleKpiTarget[])
+        .map((target) => {
+          const weekIndex = getSaleKpiWeekIndex(target);
+          return weekIndex ? ([weekIndex, target] as const) : null;
+        })
+        .filter((target): target is readonly [number, SaleKpiTarget] => !!target),
+    );
+    for (const week of getKpiWeekSegments(
+      Number(periodForm.periodYear),
+      Number(periodForm.periodMonth),
+    )) {
+      const closeRate = Number(periodForm.weeklyCloseRateTargets[week.index] || 0);
+      const averageOrder = Number(periodForm.weeklyAverageOrderTargets[week.index] || 0);
+      const existing = existingByWeek.get(week.index);
+      if (existing) {
+        const { error } = await supabase
+          .from("sale_kpi_targets")
+          .update(buildPayload(week.from, week.to, "week", closeRate, averageOrder))
+          .eq("id", existing.id);
+        if (error) throw error;
+      } else if (closeRate > 0 || averageOrder > 0) {
+        const { error } = await supabase
+          .from("sale_kpi_targets")
+          .insert(buildPayload(week.from, week.to, "week", closeRate, averageOrder));
+        if (error) throw error;
+      }
+    }
+    return;
+  }
 
   if (form.id) {
-    const { error } = await supabase.from("sale_kpi_targets").update(payload).eq("id", form.id);
+    const { error } = await supabase
+      .from("sale_kpi_targets")
+      .update(buildPayload())
+      .eq("id", form.id);
     if (error) throw error;
     return;
   }
-  const { error } = await supabase.from("sale_kpi_targets").insert(payload);
+  if (periodForm.periodMode === "week") {
+    const rows = getKpiWeekSegments(Number(periodForm.periodYear), Number(periodForm.periodMonth))
+      .map((week) => ({
+        week,
+        closeRate: Number(periodForm.weeklyCloseRateTargets[week.index] || 0),
+        averageOrder: Number(periodForm.weeklyAverageOrderTargets[week.index] || 0),
+      }))
+      .filter((row) => row.closeRate > 0 || row.averageOrder > 0)
+      .map(({ week, closeRate, averageOrder }) =>
+        buildPayload(week.from, week.to, "week", closeRate, averageOrder),
+      );
+    if (!rows.length) throw new Error("Nhập KPI cho ít nhất một tuần");
+    const { error } = await supabase.from("sale_kpi_targets").insert(rows);
+    if (error) throw error;
+    return;
+  }
+  const { error } = await supabase.from("sale_kpi_targets").insert(buildPayload());
   if (error) throw error;
 }
 

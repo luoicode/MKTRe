@@ -24,6 +24,8 @@ export type SaleReportSummary = {
   floatingDataReceived: number;
   newDataClosed: number;
   floatingDataClosed: number;
+  newDataReachCount: number;
+  newDataZaloFriendCount: number;
   videoCallDataCount: number;
   oldCustomerCallCount: number;
 };
@@ -178,6 +180,8 @@ export function rowToSaleForm(row: SaleReportRow): SaleReportFormValues {
   return {
     newDataReceived: String(row.new_data_received ?? 0),
     newDataClosed: String(row.new_data_closed ?? 0),
+    newDataReachCount: String(row.new_data_reach_count ?? 0),
+    newDataZaloFriendCount: String(row.new_data_zalo_friend_count ?? 0),
     floatingDataReceived: String(row.floating_data_received ?? 0),
     floatingDataClosed: String(row.floating_data_closed ?? 0),
     newCustomerRevenue: String(row.new_customer_revenue ?? 0),
@@ -211,6 +215,8 @@ export function saleFormToPayload({
     slot_time: slot.time,
     new_data_received: parseSaleNumber(values.newDataReceived),
     new_data_closed: parseSaleNumber(values.newDataClosed),
+    new_data_reach_count: parseSaleNumber(values.newDataReachCount),
+    new_data_zalo_friend_count: parseSaleNumber(values.newDataZaloFriendCount),
     floating_data_received: parseSaleNumber(values.floatingDataReceived),
     floating_data_closed: parseSaleNumber(values.floatingDataClosed),
     new_customer_revenue: parseSaleNumber(values.newCustomerRevenue),
@@ -233,6 +239,8 @@ export function summarizeSaleReports(rows: SaleReportRow[]) {
   return summarizeSaleFormValues({
     newDataReceived: String(sumNumber(submittedRows, "new_data_received")),
     newDataClosed: String(sumNumber(submittedRows, "new_data_closed")),
+    newDataReachCount: String(sumNumber(submittedRows, "new_data_reach_count")),
+    newDataZaloFriendCount: String(sumNumber(submittedRows, "new_data_zalo_friend_count")),
     floatingDataReceived: String(sumNumber(submittedRows, "floating_data_received")),
     floatingDataClosed: String(sumNumber(submittedRows, "floating_data_closed")),
     newCustomerRevenue: String(sumNumber(submittedRows, "new_customer_revenue")),
@@ -249,6 +257,8 @@ export function summarizeSaleFormValues(values: SaleReportFormValues): SaleRepor
   const newDataReceived = parseSaleNumber(values.newDataReceived);
   const floatingDataReceived = parseSaleNumber(values.floatingDataReceived);
   const newDataClosed = parseSaleNumber(values.newDataClosed);
+  const newDataReachCount = parseSaleNumber(values.newDataReachCount);
+  const newDataZaloFriendCount = parseSaleNumber(values.newDataZaloFriendCount);
   const floatingDataClosed = parseSaleNumber(values.floatingDataClosed);
   const newCustomerRevenue = parseSaleNumber(values.newCustomerRevenue);
   const videoCallDataCount = parseSaleNumber(values.videoCallDataCount);
@@ -268,6 +278,8 @@ export function summarizeSaleFormValues(values: SaleReportFormValues): SaleRepor
     floatingDataReceived,
     newDataClosed,
     floatingDataClosed,
+    newDataReachCount,
+    newDataZaloFriendCount,
     videoCallDataCount,
     oldCustomerCallCount,
   };
