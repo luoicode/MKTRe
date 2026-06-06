@@ -95,38 +95,7 @@ interface BudgetFormState {
   invoiceLink: string;
 }
 
-const initialTransactions: BudgetTransaction[] = [
-  {
-    id: "budget-demo-1",
-    date: "2026-06-01",
-    receivedAmount: 10_000_000,
-    sender: "AKA",
-    adAccountId: "demo-account-1",
-    adAccountName: "INV_AKA_DASNOTRI_HUY_01",
-    spentAmount: 13_962_469,
-    bankFeePercent: 0,
-    serviceFeePercent: 4,
-    accountingUpdated: 13_962_469,
-    difference: 0,
-    invoiceLink: "https://example.com/HD240601001",
-    confirmed: true,
-  },
-  {
-    id: "budget-demo-2",
-    date: "2026-06-02",
-    receivedAmount: 10_000_000,
-    sender: "AKA",
-    adAccountId: "demo-account-1",
-    adAccountName: "INV_AKA_DASNOTRI_HUY_01",
-    spentAmount: 958_388,
-    bankFeePercent: 0,
-    serviceFeePercent: 4,
-    accountingUpdated: 958_388,
-    difference: 0,
-    invoiceLink: "https://example.com/HD240602002",
-    confirmed: true,
-  },
-];
+const initialTransactions: BudgetTransaction[] = [];
 
 const emptyForm: BudgetFormState = {
   date: toDateInputValue(new Date()),
@@ -149,6 +118,7 @@ function EmployeeBudgetPage() {
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<BudgetTransaction | null>(null);
   const [form, setForm] = useState<BudgetFormState>(emptyForm);
 
   const loadAdsAccounts = useCallback((showToast = false) => {
@@ -157,19 +127,6 @@ function EmployeeBudgetPage() {
       .then((data) => {
         setAdsAccounts(data.accounts);
         setActiveAccountId((current) => current || data.accounts[0]?.id || "");
-        if (data.accounts[0]) {
-          setTransactions((current) =>
-            current.map((item) =>
-              item.adAccountId === "demo-account-1"
-                ? {
-                    ...item,
-                    adAccountId: data.accounts[0].id,
-                    adAccountName: data.accounts[0].accountName,
-                  }
-                : item,
-            ),
-          );
-        }
         setForm((current) => ({
           ...current,
           adAccountId: current.adAccountId || data.accounts[0]?.id || "",
@@ -327,16 +284,16 @@ function EmployeeBudgetPage() {
     resetForm();
   };
 
-  const deleteTransaction = (transaction: BudgetTransaction) => {
-    const confirmed = window.confirm("Bạn có chắc muốn xoá giao dịch ngân sách này?");
-    if (!confirmed) return;
+  const confirmDeleteTransaction = () => {
+    if (!deleteTarget) return;
 
-    setTransactions((current) => current.filter((item) => item.id !== transaction.id));
-    if (editingTransactionId === transaction.id) {
+    setTransactions((current) => current.filter((item) => item.id !== deleteTarget.id));
+    if (editingTransactionId === deleteTarget.id) {
       setModalOpen(false);
       resetForm();
     }
-    toast.success("Đã xoá giao dịch ngân sách");
+    setDeleteTarget(null);
+    toast.success("Đã xoá giao dịch.");
   };
 
   return (
@@ -514,7 +471,7 @@ function EmployeeBudgetPage() {
                 {visibleTransactions.length === 0 ? (
                   <tr>
                     <td colSpan={11} className="px-4 py-10 text-center text-sm text-slate-500">
-                      Chưa có giao dịch ngân sách trong khoảng này.
+                      Chưa có giao dịch ngân sách.
                     </td>
                   </tr>
                 ) : (
@@ -596,7 +553,7 @@ function EmployeeBudgetPage() {
                             size="icon"
                             className="h-9 w-9 rounded-xl text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                             title="Xoá giao dịch"
-                            onClick={() => deleteTransaction(item)}
+                            onClick={() => setDeleteTarget(item)}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -715,6 +672,23 @@ function EmployeeBudgetPage() {
             </Button>
             <Button onClick={saveTransaction}>
               {editingTransactionId ? "Cập nhật giao dịch" : "Lưu giao dịch"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="max-w-[420px] rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>Xoá giao dịch</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-600">Bạn có chắc muốn xoá giao dịch này không?</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Huỷ
+            </Button>
+            <Button variant="destructive" onClick={confirmDeleteTransaction}>
+              Xoá
             </Button>
           </DialogFooter>
         </DialogContent>

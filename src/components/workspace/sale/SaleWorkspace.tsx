@@ -58,6 +58,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { UserAvatar } from "@/components/UserAvatar";
+import {
+  SaleReportPivotTable,
+  SaleReportViewModeToggle,
+  type SaleReportViewMode,
+} from "@/components/workspace/sale/SaleReportPivotTable";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables, TablesInsert } from "@/integrations/supabase/types";
@@ -87,7 +92,7 @@ import {
   summarizeSaleReportsBySlot,
   type SaleReportRow,
 } from "@/lib/saleReports";
-import { saleReportSlots } from "@/lib/saleReportUtils";
+import { saleReportSlots, type SaleReportSlotId } from "@/lib/saleReportUtils";
 import {
   claimFloatingLead,
   fetchSaleFloatingLeads,
@@ -563,8 +568,11 @@ function LeaderSaleTeamReportsWorkspace() {
   const { profile } = useAuth();
   const [range, setRange] = useState<DateRangeValue>(() => initialDateRange("today"));
   const [saleFilter, setSaleFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [slotFilter, setSlotFilter] = useState<"all" | SaleReportSlotId>("all");
+  const [viewMode, setViewMode] = useState<SaleReportViewMode>("horizontal");
   const normalizedRange = normalizeDateRange(range);
-  const { data, isLoading, isFetching, refetch } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["leader-sale-team-reports", profile?.id, normalizedRange.from, normalizedRange.to],
     enabled: !!profile?.id,
     queryFn: async () => {
@@ -579,188 +587,291 @@ function LeaderSaleTeamReportsWorkspace() {
   });
   const members = useMemo(() => data?.teamData.members ?? [], [data?.teamData.members]);
   const teamReports = useMemo(() => data?.reports ?? [], [data?.reports]);
-  const reportRows = useMemo(
-    () => aggregateSaleReportsByUser(members, teamReports),
-    [members, teamReports],
-  );
-  const visibleReportRows = useMemo(
-    () =>
-      reportRows.filter((row) => {
-        if (saleFilter !== "all" && row.userId !== saleFilter) return false;
-        return true;
-      }),
-    [reportRows, saleFilter],
-  );
-  const warningStats = useMemo(
-    () => buildTeamReportWarningStats(members, teamReports, normalizedRange.to),
-    [members, normalizedRange.to, teamReports],
-  );
+  const memberMap = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
+  const visibleReports = useMemo(() => {
+    const filteredReports = teamReports.filter((row) => {
+      if (saleFilter !== "all" && row.user_id !== saleFilter) return false;
+      if (statusFilter !== "all" && row.status !== statusFilter) return false;
+      if (slotFilter !== "all" && row.slot_key !== slotFilter) return false;
+      return true;
+    });
+
+    return pickLatestSaleReportByUser(filteredReports);
+  }, [saleFilter, slotFilter, statusFilter, teamReports]);
+  const summary = useMemo(() => summarizeSaleReports(visibleReports), [visibleReports]);
 
   return (
     <div className="space-y-4 pb-4">
       <WorkspacePageHeader
         icon={<ClipboardList className="h-5 w-5" />}
-        title="Báo cáo team Sale"
-        subtitle="Theo dõi hiệu suất Sale trong team bạn phụ trách"
+        title="Báo cáo Sale"
+        subtitle="Báo cáo Sale theo nhân viên, ngày và khung giờ"
         actions={
-          <>
+          <div className="flex flex-wrap items-end gap-2">
             <DateRangeFilter value={range} onChange={setRange} hideLabel />
-            <Select value={saleFilter} onValueChange={setSaleFilter}>
-              <SelectTrigger className="h-10 w-44 rounded-xl bg-white">
-                <SelectValue placeholder="Sale" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tất cả Sale</SelectItem>
-                {members.map((member) => (
-                  <SelectItem key={member.id} value={member.id}>
-                    {getLeaderSaleMemberName(member)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-10 gap-2 rounded-xl"
-              disabled={isFetching}
-              onClick={() => refetch()}
+            <LeaderSaleReportFilterSelect
+              value={saleFilter}
+              onValueChange={setSaleFilter}
+              label="Sale"
             >
-              <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
-              Tải lại
-            </Button>
-          </>
+              <SelectItem value="all">Tất cả Sale</SelectItem>
+              {members.map((member) => (
+                <SelectItem key={member.id} value={member.id}>
+                  {getLeaderSaleMemberName(member)}
+                </SelectItem>
+              ))}
+            </LeaderSaleReportFilterSelect>
+            <LeaderSaleReportFilterSelect
+              value={statusFilter}
+              onValueChange={setStatusFilter}
+              label="Trạng thái"
+            >
+              <SelectItem value="all">Tất cả</SelectItem>
+              <SelectItem value="submitted">Đã gửi</SelectItem>
+              <SelectItem value="draft">Nháp</SelectItem>
+            </LeaderSaleReportFilterSelect>
+            <LeaderSaleReportFilterSelect
+              value={slotFilter}
+              onValueChange={(value) => setSlotFilter(value as "all" | SaleReportSlotId)}
+              label="Khung báo cáo"
+            >
+              <SelectItem value="all">Tất cả khung</SelectItem>
+              {saleReportSlots.map((slot) => (
+                <SelectItem key={slot.id} value={slot.id}>
+                  {slot.time}
+                </SelectItem>
+              ))}
+            </LeaderSaleReportFilterSelect>
+            <SaleReportViewModeToggle value={viewMode} onChange={setViewMode} />
+          </div>
         }
       />
 
-      <div className="grid gap-3 md:grid-cols-3">
-        <TeamReportInsightCard
-          tone="amber"
-          icon={<AlertTriangle className="h-4 w-4" />}
-          value={warningStats.missingReports}
-          label="Sale chưa báo cáo hôm nay"
-        />
-        <TeamReportInsightCard
-          tone="orange"
-          icon={<ClipboardList className="h-4 w-4" />}
-          value={warningStats.incompleteReports}
-          label="Sale báo cáo thiếu dữ liệu"
-        />
-        <TeamReportInsightCard
-          tone="red"
-          icon={<AlertTriangle className="h-4 w-4" />}
-          value={warningStats.zeroRevenueWithData}
-          label="Sale có data nhưng doanh số bằng 0"
-        />
-      </div>
+      {isLoading ? (
+        <div className="flex min-h-64 items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-3 md:grid-cols-4">
+            <SaleReportMetric
+              title="Tổng doanh số"
+              value={formatMoney(summary.totalRevenue)}
+              tone="green"
+            />
+            <SaleReportMetric
+              title="Tỷ lệ chốt"
+              value={formatNullablePercent(summary.closeRate)}
+              tone="blue"
+            />
+            <SaleReportMetric title="Data nhận" value={formatInteger(summary.totalDataReceived)} />
+            <SaleReportMetric
+              title="TB đơn"
+              value={summary.averageOrder === null ? "—" : formatMoney(summary.averageOrder)}
+            />
+          </div>
 
-      <Card className="overflow-hidden rounded-2xl border-slate-200 shadow-sm">
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="flex min-h-64 items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : (
-            <div className="max-h-[68vh] overflow-auto">
-              <table className="w-full min-w-[1220px] text-sm">
-                <thead className="sticky top-0 z-10 border-b bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 shadow-sm">
-                  <tr>
-                    {[
-                      "Sale",
-                      "Data mới nhận",
-                      "Data mới chốt",
-                      "DATA mới tiếp cận",
-                      "DATA mới kết bạn ZL",
-                      "Data thả nổi nhận",
-                      "Data thả nổi chốt",
-                      "DS khách mới",
-                      "Số DATA khách gọi video",
-                      "DS thả nổi",
-                      "Số DATA khách cũ gọi",
-                      "Tổng DS",
-                      "Tỉ lệ chốt",
-                      "TB đơn",
-                    ].map((header, index) => (
-                      <th
-                        key={header}
-                        className={cn("px-3 py-3", index === 0 ? "text-left" : "text-right")}
-                      >
-                        {header}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleReportRows.map((row) => {
-                    return (
-                      <tr key={row.userId} className="border-t border-slate-100 hover:bg-slate-50">
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-3">
-                            <UserAvatar name={row.memberName} size={34} />
-                            <div className="min-w-0">
-                              <p className="truncate font-bold text-slate-900">{row.memberName}</p>
-                              <p className="truncate text-xs text-muted-foreground">
-                                {row.memberHandle}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          {formatReportInteger(row, row.newDataReceived)}
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          {formatReportInteger(row, row.newDataClosed)}
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          {formatReportInteger(row, row.newDataReachCount)}
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          {formatReportInteger(row, row.newDataZaloFriendCount)}
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          {formatReportInteger(row, row.floatingDataReceived)}
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          {formatReportInteger(row, row.floatingDataClosed)}
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          {formatReportMoney(row, row.newCustomerRevenue)}
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          {formatReportInteger(row, row.videoCallDataCount)}
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          {formatReportMoney(row, row.floatingRevenue)}
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          {formatReportInteger(row, row.oldCustomerCallCount)}
-                        </td>
-                        <td className="px-3 py-3 text-right font-bold">
-                          {formatReportMoney(row, row.totalRevenue)}
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          <CloseRateBadge value={row.closeRate} hasReports={row.hasReports} />
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          {row.hasReports && row.averageOrder ? formatMoney(row.averageOrder) : "—"}
+          <Card className="overflow-hidden rounded-2xl border-slate-200 shadow-sm">
+            <CardContent className="overflow-auto p-0">
+              {viewMode === "horizontal" ? (
+                <table className="w-full min-w-[1180px] text-sm">
+                  <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs uppercase text-muted-foreground">
+                    <tr>
+                      {[
+                        "Ngày",
+                        "Khung",
+                        "Sale",
+                        "Data mới nhận",
+                        "Data mới chốt",
+                        "DATA mới tiếp cận",
+                        "DATA mới kết bạn ZL",
+                        "Data thả nổi nhận",
+                        "Data thả nổi chốt",
+                        "DS khách mới",
+                        "Số DATA khách gọi video",
+                        "DS thả nổi",
+                        "Số DATA khách cũ gọi",
+                        "Tổng DS",
+                        "Tỷ lệ chốt",
+                        "TB đơn",
+                      ].map((header) => (
+                        <th key={header} className="px-3 py-3">
+                          {header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleReports.map((row) => {
+                      const member = memberMap.get(row.user_id);
+                      const rowSummary = summarizeSaleReports([row]);
+                      return (
+                        <tr key={row.id} className="border-t">
+                          <td className="whitespace-nowrap px-3 py-3">
+                            {formatVietnameseDate(row.report_date)}
+                          </td>
+                          <td className="px-3 py-3">
+                            {saleReportSlots.find((slot) => slot.id === row.slot_key)?.time ??
+                              row.slot_time}
+                          </td>
+                          <td className="px-3 py-3 font-semibold">
+                            {member ? getLeaderSaleMemberName(member) : "Sale"}
+                          </td>
+                          <td className="px-3 py-3">{formatInteger(row.new_data_received)}</td>
+                          <td className="px-3 py-3">{formatInteger(row.new_data_closed)}</td>
+                          <td className="px-3 py-3">
+                            {formatInteger(Number(row.new_data_reach_count ?? 0))}
+                          </td>
+                          <td className="px-3 py-3">
+                            {formatInteger(Number(row.new_data_zalo_friend_count ?? 0))}
+                          </td>
+                          <td className="px-3 py-3">{formatInteger(row.floating_data_received)}</td>
+                          <td className="px-3 py-3">{formatInteger(row.floating_data_closed)}</td>
+                          <td className="px-3 py-3">
+                            {formatMoney(Number(row.new_customer_revenue ?? 0))}
+                          </td>
+                          <td className="px-3 py-3">
+                            {formatInteger(Number(row.video_call_data_count ?? 0))}
+                          </td>
+                          <td className="px-3 py-3">
+                            {formatMoney(Number(row.floating_revenue ?? 0))}
+                          </td>
+                          <td className="px-3 py-3">
+                            {formatInteger(getSaleReportOldCustomerCallCount(row))}
+                          </td>
+                          <td className="px-3 py-3 font-semibold">
+                            {formatMoney(rowSummary.totalRevenue)}
+                          </td>
+                          <td className="px-3 py-3">
+                            {formatNullablePercent(rowSummary.closeRate)}
+                          </td>
+                          <td className="px-3 py-3">
+                            {rowSummary.averageOrder === null
+                              ? "—"
+                              : formatMoney(rowSummary.averageOrder)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {!visibleReports.length && (
+                      <tr>
+                        <td colSpan={16} className="px-4 py-10 text-center text-muted-foreground">
+                          Chưa có báo cáo team phù hợp bộ lọc.
                         </td>
                       </tr>
-                    );
-                  })}
-                  {!visibleReportRows.length && (
-                    <tr>
-                      <td colSpan={14} className="px-4 py-10 text-center text-muted-foreground">
-                        Chưa có báo cáo team phù hợp bộ lọc.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                    )}
+                  </tbody>
+                </table>
+              ) : (
+                <SaleReportPivotTable
+                  reports={visibleReports}
+                  getSaleName={(row) => {
+                    const member = memberMap.get(row.user_id);
+                    return member ? getLeaderSaleMemberName(member) : "Sale";
+                  }}
+                  formatDate={formatVietnameseDate}
+                  emptyMessage="Chưa có báo cáo team phù hợp bộ lọc."
+                />
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
+}
+
+function LeaderSaleReportFilterSelect({
+  value,
+  onValueChange,
+  label,
+  children,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="grid gap-1">
+      <span className="text-xs font-semibold text-muted-foreground">{label}</span>
+      <Select value={value} onValueChange={onValueChange}>
+        <SelectTrigger className="h-10 min-w-40 rounded-xl bg-white">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>{children}</SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function SaleReportMetric({
+  title,
+  value,
+  tone = "slate",
+}: {
+  title: string;
+  value: string;
+  tone?: "green" | "blue" | "slate";
+}) {
+  const toneClass = {
+    green: "text-emerald-700",
+    blue: "text-blue-700",
+    slate: "text-slate-950",
+  }[tone];
+  return (
+    <Card className="rounded-2xl">
+      <CardContent className="p-4">
+        <p className="text-sm font-semibold text-muted-foreground">{title}</p>
+        <p className={cn("mt-2 text-2xl font-black", toneClass)}>{value}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function getSaleReportSlotRank(row: SaleReportRow) {
+  const slotIndex = saleReportSlots.findIndex((slot) => slot.id === row.slot_key);
+  if (slotIndex >= 0) return slotIndex;
+
+  const timeIndex = saleReportSlots.findIndex((slot) => slot.time === row.slot_time);
+  return timeIndex >= 0 ? timeIndex : -1;
+}
+
+function getSaleReportUpdatedAtMs(row: SaleReportRow) {
+  return new Date(
+    row.updated_at ?? row.submitted_at ?? row.created_at ?? row.report_date,
+  ).getTime();
+}
+
+function compareSaleReportRecency(a: SaleReportRow, b: SaleReportRow) {
+  const dateDiff = a.report_date.localeCompare(b.report_date);
+  if (dateDiff !== 0) return dateDiff;
+
+  const slotDiff = getSaleReportSlotRank(a) - getSaleReportSlotRank(b);
+  if (slotDiff !== 0) return slotDiff;
+
+  return getSaleReportUpdatedAtMs(a) - getSaleReportUpdatedAtMs(b);
+}
+
+function pickLatestSaleReportByUser(reports: SaleReportRow[]) {
+  const latestByUserId = new Map<string, SaleReportRow>();
+
+  for (const report of reports) {
+    const current = latestByUserId.get(report.user_id);
+    if (!current || compareSaleReportRecency(report, current) > 0) {
+      latestByUserId.set(report.user_id, report);
+    }
+  }
+
+  return Array.from(latestByUserId.values()).sort((a, b) => {
+    const dateDiff = b.report_date.localeCompare(a.report_date);
+    if (dateDiff !== 0) return dateDiff;
+
+    const slotDiff = getSaleReportSlotRank(b) - getSaleReportSlotRank(a);
+    if (slotDiff !== 0) return slotDiff;
+
+    return getSaleReportUpdatedAtMs(b) - getSaleReportUpdatedAtMs(a);
+  });
 }
 
 function useSaleReportsRange(profileId: string | undefined, range: DateRangeValue) {

@@ -27,6 +27,11 @@ import { toast } from "sonner";
 import { DateRangeFilter } from "@/components/DateRangeFilter";
 import { TablePagination } from "@/components/TablePagination";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
+import {
+  SaleReportPivotTable,
+  SaleReportViewModeToggle,
+  type SaleReportViewMode,
+} from "@/components/workspace/sale/SaleReportPivotTable";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -515,6 +520,7 @@ export function AdminSaleReports() {
   const [saleId, setSaleId] = useState("all");
   const [status, setStatus] = useState("all");
   const [slotFilter, setSlotFilter] = useState<"all" | SaleReportSlotId>("all");
+  const [viewMode, setViewMode] = useState<SaleReportViewMode>("horizontal");
   const normalizedRange = normalizeDateRange(range);
   const { data, isLoading } = useQuery({
     queryKey: ["admin-sale-reports", normalizedRange.from, normalizedRange.to, saleId, status],
@@ -577,6 +583,7 @@ export function AdminSaleReports() {
                 </SelectItem>
               ))}
             </CompactSelect>
+            <SaleReportViewModeToggle value={viewMode} onChange={setViewMode} />
           </div>
         }
       />
@@ -608,87 +615,97 @@ export function AdminSaleReports() {
 
           <Card className="rounded-2xl">
             <CardContent className="overflow-auto p-0">
-              <table className="w-full min-w-[1180px] text-sm">
-                <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs uppercase text-muted-foreground">
-                  <tr>
-                    {[
-                      "Ngày",
-                      "Khung",
-                      "Sale",
-                      "Data mới nhận",
-                      "Data mới chốt",
-                      "DATA mới tiếp cận",
-                      "DATA mới kết bạn ZL",
-                      "Data nổi nhận",
-                      "Data nổi chốt",
-                      "DS khách mới",
-                      "Số DATA khách gọi video",
-                      "DS thả nổi",
-                      "Số DATA khách cũ gọi",
-                      "Tổng DS",
-                      "Tỷ lệ chốt",
-                      "TB đơn",
-                    ].map((header) => (
-                      <th key={header} className="px-3 py-3">
-                        {header}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleReports.map((row) => {
-                    const rowSummary = summarizeSaleReports([row]);
-                    return (
-                      <tr key={row.id} className="border-t">
-                        <td className="whitespace-nowrap px-3 py-3">
-                          {formatDate(row.report_date)}
-                        </td>
-                        <td className="px-3 py-3">
-                          {saleReportSlots.find((slot) => slot.id === row.slot_key)?.time ??
-                            row.slot_time}
-                        </td>
-                        <td className="px-3 py-3 font-semibold">
-                          {displayProfileName(profileMap.get(row.user_id))}
-                        </td>
-                        <td className="px-3 py-3">{formatSaleInteger(row.new_data_received)}</td>
-                        <td className="px-3 py-3">{formatSaleInteger(row.new_data_closed)}</td>
-                        <td className="px-3 py-3">
-                          {formatSaleInteger(Number(row.new_data_reach_count ?? 0))}
-                        </td>
-                        <td className="px-3 py-3">
-                          {formatSaleInteger(Number(row.new_data_zalo_friend_count ?? 0))}
-                        </td>
-                        <td className="px-3 py-3">
-                          {formatSaleInteger(row.floating_data_received)}
-                        </td>
-                        <td className="px-3 py-3">{formatSaleInteger(row.floating_data_closed)}</td>
-                        <td className="px-3 py-3">
-                          {formatSaleVnd(Number(row.new_customer_revenue ?? 0))}
-                        </td>
-                        <td className="px-3 py-3">
-                          {formatSaleInteger(Number(row.video_call_data_count ?? 0))}
-                        </td>
-                        <td className="px-3 py-3">
-                          {formatSaleVnd(Number(row.floating_revenue ?? 0))}
-                        </td>
-                        <td className="px-3 py-3">
-                          {formatSaleInteger(getSaleReportOldCustomerCallCount(row))}
-                        </td>
-                        <td className="px-3 py-3 font-semibold">
-                          {formatSaleVnd(rowSummary.totalRevenue)}
-                        </td>
-                        <td className="px-3 py-3">{formatSalePercent(rowSummary.closeRate)}</td>
-                        <td className="px-3 py-3">
-                          {rowSummary.averageOrder === null
-                            ? "—"
-                            : formatSaleVnd(rowSummary.averageOrder)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {!visibleReports.length && <EmptyTableRow colSpan={16} />}
-                </tbody>
-              </table>
+              {viewMode === "horizontal" ? (
+                <table className="w-full min-w-[1180px] text-sm">
+                  <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs uppercase text-muted-foreground">
+                    <tr>
+                      {[
+                        "Ngày",
+                        "Khung",
+                        "Sale",
+                        "Data mới nhận",
+                        "Data mới chốt",
+                        "DATA mới tiếp cận",
+                        "DATA mới kết bạn ZL",
+                        "Data nổi nhận",
+                        "Data nổi chốt",
+                        "DS khách mới",
+                        "Số DATA khách gọi video",
+                        "DS thả nổi",
+                        "Số DATA khách cũ gọi",
+                        "Tổng DS",
+                        "Tỷ lệ chốt",
+                        "TB đơn",
+                      ].map((header) => (
+                        <th key={header} className="px-3 py-3">
+                          {header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleReports.map((row) => {
+                      const rowSummary = summarizeSaleReports([row]);
+                      return (
+                        <tr key={row.id} className="border-t">
+                          <td className="whitespace-nowrap px-3 py-3">
+                            {formatDate(row.report_date)}
+                          </td>
+                          <td className="px-3 py-3">
+                            {saleReportSlots.find((slot) => slot.id === row.slot_key)?.time ??
+                              row.slot_time}
+                          </td>
+                          <td className="px-3 py-3 font-semibold">
+                            {displayProfileName(profileMap.get(row.user_id))}
+                          </td>
+                          <td className="px-3 py-3">{formatSaleInteger(row.new_data_received)}</td>
+                          <td className="px-3 py-3">{formatSaleInteger(row.new_data_closed)}</td>
+                          <td className="px-3 py-3">
+                            {formatSaleInteger(Number(row.new_data_reach_count ?? 0))}
+                          </td>
+                          <td className="px-3 py-3">
+                            {formatSaleInteger(Number(row.new_data_zalo_friend_count ?? 0))}
+                          </td>
+                          <td className="px-3 py-3">
+                            {formatSaleInteger(row.floating_data_received)}
+                          </td>
+                          <td className="px-3 py-3">
+                            {formatSaleInteger(row.floating_data_closed)}
+                          </td>
+                          <td className="px-3 py-3">
+                            {formatSaleVnd(Number(row.new_customer_revenue ?? 0))}
+                          </td>
+                          <td className="px-3 py-3">
+                            {formatSaleInteger(Number(row.video_call_data_count ?? 0))}
+                          </td>
+                          <td className="px-3 py-3">
+                            {formatSaleVnd(Number(row.floating_revenue ?? 0))}
+                          </td>
+                          <td className="px-3 py-3">
+                            {formatSaleInteger(getSaleReportOldCustomerCallCount(row))}
+                          </td>
+                          <td className="px-3 py-3 font-semibold">
+                            {formatSaleVnd(rowSummary.totalRevenue)}
+                          </td>
+                          <td className="px-3 py-3">{formatSalePercent(rowSummary.closeRate)}</td>
+                          <td className="px-3 py-3">
+                            {rowSummary.averageOrder === null
+                              ? "—"
+                              : formatSaleVnd(rowSummary.averageOrder)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {!visibleReports.length && <EmptyTableRow colSpan={16} />}
+                  </tbody>
+                </table>
+              ) : (
+                <SaleReportPivotTable
+                  reports={visibleReports}
+                  getSaleName={(row) => displayProfileName(profileMap.get(row.user_id))}
+                  formatDate={formatDate}
+                />
+              )}
             </CardContent>
           </Card>
         </>
