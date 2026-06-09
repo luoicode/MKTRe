@@ -61,6 +61,8 @@ import { Route as AuthenticatedEmployeeReportsRouteImport } from './routes/_auth
 import { Route as AuthenticatedEmployeeReportRouteImport } from './routes/_authenticated/employee/report'
 import { Route as AuthenticatedEmployeeRankingRouteImport } from './routes/_authenticated/employee/ranking'
 import { Route as AuthenticatedEmployeeProfileRouteImport } from './routes/_authenticated/employee/profile'
+import { Route as AuthenticatedEmployeeMarketingContactsRouteImport } from './routes/_authenticated/employee/marketing-contacts'
+import { Route as AuthenticatedEmployeeLeadSourcesRouteImport } from './routes/_authenticated/employee/lead-sources'
 import { Route as AuthenticatedEmployeeKpiRouteImport } from './routes/_authenticated/employee/kpi'
 import { Route as AuthenticatedEmployeeHistoryRouteImport } from './routes/_authenticated/employee/history'
 import { Route as AuthenticatedEmployeeFloatingPoolRouteImport } from './routes/_authenticated/employee/floating-pool'
@@ -87,6 +89,7 @@ import { Route as AuthenticatedAdminDashboardRouteImport } from './routes/_authe
 import { Route as AuthenticatedAdminAttendanceRouteImport } from './routes/_authenticated/admin/attendance'
 import { Route as AuthenticatedAdminAssetsRouteImport } from './routes/_authenticated/admin/assets'
 import { Route as AuthenticatedAdminAdsDashboardRouteImport } from './routes/_authenticated/admin/ads-dashboard'
+import { Route as ApiLeadsIngestSourceTokenRouteImport } from './routes/api/leads/ingest/$sourceToken'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -390,6 +393,18 @@ const AuthenticatedEmployeeProfileRoute =
     path: '/employee/profile',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedEmployeeMarketingContactsRoute =
+  AuthenticatedEmployeeMarketingContactsRouteImport.update({
+    id: '/employee/marketing-contacts',
+    path: '/employee/marketing-contacts',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedEmployeeLeadSourcesRoute =
+  AuthenticatedEmployeeLeadSourcesRouteImport.update({
+    id: '/employee/lead-sources',
+    path: '/employee/lead-sources',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedEmployeeKpiRoute =
   AuthenticatedEmployeeKpiRouteImport.update({
     id: '/employee/kpi',
@@ -542,6 +557,12 @@ const AuthenticatedAdminAdsDashboardRoute =
     path: '/admin/ads-dashboard',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const ApiLeadsIngestSourceTokenRoute =
+  ApiLeadsIngestSourceTokenRouteImport.update({
+    id: '/api/leads/ingest/$sourceToken',
+    path: '/api/leads/ingest/$sourceToken',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -573,6 +594,8 @@ export interface FileRoutesByFullPath {
   '/employee/floating-pool': typeof AuthenticatedEmployeeFloatingPoolRoute
   '/employee/history': typeof AuthenticatedEmployeeHistoryRoute
   '/employee/kpi': typeof AuthenticatedEmployeeKpiRoute
+  '/employee/lead-sources': typeof AuthenticatedEmployeeLeadSourcesRoute
+  '/employee/marketing-contacts': typeof AuthenticatedEmployeeMarketingContactsRoute
   '/employee/profile': typeof AuthenticatedEmployeeProfileRoute
   '/employee/ranking': typeof AuthenticatedEmployeeRankingRoute
   '/employee/report': typeof AuthenticatedEmployeeReportRoute
@@ -621,6 +644,7 @@ export interface FileRoutesByFullPath {
   '/sale/resources': typeof AuthenticatedSaleResourcesRoute
   '/sale/tasks': typeof AuthenticatedSaleTasksRoute
   '/sale/team': typeof AuthenticatedSaleTeamRoute
+  '/api/leads/ingest/$sourceToken': typeof ApiLeadsIngestSourceTokenRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -652,6 +676,8 @@ export interface FileRoutesByTo {
   '/employee/floating-pool': typeof AuthenticatedEmployeeFloatingPoolRoute
   '/employee/history': typeof AuthenticatedEmployeeHistoryRoute
   '/employee/kpi': typeof AuthenticatedEmployeeKpiRoute
+  '/employee/lead-sources': typeof AuthenticatedEmployeeLeadSourcesRoute
+  '/employee/marketing-contacts': typeof AuthenticatedEmployeeMarketingContactsRoute
   '/employee/profile': typeof AuthenticatedEmployeeProfileRoute
   '/employee/ranking': typeof AuthenticatedEmployeeRankingRoute
   '/employee/report': typeof AuthenticatedEmployeeReportRoute
@@ -700,6 +726,7 @@ export interface FileRoutesByTo {
   '/sale/resources': typeof AuthenticatedSaleResourcesRoute
   '/sale/tasks': typeof AuthenticatedSaleTasksRoute
   '/sale/team': typeof AuthenticatedSaleTeamRoute
+  '/api/leads/ingest/$sourceToken': typeof ApiLeadsIngestSourceTokenRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -733,6 +760,8 @@ export interface FileRoutesById {
   '/_authenticated/employee/floating-pool': typeof AuthenticatedEmployeeFloatingPoolRoute
   '/_authenticated/employee/history': typeof AuthenticatedEmployeeHistoryRoute
   '/_authenticated/employee/kpi': typeof AuthenticatedEmployeeKpiRoute
+  '/_authenticated/employee/lead-sources': typeof AuthenticatedEmployeeLeadSourcesRoute
+  '/_authenticated/employee/marketing-contacts': typeof AuthenticatedEmployeeMarketingContactsRoute
   '/_authenticated/employee/profile': typeof AuthenticatedEmployeeProfileRoute
   '/_authenticated/employee/ranking': typeof AuthenticatedEmployeeRankingRoute
   '/_authenticated/employee/report': typeof AuthenticatedEmployeeReportRoute
@@ -781,6 +810,7 @@ export interface FileRoutesById {
   '/_authenticated/sale/resources': typeof AuthenticatedSaleResourcesRoute
   '/_authenticated/sale/tasks': typeof AuthenticatedSaleTasksRoute
   '/_authenticated/sale/team': typeof AuthenticatedSaleTeamRoute
+  '/api/leads/ingest/$sourceToken': typeof ApiLeadsIngestSourceTokenRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -814,6 +844,8 @@ export interface FileRouteTypes {
     | '/employee/floating-pool'
     | '/employee/history'
     | '/employee/kpi'
+    | '/employee/lead-sources'
+    | '/employee/marketing-contacts'
     | '/employee/profile'
     | '/employee/ranking'
     | '/employee/report'
@@ -862,6 +894,7 @@ export interface FileRouteTypes {
     | '/sale/resources'
     | '/sale/tasks'
     | '/sale/team'
+    | '/api/leads/ingest/$sourceToken'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -893,6 +926,8 @@ export interface FileRouteTypes {
     | '/employee/floating-pool'
     | '/employee/history'
     | '/employee/kpi'
+    | '/employee/lead-sources'
+    | '/employee/marketing-contacts'
     | '/employee/profile'
     | '/employee/ranking'
     | '/employee/report'
@@ -941,6 +976,7 @@ export interface FileRouteTypes {
     | '/sale/resources'
     | '/sale/tasks'
     | '/sale/team'
+    | '/api/leads/ingest/$sourceToken'
   id:
     | '__root__'
     | '/'
@@ -973,6 +1009,8 @@ export interface FileRouteTypes {
     | '/_authenticated/employee/floating-pool'
     | '/_authenticated/employee/history'
     | '/_authenticated/employee/kpi'
+    | '/_authenticated/employee/lead-sources'
+    | '/_authenticated/employee/marketing-contacts'
     | '/_authenticated/employee/profile'
     | '/_authenticated/employee/ranking'
     | '/_authenticated/employee/report'
@@ -1021,12 +1059,14 @@ export interface FileRouteTypes {
     | '/_authenticated/sale/resources'
     | '/_authenticated/sale/tasks'
     | '/_authenticated/sale/team'
+    | '/api/leads/ingest/$sourceToken'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   LoginRoute: typeof LoginRoute
+  ApiLeadsIngestSourceTokenRoute: typeof ApiLeadsIngestSourceTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1395,6 +1435,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedEmployeeProfileRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/employee/marketing-contacts': {
+      id: '/_authenticated/employee/marketing-contacts'
+      path: '/employee/marketing-contacts'
+      fullPath: '/employee/marketing-contacts'
+      preLoaderRoute: typeof AuthenticatedEmployeeMarketingContactsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/employee/lead-sources': {
+      id: '/_authenticated/employee/lead-sources'
+      path: '/employee/lead-sources'
+      fullPath: '/employee/lead-sources'
+      preLoaderRoute: typeof AuthenticatedEmployeeLeadSourcesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/employee/kpi': {
       id: '/_authenticated/employee/kpi'
       path: '/employee/kpi'
@@ -1577,6 +1631,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminAdsDashboardRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/api/leads/ingest/$sourceToken': {
+      id: '/api/leads/ingest/$sourceToken'
+      path: '/api/leads/ingest/$sourceToken'
+      fullPath: '/api/leads/ingest/$sourceToken'
+      preLoaderRoute: typeof ApiLeadsIngestSourceTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -1608,6 +1669,8 @@ interface AuthenticatedRouteChildren {
   AuthenticatedEmployeeFloatingPoolRoute: typeof AuthenticatedEmployeeFloatingPoolRoute
   AuthenticatedEmployeeHistoryRoute: typeof AuthenticatedEmployeeHistoryRoute
   AuthenticatedEmployeeKpiRoute: typeof AuthenticatedEmployeeKpiRoute
+  AuthenticatedEmployeeLeadSourcesRoute: typeof AuthenticatedEmployeeLeadSourcesRoute
+  AuthenticatedEmployeeMarketingContactsRoute: typeof AuthenticatedEmployeeMarketingContactsRoute
   AuthenticatedEmployeeProfileRoute: typeof AuthenticatedEmployeeProfileRoute
   AuthenticatedEmployeeRankingRoute: typeof AuthenticatedEmployeeRankingRoute
   AuthenticatedEmployeeReportRoute: typeof AuthenticatedEmployeeReportRoute
@@ -1689,6 +1752,9 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedEmployeeFloatingPoolRoute,
   AuthenticatedEmployeeHistoryRoute: AuthenticatedEmployeeHistoryRoute,
   AuthenticatedEmployeeKpiRoute: AuthenticatedEmployeeKpiRoute,
+  AuthenticatedEmployeeLeadSourcesRoute: AuthenticatedEmployeeLeadSourcesRoute,
+  AuthenticatedEmployeeMarketingContactsRoute:
+    AuthenticatedEmployeeMarketingContactsRoute,
   AuthenticatedEmployeeProfileRoute: AuthenticatedEmployeeProfileRoute,
   AuthenticatedEmployeeRankingRoute: AuthenticatedEmployeeRankingRoute,
   AuthenticatedEmployeeReportRoute: AuthenticatedEmployeeReportRoute,
@@ -1748,6 +1814,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   LoginRoute: LoginRoute,
+  ApiLeadsIngestSourceTokenRoute: ApiLeadsIngestSourceTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

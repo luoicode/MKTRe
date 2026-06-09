@@ -205,6 +205,13 @@ const NAV: NavItem[] = [
     roles: ["employee"],
   },
   { to: "/employee/ads-dashboard", label: "Ads Dashboard", icon: BarChart3, roles: ["employee"] },
+  { to: "/employee/lead-sources", label: "Nguồn Marketing", icon: Database, roles: ["employee"] },
+  {
+    to: "/employee/marketing-contacts",
+    label: "Liên hệ khách hàng",
+    icon: UsersRound,
+    roles: ["employee"],
+  },
   { to: "/employee/budget", label: "Ngân sách", icon: WalletCards, roles: ["employee"] },
   { to: "/employee/report", label: "Nhập báo cáo", icon: FileText, roles: ["employee"] },
   { to: "/employee/floating-pool", label: "Kho thả nổi", icon: Warehouse, roles: ["employee"] },

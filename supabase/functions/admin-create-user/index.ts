@@ -62,15 +62,24 @@ Deno.serve(async (req: Request) => {
     }
 
     const body = await req.json();
-    const { full_name, username, password, role, status } = body as {
+    const { full_name, username, password, role, status, employee_code, company_name } = body as {
       full_name: string;
       username: string;
       password: string;
       role: "admin" | "manager" | "leader" | "employee" | "sale" | "leader_sale";
       status?: "active" | "inactive";
+      employee_code?: string;
+      company_name?: string;
     };
 
-    if (!full_name || !username || !password || !role) {
+    if (
+      !full_name ||
+      !username ||
+      !password ||
+      !role ||
+      !employee_code?.trim() ||
+      !company_name?.trim()
+    ) {
       return Response.json(
         { error: "Thiếu thông tin bắt buộc" },
         { status: 400, headers: corsHeaders },
@@ -134,6 +143,8 @@ Deno.serve(async (req: Request) => {
         full_name,
         username: normalizedUsername,
         email,
+        employee_code: employee_code.trim(),
+        company_name: company_name.trim(),
         status: status ?? "active",
       })
       .select()
@@ -158,6 +169,8 @@ Deno.serve(async (req: Request) => {
         full_name,
         role,
         status: status ?? "active",
+        employee_code: employee_code.trim(),
+        company_name: company_name.trim(),
       },
     });
 

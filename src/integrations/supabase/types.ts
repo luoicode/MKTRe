@@ -1389,9 +1389,11 @@ export type Database = {
           avatar_url: string | null;
           created_at: string;
           email: string;
+          employee_code: string | null;
           full_name: string;
           id: string;
           phone: string | null;
+          company_name: string | null;
           status: Database["public"]["Enums"]["user_status"];
           updated_at: string;
           username: string;
@@ -1401,9 +1403,11 @@ export type Database = {
           avatar_url?: string | null;
           created_at?: string;
           email: string;
+          employee_code?: string | null;
           full_name: string;
           id?: string;
           phone?: string | null;
+          company_name?: string | null;
           status?: Database["public"]["Enums"]["user_status"];
           updated_at?: string;
           username: string;
@@ -1413,9 +1417,11 @@ export type Database = {
           avatar_url?: string | null;
           created_at?: string;
           email?: string;
+          employee_code?: string | null;
           full_name?: string;
           id?: string;
           phone?: string | null;
+          company_name?: string | null;
           status?: Database["public"]["Enums"]["user_status"];
           updated_at?: string;
           username?: string;
@@ -2015,6 +2021,7 @@ export type Database = {
       };
       teams: {
         Row: {
+          company_name: string | null;
           created_at: string;
           department: string;
           description: string | null;
@@ -2025,6 +2032,7 @@ export type Database = {
           updated_at: string;
         };
         Insert: {
+          company_name?: string | null;
           created_at?: string;
           department?: string;
           description?: string | null;
@@ -2035,6 +2043,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          company_name?: string | null;
           created_at?: string;
           department?: string;
           description?: string | null;

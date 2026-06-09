@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -39,6 +39,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { usePagination } from "@/lib/usePagination";
 import { APP_ROLES, ROLE_LABELS, isSaleRole, type AppRole } from "@/lib/roles";
+import { COMPANY_OPTIONS, DEFAULT_COMPANY_NAME } from "@/lib/companies";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({ component: AdminUsers });
 
@@ -55,6 +56,8 @@ interface UserRow {
   email: string;
   avatar_url: string | null;
   phone: string | null;
+  employee_code: string | null;
+  company_name: string | null;
   status: UserStatus;
   role?: AppRole | null;
   activeTeamId?: string | null;
@@ -177,6 +180,44 @@ function normalizePhone(value: string) {
   return value.trim() || null;
 }
 
+function normalizeOptionalText(value: string) {
+  return value.trim() || null;
+}
+
+function MissingProfileBadge() {
+  return (
+    <Badge variant="secondary" className="whitespace-nowrap bg-amber-50 text-amber-700">
+      Chưa cập nhật
+    </Badge>
+  );
+}
+
+function UserFormSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      <h3 className="mb-3 text-sm font-semibold text-slate-900">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function CompanySelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <Select value={value || DEFAULT_COMPANY_NAME} onValueChange={onChange}>
+      <SelectTrigger className="mt-1 h-10">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {COMPANY_OPTIONS.map((company) => (
+          <SelectItem key={company} value={company}>
+            {company}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 async function invalidateUserScopeQueries(qc: QueryClient) {
   await Promise.all([
     qc.invalidateQueries({ queryKey: ["admin-users"] }),
@@ -272,6 +313,8 @@ function AdminUsers() {
       u.username.toLowerCase().includes(s) ||
       u.email.toLowerCase().includes(s) ||
       (u.phone ?? "").toLowerCase().includes(s) ||
+      (u.employee_code ?? "").toLowerCase().includes(s) ||
+      (u.company_name ?? "").toLowerCase().includes(s) ||
       roleLabel(u.role).toLowerCase().includes(s) ||
       (u.activeTeamName ?? "").toLowerCase().includes(s)
     );
@@ -345,6 +388,8 @@ function AdminUsers() {
                   <TableRow className="border-b border-slate-200 hover:bg-transparent">
                     <TableHead className="bg-inherit">Tên</TableHead>
                     <TableHead className="bg-inherit">Số điện thoại</TableHead>
+                    <TableHead className="bg-inherit">Mã nhân viên</TableHead>
+                    <TableHead className="bg-inherit">Công ty</TableHead>
                     <TableHead className="bg-inherit">Vai trò</TableHead>
                     <TableHead className="bg-inherit">Team</TableHead>
                     <TableHead className="bg-inherit">Trạng thái</TableHead>
@@ -364,6 +409,8 @@ function AdminUsers() {
                         </div>
                       </TableCell>
                       <TableCell>{u.phone?.trim() || "—"}</TableCell>
+                      <TableCell>{u.employee_code?.trim() || <MissingProfileBadge />}</TableCell>
+                      <TableCell>{u.company_name?.trim() || <MissingProfileBadge />}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{roleLabel(u.role)}</Badge>
                       </TableCell>
@@ -382,12 +429,12 @@ function AdminUsers() {
                   ))}
                   {Array.from({ length: userPagination.emptyRowsCount }).map((_, index) => (
                     <TableRow key={`empty-${index}`} className="h-[65px] hover:bg-transparent">
-                      <TableCell colSpan={6} />
+                      <TableCell colSpan={8} />
                     </TableRow>
                   ))}
                   {filtered.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
+                      <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
                         Không có user
                       </TableCell>
                     </TableRow>
@@ -434,6 +481,8 @@ function CreateUserDialog({
     full_name: "",
     username: "",
     phone: "",
+    employee_code: "",
+    company_name: DEFAULT_COMPANY_NAME as string,
     password: "",
     department: "marketing" as Department,
     role: "employee" as AppRole,
@@ -449,6 +498,10 @@ function CreateUserDialog({
       toast.error("Nhập đầy đủ thông tin");
       return;
     }
+    if (!form.employee_code.trim() || !form.company_name.trim()) {
+      toast.error("Nhập đầy đủ mã nhân viên và công ty");
+      return;
+    }
     if (form.role === "employee" && !form.team_id) {
       toast.error("Chọn team cho Nhân viên Marketing để tạo checklist onboarding");
       return;
@@ -461,6 +514,8 @@ function CreateUserDialog({
         password: form.password,
         role: form.role,
         status: form.status,
+        employee_code: form.employee_code.trim(),
+        company_name: form.company_name.trim(),
       })) as { profile?: { id?: string } };
       if (result.profile?.id) {
         const phone = normalizePhone(form.phone);
@@ -510,106 +565,145 @@ function CreateUserDialog({
   };
 
   return (
-    <DialogContent className="max-h-[90vh] overflow-y-auto">
-      <DialogHeader>
-        <DialogTitle>Tạo tài khoản mới</DialogTitle>
+    <DialogContent className="flex max-h-[85vh] w-[95vw] max-w-4xl flex-col overflow-hidden p-0">
+      <DialogHeader className="border-b border-slate-200 px-5 py-3.5">
+        <DialogTitle className="text-lg font-semibold">Tạo tài khoản mới</DialogTitle>
       </DialogHeader>
-      <div className="space-y-3">
-        <DepartmentRoleFields
-          department={form.department}
-          role={form.role}
-          onDepartmentChange={(department) =>
-            setForm({
-              ...form,
-              department,
-              role: defaultRoleForDepartment(department),
-              team_id: department === "marketing" ? form.team_id : "",
-            })
-          }
-          onRoleChange={(role) => setForm({ ...form, role })}
-        />
-        <div>
-          <Label>Họ tên</Label>
-          <Input
-            value={form.full_name}
-            onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-          />
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-slate-50/60 px-5 py-4">
+        <div className="space-y-3">
+          <UserFormSection title="Thông tin tài khoản">
+            <div className="grid gap-3 lg:grid-cols-3">
+              <DepartmentRoleFields
+                department={form.department}
+                role={form.role}
+                onDepartmentChange={(department) =>
+                  setForm({
+                    ...form,
+                    department,
+                    role: defaultRoleForDepartment(department),
+                    team_id: department === "marketing" ? form.team_id : "",
+                  })
+                }
+                onRoleChange={(role) => setForm({ ...form, role })}
+              />
+              <div className="lg:col-span-2">
+                <Label className="text-sm font-medium">Họ tên</Label>
+                <Input
+                  className="mt-1 h-10"
+                  value={form.full_name}
+                  onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                />
+              </div>
+              <div className="lg:col-span-2">
+                <Label className="text-sm font-medium">Tài khoản đăng nhập</Label>
+                <Input
+                  className="mt-1 h-10"
+                  value={form.username}
+                  onChange={(e) => setForm({ ...form, username: e.target.value })}
+                  placeholder="vd: test"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {normalizeInternalLoginPreview(form.username)
+                    ? `Hệ thống sẽ tạo tài khoản đăng nhập: ${internalLoginEmailPreview(form.username, form.department)}`
+                    : "Chỉ nhập tài khoản nội bộ, không nhập email thật."}
+                </p>
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Mật khẩu tạm thời</Label>
+                <Input
+                  className="mt-1 h-10"
+                  type="text"
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Trạng thái</Label>
+                <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+                  <SelectTrigger className="mt-1 h-10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </UserFormSection>
+
+          <UserFormSection title="Hồ sơ nhân sự">
+            <div className="grid gap-3 lg:grid-cols-3">
+              <div>
+                <Label className="text-sm font-medium">Số điện thoại</Label>
+                <Input
+                  className="mt-1 h-10"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  placeholder="vd: 0987654321"
+                  inputMode="tel"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Mã nhân viên</Label>
+                <Input
+                  className="mt-1 h-10"
+                  value={form.employee_code}
+                  onChange={(e) => setForm({ ...form, employee_code: e.target.value })}
+                  placeholder="vd: MKT001"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Công ty</Label>
+                <CompanySelect
+                  value={form.company_name}
+                  onChange={(company_name) => setForm({ ...form, company_name })}
+                />
+              </div>
+              {(form.role === "employee" || form.role === "leader") && (
+                <div>
+                  <Label className="text-sm font-medium">Team Marketing</Label>
+                  <Select
+                    value={form.team_id || NONE_TEAM}
+                    onValueChange={(v) => setForm({ ...form, team_id: v === NONE_TEAM ? "" : v })}
+                  >
+                    <SelectTrigger className="mt-1 h-10">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE_TEAM}>
+                        {form.role === "employee"
+                          ? "Chọn Team Marketing"
+                          : "Không thuộc Team Marketing"}
+                      </SelectItem>
+                      {teams.map((team) => (
+                        <SelectItem key={team.id} value={team.id}>
+                          {team.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          </UserFormSection>
+
+          {form.department === "marketing" && (
+            <UserFormSection title="Tài sản cố định">
+              <FixedAssetsFields
+                value={form.fixedAssets}
+                onChange={(fixedAssets) => setForm({ ...form, fixedAssets })}
+              />
+            </UserFormSection>
+          )}
         </div>
-        <div>
-          <Label>Tài khoản đăng nhập</Label>
-          <Input
-            value={form.username}
-            onChange={(e) => setForm({ ...form, username: e.target.value })}
-            placeholder="vd: test"
-          />
-          <p className="mt-1 text-xs text-muted-foreground">
-            {normalizeInternalLoginPreview(form.username)
-              ? `Hệ thống sẽ tạo tài khoản đăng nhập: ${internalLoginEmailPreview(form.username, form.department)}`
-              : "Chỉ nhập tài khoản nội bộ, không nhập email thật."}
-          </p>
-        </div>
-        <div>
-          <Label>Mật khẩu tạm thời</Label>
-          <Input
-            type="text"
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-          />
-        </div>
-        <div>
-          <Label>Số điện thoại</Label>
-          <Input
-            value={form.phone}
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
-            placeholder="vd: 0987654321"
-            inputMode="tel"
-          />
-        </div>
-        {(form.role === "employee" || form.role === "leader") && (
-          <div>
-            <Label>Team Marketing</Label>
-            <Select
-              value={form.team_id || NONE_TEAM}
-              onValueChange={(v) => setForm({ ...form, team_id: v === NONE_TEAM ? "" : v })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE_TEAM}>
-                  {form.role === "employee" ? "Chọn Team Marketing" : "Không thuộc Team Marketing"}
-                </SelectItem>
-                {teams.map((team) => (
-                  <SelectItem key={team.id} value={team.id}>
-                    {team.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-        <div>
-          <Label>Trạng thái</Label>
-          <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="inactive">Inactive</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {form.department === "marketing" && (
-          <FixedAssetsFields
-            value={form.fixedAssets}
-            onChange={(fixedAssets) => setForm({ ...form, fixedAssets })}
-          />
-        )}
       </div>
-      <DialogFooter>
+      <DialogFooter className="border-t border-slate-200 bg-white px-5 py-3.5">
+        <Button variant="outline" onClick={onClose} disabled={loading}>
+          Hủy
+        </Button>
         <Button onClick={submit} disabled={loading}>
-          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Tạo
+          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Tạo tài khoản
         </Button>
       </DialogFooter>
     </DialogContent>
@@ -632,6 +726,8 @@ function EditUserDialog({
     full_name: user.full_name,
     username: user.username,
     phone: user.phone ?? "",
+    employee_code: user.employee_code ?? "",
+    company_name: user.company_name ?? DEFAULT_COMPANY_NAME,
     department: departmentForRole(user.role),
     role: user.role ?? ("employee" as AppRole),
     status: user.status,
@@ -686,6 +782,8 @@ function EditUserDialog({
           full_name: fullName,
           username,
           phone: normalizePhone(form.phone),
+          employee_code: normalizeOptionalText(form.employee_code),
+          company_name: normalizeOptionalText(form.company_name),
           status: form.status,
         })
         .eq("id", user.id);
@@ -797,95 +895,131 @@ function EditUserDialog({
   };
 
   return (
-    <DialogContent className="max-h-[90vh] overflow-y-auto">
-      <DialogHeader>
-        <DialogTitle>Chỉnh sửa: {user.username}</DialogTitle>
+    <DialogContent className="flex max-h-[85vh] w-[95vw] max-w-4xl flex-col overflow-hidden p-0">
+      <DialogHeader className="border-b border-slate-200 px-5 py-3.5">
+        <DialogTitle className="text-lg font-semibold">Chỉnh sửa: {user.full_name}</DialogTitle>
       </DialogHeader>
-      <div className="space-y-3">
-        <DepartmentRoleFields
-          department={form.department}
-          role={form.role}
-          onDepartmentChange={(department) =>
-            setForm({
-              ...form,
-              department,
-              role: defaultRoleForDepartment(department),
-              team_id: department === "marketing" ? form.team_id : "",
-            })
-          }
-          onRoleChange={(role) => setForm({ ...form, role })}
-        />
-        <div>
-          <Label>Họ tên</Label>
-          <Input
-            value={form.full_name}
-            onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-          />
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-slate-50/60 px-5 py-4">
+        <div className="space-y-3">
+          <UserFormSection title="Thông tin tài khoản">
+            <div className="grid gap-3 lg:grid-cols-3">
+              <DepartmentRoleFields
+                department={form.department}
+                role={form.role}
+                onDepartmentChange={(department) =>
+                  setForm({
+                    ...form,
+                    department,
+                    role: defaultRoleForDepartment(department),
+                    team_id: department === "marketing" ? form.team_id : "",
+                  })
+                }
+                onRoleChange={(role) => setForm({ ...form, role })}
+              />
+              <div className="lg:col-span-2">
+                <Label className="text-sm font-medium">Họ tên</Label>
+                <Input
+                  className="mt-1 h-10"
+                  value={form.full_name}
+                  onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                />
+              </div>
+              <div className="lg:col-span-2">
+                <Label className="text-sm font-medium">Tài khoản đăng nhập</Label>
+                <Input
+                  className="mt-1 h-10"
+                  value={form.username}
+                  onChange={(e) => setForm({ ...form, username: e.target.value })}
+                  placeholder="vd: test"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Trạng thái</Label>
+                <Select
+                  value={form.status}
+                  onValueChange={(v) => setForm({ ...form, status: v as UserStatus })}
+                >
+                  <SelectTrigger className="mt-1 h-10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </UserFormSection>
+
+          <UserFormSection title="Hồ sơ nhân sự">
+            <div className="grid gap-3 lg:grid-cols-3">
+              <div>
+                <Label className="text-sm font-medium">Số điện thoại</Label>
+                <Input
+                  className="mt-1 h-10"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  placeholder="vd: 0987654321"
+                  inputMode="tel"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Mã nhân viên</Label>
+                <Input
+                  className="mt-1 h-10"
+                  value={form.employee_code}
+                  onChange={(e) => setForm({ ...form, employee_code: e.target.value })}
+                  placeholder="Chưa cập nhật"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Công ty</Label>
+                <CompanySelect
+                  value={form.company_name}
+                  onChange={(company_name) => setForm({ ...form, company_name })}
+                />
+              </div>
+              {canAssignTeam && (
+                <div>
+                  <Label className="text-sm font-medium">Team Marketing</Label>
+                  <Select
+                    value={form.team_id || NONE_TEAM}
+                    onValueChange={(v) => setForm({ ...form, team_id: v === NONE_TEAM ? "" : v })}
+                  >
+                    <SelectTrigger className="mt-1 h-10">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE_TEAM}>Không thuộc Team Marketing</SelectItem>
+                      {teams.map((team) => (
+                        <SelectItem key={team.id} value={team.id}>
+                          {team.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          </UserFormSection>
+
+          {form.department === "marketing" && (
+            <UserFormSection title="Tài sản cố định">
+              <FixedAssetsFields
+                value={form.fixedAssets}
+                disabled={assetsLoading}
+                onChange={(fixedAssets) => setForm({ ...form, fixedAssets })}
+              />
+            </UserFormSection>
+          )}
         </div>
-        <div>
-          <Label>Tài khoản đăng nhập</Label>
-          <Input
-            value={form.username}
-            onChange={(e) => setForm({ ...form, username: e.target.value })}
-            placeholder="vd: test"
-          />
-        </div>
-        <div>
-          <Label>Số điện thoại</Label>
-          <Input
-            value={form.phone}
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
-            placeholder="vd: 0987654321"
-            inputMode="tel"
-          />
-        </div>
-        {canAssignTeam && (
-          <div>
-            <Label>Team Marketing</Label>
-            <Select
-              value={form.team_id || NONE_TEAM}
-              onValueChange={(v) => setForm({ ...form, team_id: v === NONE_TEAM ? "" : v })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NONE_TEAM}>Không thuộc Team Marketing</SelectItem>
-                {teams.map((team) => (
-                  <SelectItem key={team.id} value={team.id}>
-                    {team.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-        <div>
-          <Label>Trạng thái</Label>
-          <Select
-            value={form.status}
-            onValueChange={(v) => setForm({ ...form, status: v as UserStatus })}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="inactive">Inactive</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {form.department === "marketing" && (
-          <FixedAssetsFields
-            value={form.fixedAssets}
-            disabled={assetsLoading}
-            onChange={(fixedAssets) => setForm({ ...form, fixedAssets })}
-          />
-        )}
       </div>
-      <DialogFooter>
+      <DialogFooter className="border-t border-slate-200 bg-white px-5 py-3.5">
+        <Button variant="outline" onClick={onClose} disabled={loading}>
+          Hủy
+        </Button>
         <Button onClick={submit} disabled={loading}>
-          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Lưu
+          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Lưu thay đổi
         </Button>
       </DialogFooter>
     </DialogContent>
@@ -905,14 +1039,14 @@ function DepartmentRoleFields({
 }) {
   const roleOptions = roleOptionsForDepartment(department);
   return (
-    <div className="space-y-3 rounded-2xl border bg-slate-50/70 p-3">
+    <>
       <div>
-        <Label>Bộ phận</Label>
+        <Label className="text-sm font-medium">Bộ phận</Label>
         <Select
           value={department}
           onValueChange={(value) => onDepartmentChange(value as Department)}
         >
-          <SelectTrigger className="mt-1">
+          <SelectTrigger className="mt-1 h-10">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -935,9 +1069,9 @@ function DepartmentRoleFields({
       </div>
 
       <div>
-        <Label>Vai trò</Label>
+        <Label className="text-sm font-medium">Vai trò</Label>
         <Select value={role} onValueChange={(value) => onRoleChange(value as AppRole)}>
-          <SelectTrigger className="mt-1">
+          <SelectTrigger className="mt-1 h-10">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -952,7 +1086,7 @@ function DepartmentRoleFields({
           Domain đăng nhập: @{loginDomainForDepartment(department)}
         </p>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -966,27 +1100,26 @@ function FixedAssetsFields({
   onChange: (value: FixedAssetForm) => void;
 }) {
   return (
-    <div className="rounded-xl border bg-muted/20 p-3">
-      <p className="mb-3 text-sm font-semibold">Tài sản cố định</p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <Label>Hotline</Label>
-          <Input
-            value={value.hotline}
-            disabled={disabled}
-            onChange={(event) => onChange({ ...value, hotline: event.target.value })}
-            placeholder="Nhập hotline"
-          />
-        </div>
-        <div>
-          <Label>Tài khoản Odoo</Label>
-          <Input
-            value={value.odoo}
-            disabled={disabled}
-            onChange={(event) => onChange({ ...value, odoo: event.target.value })}
-            placeholder="Nhập tài khoản Odoo"
-          />
-        </div>
+    <div className="grid gap-3 md:grid-cols-2">
+      <div>
+        <Label className="text-sm font-medium">Hotline</Label>
+        <Input
+          className="mt-1 h-10"
+          value={value.hotline}
+          disabled={disabled}
+          onChange={(event) => onChange({ ...value, hotline: event.target.value })}
+          placeholder="Nhập hotline"
+        />
+      </div>
+      <div>
+        <Label className="text-sm font-medium">Tài khoản Odoo</Label>
+        <Input
+          className="mt-1 h-10"
+          value={value.odoo}
+          disabled={disabled}
+          onChange={(event) => onChange({ ...value, odoo: event.target.value })}
+          placeholder="Nhập tài khoản Odoo"
+        />
       </div>
     </div>
   );

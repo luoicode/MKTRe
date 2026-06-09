@@ -30,7 +30,15 @@ import { SearchableSelect, SearchableMultiSelect } from "@/components/Searchable
 import { RefreshButton } from "@/components/RefreshButton";
 import { WorkspacePageHeader } from "@/components/layout/WorkspacePageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { APP_ROLES, isSaleRole } from "@/lib/roles";
+import { COMPANY_OPTIONS, DEFAULT_COMPANY_NAME } from "@/lib/companies";
 
 export const Route = createFileRoute("/_authenticated/admin/teams")({ component: AdminTeams });
 
@@ -48,6 +56,7 @@ interface ProfileWithRole {
 interface TeamWithMembershipLeader {
   id: string;
   name: string;
+  company_name: string | null;
   description: string | null;
   department: string;
   leader_id: string | null;
@@ -59,6 +68,23 @@ interface TeamWithMembershipLeader {
 }
 
 type TeamMemberProfile = { full_name: string; username: string; status?: string | null };
+
+function CompanySelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <Select value={value || DEFAULT_COMPANY_NAME} onValueChange={onChange}>
+      <SelectTrigger className="h-10 bg-background">
+        <SelectValue placeholder="Chọn công ty" />
+      </SelectTrigger>
+      <SelectContent>
+        {COMPANY_OPTIONS.map((company) => (
+          <SelectItem key={company} value={company}>
+            {company}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 function AdminTeams() {
   const qc = useQueryClient();
@@ -270,6 +296,7 @@ function TeamsTable({
             <TableHeader>
               <TableRow>
                 <TableHead>Tên</TableHead>
+                <TableHead>Công ty</TableHead>
                 <TableHead>Leader</TableHead>
                 <TableHead>Thành viên</TableHead>
                 <TableHead>Trạng thái</TableHead>
@@ -284,6 +311,7 @@ function TeamsTable({
                 return (
                   <TableRow key={t.id}>
                     <TableCell className="font-medium">{t.name}</TableCell>
+                    <TableCell>{t.company_name || DEFAULT_COMPANY_NAME}</TableCell>
                     <TableCell>
                       {leader ? `${leader.full_name} (@${leader.username})` : "—"}
                     </TableCell>
@@ -303,7 +331,7 @@ function TeamsTable({
               })}
               {!teams.length && (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                     {emptyText}
                   </TableCell>
                 </TableRow>
@@ -328,6 +356,7 @@ function CreateTeamDialog({
   onClose: () => void;
 }) {
   const [name, setName] = useState("");
+  const [companyName, setCompanyName] = useState<string>(DEFAULT_COMPANY_NAME);
   const [desc, setDesc] = useState("");
   const [leaderId, setLeaderId] = useState<string>("");
   const [memberIds, setMemberIds] = useState<string[]>([]);
@@ -353,6 +382,7 @@ function CreateTeamDialog({
       .from("teams")
       .insert({
         name,
+        company_name: companyName,
         department,
         description: desc || null,
         leader_id: leaderId || null,
@@ -410,6 +440,7 @@ function CreateTeamDialog({
     setLoading(false);
     toast.success("Tạo team thành công");
     setName("");
+    setCompanyName(DEFAULT_COMPANY_NAME);
     setDesc("");
     setLeaderId("");
     setMemberIds([]);
@@ -425,14 +456,20 @@ function CreateTeamDialog({
     }));
 
   return (
-    <DialogContent>
+    <DialogContent className="max-w-xl">
       <DialogHeader>
         <DialogTitle>Tạo team {department === "marketing" ? "Marketing" : "Sale"} mới</DialogTitle>
       </DialogHeader>
       <div className="space-y-3">
-        <div>
-          <Label>Tên team</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} />
+        <div className="grid gap-3 sm:grid-cols-[1fr_180px]">
+          <div>
+            <Label>Tên team</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div>
+            <Label>Công ty</Label>
+            <CompanySelect value={companyName} onChange={setCompanyName} />
+          </div>
         </div>
         <div>
           <Label>Mô tả</Label>
@@ -517,6 +554,7 @@ function TeamManagementDialog({
   });
 
   const [name, setName] = useState(team.name);
+  const [companyName, setCompanyName] = useState(team.company_name ?? DEFAULT_COMPANY_NAME);
   const [desc, setDesc] = useState(team.description ?? "");
   const [leaderId, setLeaderId] = useState(team.leader_id ?? "");
   const [status, setStatus] = useState<"active" | "inactive">(
@@ -550,6 +588,7 @@ function TeamManagementDialog({
       .from("teams")
       .update({
         name: name.trim(),
+        company_name: companyName,
         description: desc.trim() || null,
         leader_id: leaderId || null,
         status,
@@ -792,10 +831,14 @@ function TeamManagementDialog({
       </DialogHeader>
       <div className="max-h-[72vh] space-y-5 overflow-y-auto pr-1">
         <div className="rounded-2xl border bg-muted/20 p-4">
-          <div className="grid gap-3 lg:grid-cols-3">
+          <div className="grid gap-3 lg:grid-cols-[1fr_180px_140px_1fr]">
             <div>
               <Label>Tên team</Label>
               <Input value={name} onChange={(event) => setName(event.target.value)} />
+            </div>
+            <div>
+              <Label>Công ty</Label>
+              <CompanySelect value={companyName} onChange={setCompanyName} />
             </div>
             <div>
               <Label>Trạng thái</Label>
