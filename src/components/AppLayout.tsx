@@ -450,13 +450,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 bg-background md:h-screen md:overflow-hidden">
+    <div className="flex h-full min-h-0 w-full min-w-0 bg-background md:h-screen md:overflow-hidden md:bg-[#F3F5F7]">
       <aside
         className={cn(
-          "relative z-50 hidden shrink-0 border-r transition-[width] duration-200 ease-out md:flex md:min-h-0 md:flex-col",
-          sidebarCollapsed
-            ? "w-20 border-slate-200/80 bg-white shadow-[4px_0_22px_-22px_rgba(15,23,42,0.8)]"
-            : "w-64 bg-card",
+          "relative z-50 hidden shrink-0 bg-[#F3F5F7] transition-[width] duration-200 ease-out md:flex md:min-h-0 md:flex-col",
+          sidebarCollapsed ? "w-20" : "w-60",
         )}
       >
         <SidebarContent
@@ -468,7 +466,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         />
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col md:min-h-0">
+      <div className="flex min-w-0 flex-1 flex-col md:min-h-0 md:pb-2 md:pr-2">
         <header className="sticky top-0 z-40 flex min-h-14 shrink-0 items-center gap-2 border-b bg-card/95 px-3 py-2 shadow-sm backdrop-blur md:hidden">
           <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetTrigger asChild>
@@ -495,7 +493,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <header className="hidden min-h-14 shrink-0 items-center border-b bg-card/95 px-4 py-2 shadow-sm backdrop-blur md:flex xl:px-6">
+        <header className="hidden min-h-12 shrink-0 items-center bg-transparent px-4 py-2 md:flex xl:px-5">
           <div className="min-w-0 text-sm font-medium text-muted-foreground">
             {flatItems.find((item) => isNavItemActive(item, location.pathname, location.search))
               ?.label ?? ""}
@@ -506,8 +504,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 overflow-x-hidden md:min-h-0 md:overflow-hidden">
-          <div className="w-full min-w-0 px-3 py-3 md:h-full md:min-h-0 md:overflow-y-auto md:overflow-x-hidden md:px-4 md:py-4 xl:px-6">
+        <main className="min-w-0 flex-1 overflow-x-hidden bg-white md:min-h-0 md:overflow-hidden md:rounded-bl-[24px] md:rounded-tl-[24px]">
+          <div className="w-full min-w-0 px-3 py-3 md:h-full md:min-h-0 md:overflow-y-auto md:overflow-x-hidden md:px-4 md:py-4 xl:px-5">
             <div className="h-auto min-h-full w-full min-w-0">{children}</div>
           </div>
         </main>
@@ -518,20 +516,25 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
 function BrandMark({ compact = false }: { compact?: boolean }) {
   return (
-    <div className="flex min-w-0 shrink-0 items-center gap-2.5">
-      <div className="flex aspect-square h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 via-blue-600 to-violet-600 text-base font-black text-white shadow-lg shadow-blue-500/25">
+    <div className="flex min-w-0 shrink-0 items-center gap-2">
+      <div
+        className={cn(
+          "flex aspect-square shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 via-blue-600 to-violet-600 font-black text-white shadow-lg shadow-blue-500/20",
+          compact ? "h-10 w-10 text-base" : "h-12 w-12 text-lg",
+        )}
+      >
         M
       </div>
       <div className="min-w-0">
         <p
           className={cn(
             "truncate font-extrabold tracking-tight text-slate-950",
-            compact ? "text-sm" : "text-base",
+            compact ? "text-sm" : "text-[15px]",
           )}
         >
           Workspace MIZ
         </p>
-        <p className="truncate text-xs font-medium text-muted-foreground">Nội bộ • Quản trị</p>
+        <p className="truncate text-[11px] font-medium text-muted-foreground">Nội bộ • Quản trị</p>
       </div>
     </div>
   );
@@ -553,13 +556,11 @@ function SidebarContent({
   onToggleCollapsed?: () => void;
 }) {
   return (
-    <div className={cn("flex h-full min-h-0 flex-col", collapsed ? "bg-white" : "bg-card")}>
+    <div className="flex h-full min-h-0 flex-col bg-[#F3F5F7]">
       <div
         className={cn(
           "flex shrink-0 items-center",
-          collapsed
-            ? "h-20 justify-center rounded-br-[28px] bg-white px-2 pb-3 pt-4"
-            : "h-16 border-b px-4",
+          collapsed ? "h-[72px] justify-center px-2 pb-2 pt-4" : "h-12 px-3",
         )}
       >
         {collapsed ? (
@@ -572,8 +573,8 @@ function SidebarContent({
       </div>
       <nav
         className={cn(
-          "min-h-0 flex-1 py-5",
-          collapsed ? "overflow-visible px-3 pt-3" : "overflow-y-auto px-3",
+          "min-h-0 flex-1",
+          collapsed ? "overflow-visible px-3 py-4 pt-2" : "overflow-y-auto py-2",
         )}
       >
         <NavSection
@@ -585,15 +586,15 @@ function SidebarContent({
         />
       </nav>
       {onToggleCollapsed ? (
-        <div className={cn("shrink-0 p-3", collapsed ? "border-t-0 pb-4" : "border-t")}>
+        <div className={cn("shrink-0", collapsed ? "p-3 pb-4" : "px-3 py-2")}>
           <button
             type="button"
             onClick={onToggleCollapsed}
             className={cn(
-              "flex items-center text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950",
+              "flex items-center text-sm font-semibold text-slate-600 transition-colors hover:bg-white hover:text-slate-950",
               collapsed
                 ? "mx-auto h-12 w-12 justify-center rounded-2xl"
-                : "h-11 w-full gap-3 rounded-xl px-3",
+                : "mx-0 h-12 w-full gap-2.5 rounded-2xl px-3",
             )}
             aria-label={collapsed ? "Mở rộng sidebar" : "Thu gọn sidebar"}
             title={collapsed ? "Mở rộng" : undefined}
@@ -635,7 +636,7 @@ function NavSection({
   );
 
   return (
-    <div className={cn(collapsed ? "space-y-2.5" : "space-y-1.5")}>
+    <div className={cn(collapsed ? "space-y-2.5" : "space-y-0.5")}>
       {entries.map((entry) => {
         if (!isNavGroup(entry)) {
           return (
@@ -666,14 +667,14 @@ function NavSection({
         }
 
         return (
-          <div key={entry.id} className="space-y-1">
+          <div key={entry.id} className="space-y-0.5">
             <button
               type="button"
               className={cn(
-                "flex h-10 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold transition-colors",
+                "mx-3 flex h-12 w-[calc(100%-1.5rem)] items-center gap-2 rounded-2xl px-2.5 text-left text-sm font-bold transition-colors",
                 groupActive
                   ? "bg-blue-50 text-blue-700"
-                  : "text-slate-700 hover:bg-slate-50 hover:text-slate-950",
+                  : "text-slate-600 hover:bg-white hover:text-slate-950",
               )}
               onClick={() => setOpenGroups((current) => ({ ...current, [entry.id]: !groupOpen }))}
             >
@@ -687,7 +688,7 @@ function NavSection({
               />
             </button>
             {groupOpen ? (
-              <div className="ml-4 space-y-1 border-l border-slate-200 pl-2">
+              <div className="ml-6 space-y-0.5 border-l border-slate-200/80 pl-2 pr-3">
                 {entry.children.map((child) => (
                   <SidebarNavLink
                     key={`${entry.id}-${child.to}-${child.label}`}
@@ -759,11 +760,9 @@ function SidebarNavLink({
       search={item.search}
       onClick={onNavigate}
       className={cn(
-        "flex h-10 items-center gap-3 rounded-xl px-3 text-sm transition-colors",
+        "mx-3 flex h-12 w-[calc(100%-1.5rem)] items-center gap-2 rounded-2xl px-2.5 text-sm transition-colors",
         child ? "font-medium" : "font-medium",
-        active
-          ? "bg-blue-50 text-blue-700"
-          : "text-slate-600 hover:bg-slate-50 hover:text-slate-950",
+        active ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-white hover:text-slate-950",
       )}
     >
       <item.icon className={cn("h-4 w-4 shrink-0", active ? "text-blue-700" : "")} />
