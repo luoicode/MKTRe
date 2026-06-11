@@ -30,8 +30,10 @@ import {
   GraduationCap,
   Megaphone,
   WalletCards,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { NotificationsBell } from "@/components/NotificationsBell";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -77,6 +79,7 @@ interface NavGroup {
 type NavEntry = NavItem | NavGroup;
 
 const adminRoles: AppRole[] = ["admin"];
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "workspace_sidebar_collapsed";
 
 const ADMIN_NAV: NavEntry[] = [
   { to: "/admin/dashboard", label: "Tổng quan", icon: LayoutDashboard, roles: adminRoles },
@@ -259,6 +262,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "true";
+  });
 
   const navEntries: NavEntry[] =
     role === APP_ROLES.ADMIN ? ADMIN_NAV : NAV.filter((n) => role && n.roles.includes(role));
@@ -280,6 +287,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   const openProfile = () => {
     navigate({ to: profilePath });
+  };
+
+  const toggleSidebarCollapsed = () => {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(next));
+      return next;
+    });
   };
 
   const resetPasswordForm = () => {
@@ -436,11 +451,20 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 bg-background md:h-screen md:overflow-hidden">
-      <aside className="hidden w-64 shrink-0 border-r bg-card md:flex md:min-h-0 md:flex-col">
+      <aside
+        className={cn(
+          "relative z-50 hidden shrink-0 border-r transition-[width] duration-200 ease-out md:flex md:min-h-0 md:flex-col",
+          sidebarCollapsed
+            ? "w-20 border-slate-200/80 bg-white shadow-[4px_0_22px_-22px_rgba(15,23,42,0.8)]"
+            : "w-64 bg-card",
+        )}
+      >
         <SidebarContent
           entries={navEntries}
           pathname={location.pathname}
           search={location.search}
+          collapsed={sidebarCollapsed}
+          onToggleCollapsed={toggleSidebarCollapsed}
         />
       </aside>
 
@@ -495,7 +519,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
 function BrandMark({ compact = false }: { compact?: boolean }) {
   return (
     <div className="flex min-w-0 shrink-0 items-center gap-2.5">
-      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 via-blue-600 to-violet-600 text-base font-black text-white shadow-lg shadow-blue-500/25">
+      <div className="flex aspect-square h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 via-blue-600 to-violet-600 text-base font-black text-white shadow-lg shadow-blue-500/25">
         M
       </div>
       <div className="min-w-0">
@@ -518,20 +542,73 @@ function SidebarContent({
   pathname,
   search,
   onNavigate,
+  collapsed = false,
+  onToggleCollapsed,
 }: {
   entries: NavEntry[];
   pathname: string;
   search: unknown;
   onNavigate?: () => void;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-card">
-      <div className="flex h-16 shrink-0 items-center border-b px-4">
-        <BrandMark />
+    <div className={cn("flex h-full min-h-0 flex-col", collapsed ? "bg-white" : "bg-card")}>
+      <div
+        className={cn(
+          "flex shrink-0 items-center",
+          collapsed
+            ? "h-20 justify-center rounded-br-[28px] bg-white px-2 pb-3 pt-4"
+            : "h-16 border-b px-4",
+        )}
+      >
+        {collapsed ? (
+          <div className="flex aspect-square h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 via-blue-600 to-violet-600 text-lg font-black text-white shadow-lg shadow-blue-500/25 ring-4 ring-blue-50">
+            M
+          </div>
+        ) : (
+          <BrandMark />
+        )}
       </div>
-      <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
-        <NavSection entries={entries} pathname={pathname} search={search} onNavigate={onNavigate} />
+      <nav
+        className={cn(
+          "min-h-0 flex-1 py-5",
+          collapsed ? "overflow-visible px-3 pt-3" : "overflow-y-auto px-3",
+        )}
+      >
+        <NavSection
+          entries={entries}
+          pathname={pathname}
+          search={search}
+          onNavigate={onNavigate}
+          collapsed={collapsed}
+        />
       </nav>
+      {onToggleCollapsed ? (
+        <div className={cn("shrink-0 p-3", collapsed ? "border-t-0 pb-4" : "border-t")}>
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            className={cn(
+              "flex items-center text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950",
+              collapsed
+                ? "mx-auto h-12 w-12 justify-center rounded-2xl"
+                : "h-11 w-full gap-3 rounded-xl px-3",
+            )}
+            aria-label={collapsed ? "Mở rộng sidebar" : "Thu gọn sidebar"}
+            title={collapsed ? "Mở rộng" : undefined}
+          >
+            {collapsed ? (
+              <PanelLeftOpen className="h-5 w-5 shrink-0" />
+            ) : (
+              <>
+                <PanelLeftClose className="h-5 w-5 shrink-0" />
+                <span className="truncate">Thu gọn</span>
+              </>
+            )}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -541,11 +618,13 @@ function NavSection({
   pathname,
   search,
   onNavigate,
+  collapsed = false,
 }: {
   entries: NavEntry[];
   pathname: string;
   search: unknown;
   onNavigate?: () => void;
+  collapsed?: boolean;
 }) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
@@ -556,7 +635,7 @@ function NavSection({
   );
 
   return (
-    <div className="space-y-1.5">
+    <div className={cn(collapsed ? "space-y-2.5" : "space-y-1.5")}>
       {entries.map((entry) => {
         if (!isNavGroup(entry)) {
           return (
@@ -566,12 +645,26 @@ function NavSection({
               pathname={pathname}
               search={search}
               onNavigate={onNavigate}
+              collapsed={collapsed}
             />
           );
         }
 
         const groupOpen = openGroups[entry.id] ?? entry.defaultOpen;
         const groupActive = entry.children.some((item) => isNavItemActive(item, pathname, search));
+        if (collapsed) {
+          return (
+            <CollapsedNavGroup
+              key={entry.id}
+              group={entry}
+              pathname={pathname}
+              search={search}
+              onNavigate={onNavigate}
+              active={groupActive}
+            />
+          );
+        }
+
         return (
           <div key={entry.id} className="space-y-1">
             <button
@@ -603,6 +696,7 @@ function NavSection({
                     search={search}
                     onNavigate={onNavigate}
                     child
+                    collapsed={collapsed}
                   />
                 ))}
               </div>
@@ -620,14 +714,44 @@ function SidebarNavLink({
   search,
   onNavigate,
   child = false,
+  collapsed = false,
 }: {
   item: NavItem;
   pathname: string;
   search: unknown;
   onNavigate?: () => void;
   child?: boolean;
+  collapsed?: boolean;
 }) {
   const active = isNavItemActive(item, pathname, search);
+  if (collapsed) {
+    return (
+      <div className="group relative flex justify-center">
+        <Link
+          key={`${item.to}-${item.label}`}
+          to={item.to}
+          search={item.search}
+          onClick={onNavigate}
+          aria-label={item.label}
+          className={cn(
+            "flex h-12 w-12 items-center justify-center rounded-2xl transition-colors",
+            active
+              ? "bg-blue-100 text-blue-700 shadow-sm shadow-blue-200/60"
+              : "text-slate-500 hover:bg-slate-100 hover:text-slate-950",
+          )}
+        >
+          <item.icon className={cn("h-5 w-5 shrink-0", active ? "text-blue-700" : "")} />
+        </Link>
+        <div className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 opacity-0 transition group-hover:pointer-events-auto group-hover:opacity-100">
+          <div className="relative rounded-lg bg-slate-950 px-3 py-2 text-xs font-semibold text-white shadow-xl">
+            <span className="absolute -left-1 top-1/2 h-2 w-2 -translate-y-1/2 rotate-45 bg-slate-950" />
+            <span className="relative z-10 whitespace-nowrap">{item.label}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Link
       key={`${item.to}-${item.label}`}
@@ -645,6 +769,155 @@ function SidebarNavLink({
       <item.icon className={cn("h-4 w-4 shrink-0", active ? "text-blue-700" : "")} />
       <span className="truncate">{item.label}</span>
     </Link>
+  );
+}
+
+function CollapsedNavGroup({
+  group,
+  pathname,
+  search,
+  onNavigate,
+  active,
+}: {
+  group: NavGroup;
+  pathname: string;
+  search: unknown;
+  onNavigate?: () => void;
+  active: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearCloseTimer = () => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  };
+
+  const openFlyout = () => {
+    clearCloseTimer();
+    setOpen(true);
+  };
+
+  const scheduleCloseFlyout = () => {
+    clearCloseTimer();
+    closeTimerRef.current = setTimeout(() => {
+      setOpen(false);
+      closeTimerRef.current = null;
+    }, 180);
+  };
+
+  const closeFlyout = () => {
+    clearCloseTimer();
+    setOpen(false);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!wrapperRef.current?.contains(event.target as Node)) {
+        if (closeTimerRef.current) {
+          clearTimeout(closeTimerRef.current);
+          closeTimerRef.current = null;
+        }
+        setOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (closeTimerRef.current) {
+          clearTimeout(closeTimerRef.current);
+          closeTimerRef.current = null;
+        }
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  useEffect(() => clearCloseTimer, []);
+
+  return (
+    <div
+      ref={wrapperRef}
+      className="relative flex justify-center"
+      onMouseEnter={openFlyout}
+      onMouseLeave={scheduleCloseFlyout}
+      onFocus={openFlyout}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          scheduleCloseFlyout();
+        }
+      }}
+    >
+      <button
+        type="button"
+        aria-label={group.label}
+        className={cn(
+          "flex h-12 w-12 items-center justify-center rounded-2xl transition-colors",
+          active
+            ? "bg-blue-100 text-blue-700 shadow-sm shadow-blue-200/60"
+            : "text-slate-500 hover:bg-slate-100 hover:text-slate-950",
+        )}
+      >
+        <group.icon className={cn("h-5 w-5 shrink-0", active ? "text-blue-700" : "")} />
+      </button>
+      <div
+        aria-hidden={!open}
+        className={cn(
+          "absolute left-full top-0 z-50 ml-1 min-w-64 transition",
+          open
+            ? "pointer-events-auto translate-x-0 opacity-100"
+            : "pointer-events-none -translate-x-1 opacity-0",
+        )}
+        onMouseEnter={openFlyout}
+      >
+        <span className="absolute -left-2 top-0 h-full w-3" aria-hidden="true" />
+        <div className="rounded-2xl border bg-card p-2 shadow-2xl">
+          <div className="px-3 py-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+            {group.label}
+          </div>
+          <div className="space-y-1">
+            {group.children.map((child) => {
+              const childActive = isNavItemActive(child, pathname, search);
+              return (
+                <Link
+                  key={`${group.id}-${child.to}-${child.label}`}
+                  to={child.to}
+                  search={child.search}
+                  onClick={() => {
+                    closeFlyout();
+                    onNavigate?.();
+                  }}
+                  className={cn(
+                    "flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors",
+                    childActive
+                      ? "bg-blue-50 text-blue-700"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-950",
+                  )}
+                >
+                  <child.icon
+                    className={cn("h-4 w-4 shrink-0", childActive ? "text-blue-700" : "")}
+                  />
+                  <span className="min-w-0 truncate">{child.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
