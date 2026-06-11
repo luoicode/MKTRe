@@ -85,6 +85,9 @@ const PAGE_SIZE = 50;
 const FILTER_PRESET_STORAGE_KEY = "workspace-miz:employee-marketing-contacts-filter-presets";
 const COLUMN_CONFIG_STORAGE_KEY = "workspace-miz:employee-marketing-contacts-column-config";
 const ALL_CONTACTS_COLUMN_CONFIG_KEY = "all_contacts";
+const CONTACT_DETAIL_COLUMN_WIDTH = 44;
+const CONTACT_INDEX_COLUMN_WIDTH = 48;
+const CONTACT_INDEX_COLUMN_LEFT = `${CONTACT_DETAIL_COLUMN_WIDTH}px`;
 
 type StatusFilter = ContactStatus | typeof ALL_STATUS | typeof SALE_RECEIVED_STATUS;
 type DatePreset =
@@ -1639,8 +1642,20 @@ function MarketingContactsPage() {
 
   const renderTableColGroup = () => (
     <colgroup>
-      <col className="w-[44px]" />
-      <col className="w-[48px]" />
+      <col
+        style={{
+          width: CONTACT_DETAIL_COLUMN_WIDTH,
+          minWidth: CONTACT_DETAIL_COLUMN_WIDTH,
+          maxWidth: CONTACT_DETAIL_COLUMN_WIDTH,
+        }}
+      />
+      <col
+        style={{
+          width: CONTACT_INDEX_COLUMN_WIDTH,
+          minWidth: CONTACT_INDEX_COLUMN_WIDTH,
+          maxWidth: CONTACT_INDEX_COLUMN_WIDTH,
+        }}
+      />
       {visibleColumnIds.map((columnId) => {
         const column = contactColumnMeta.find((item) => item.id === columnId);
         if (!column) return null;
@@ -2272,13 +2287,26 @@ function MarketingContactsPage() {
                 style={{ minWidth: tableMinWidth, width: "100%" }}
               >
                 {renderTableColGroup()}
-                <thead className="sticky top-0 z-10 text-xs font-semibold text-slate-500">
+                <thead className="text-xs font-semibold text-slate-500">
                   <tr className="h-10 border-b border-slate-200">
                     <th
-                      className="sticky left-0 z-30 bg-slate-50 px-2.5 py-2 text-center shadow-[0_1px_0_0_rgba(226,232,240,1)]"
+                      className="sticky left-0 top-0 z-50 bg-slate-50 p-0 text-center shadow-[0_1px_0_0_rgba(226,232,240,1)]"
+                      style={{
+                        width: CONTACT_DETAIL_COLUMN_WIDTH,
+                        minWidth: CONTACT_DETAIL_COLUMN_WIDTH,
+                        maxWidth: CONTACT_DETAIL_COLUMN_WIDTH,
+                      }}
                       aria-label="Xem chi tiết"
                     />
-                    <th className="sticky left-[44px] z-30 bg-slate-50 px-2.5 py-2 shadow-[4px_0_10px_-8px_rgba(15,23,42,0.45),0_1px_0_0_rgba(226,232,240,1)]">
+                    <th
+                      className="sticky top-0 z-50 border-r border-slate-200 bg-slate-50 p-0 text-center shadow-[4px_0_10px_-8px_rgba(15,23,42,0.45),0_1px_0_0_rgba(226,232,240,1)]"
+                      style={{
+                        left: CONTACT_INDEX_COLUMN_LEFT,
+                        width: CONTACT_INDEX_COLUMN_WIDTH,
+                        minWidth: CONTACT_INDEX_COLUMN_WIDTH,
+                        maxWidth: CONTACT_INDEX_COLUMN_WIDTH,
+                      }}
+                    >
                       #
                     </th>
                     {visibleColumnIds.map((columnId) => {
@@ -2287,7 +2315,7 @@ function MarketingContactsPage() {
                       return (
                         <th
                           key={column.id}
-                          className="whitespace-nowrap bg-slate-50 px-2.5 py-2 shadow-[0_1px_0_0_rgba(226,232,240,1)]"
+                          className="sticky top-0 z-40 whitespace-nowrap bg-slate-50 px-2.5 py-2 shadow-[0_1px_0_0_rgba(226,232,240,1)]"
                         >
                           {column.label}
                         </th>
@@ -2317,10 +2345,25 @@ function MarketingContactsPage() {
                   ) : (
                     paginatedContacts.map((contact, index) => (
                       <tr key={contact.id} className="group h-11 transition hover:bg-slate-50/80">
-                        <td className="sticky left-0 z-20 bg-white px-2.5 py-1.5 text-center align-middle transition group-hover:bg-slate-50">
+                        <td
+                          className="sticky left-0 z-30 bg-white p-0 text-center align-middle transition group-hover:bg-slate-50"
+                          style={{
+                            width: CONTACT_DETAIL_COLUMN_WIDTH,
+                            minWidth: CONTACT_DETAIL_COLUMN_WIDTH,
+                            maxWidth: CONTACT_DETAIL_COLUMN_WIDTH,
+                          }}
+                        >
                           {renderDetailButton(contact)}
                         </td>
-                        <td className="sticky left-[44px] z-20 bg-white px-2.5 py-1.5 align-middle text-slate-500 shadow-[4px_0_10px_-8px_rgba(15,23,42,0.45)] transition group-hover:bg-slate-50">
+                        <td
+                          className="sticky z-30 border-r border-slate-100 bg-white p-0 text-center align-middle text-slate-500 shadow-[4px_0_10px_-8px_rgba(15,23,42,0.45)] transition group-hover:bg-slate-50"
+                          style={{
+                            left: CONTACT_INDEX_COLUMN_LEFT,
+                            width: CONTACT_INDEX_COLUMN_WIDTH,
+                            minWidth: CONTACT_INDEX_COLUMN_WIDTH,
+                            maxWidth: CONTACT_INDEX_COLUMN_WIDTH,
+                          }}
+                        >
                           {(page - 1) * PAGE_SIZE + index + 1}
                         </td>
                         {visibleColumnIds.map((columnId) => (
@@ -3511,7 +3554,7 @@ function getContactTableMinWidth(columnIds: ContactColumnId[]) {
     const width = contactColumnMeta.find((column) => column.id === columnId)?.width ?? "";
     const parsedWidth = Number(width.match(/\d+/)?.[0] ?? 150);
     return total + parsedWidth;
-  }, 92);
+  }, CONTACT_DETAIL_COLUMN_WIDTH + CONTACT_INDEX_COLUMN_WIDTH);
 
   return Math.max(760, visibleWidth);
 }

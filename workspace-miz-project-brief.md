@@ -1,339 +1,449 @@
 # Workspace MIZ Project Brief
 
-## 1. Project Overview
+Cập nhật: 09/06/2026
 
-**Workspace MIZ** là hệ thống quản trị vận hành nội bộ cho đội Marketing, Sale, Leader và Admin của MKTRe. Dự án tập trung vào việc số hóa các hoạt động hằng ngày như nhập báo cáo, theo dõi KPI, quản lý tài khoản quảng cáo, quản lý lead thả nổi, chấm công, đào tạo nội bộ, thông báo và phân quyền nhân sự.
+## Project Overview
 
-Hệ thống giải quyết vấn đề phân mảnh dữ liệu trong vận hành performance marketing: báo cáo nằm rải rác, KPI khó theo dõi theo ngày/team/người, lead từ Marketing sang Sale thiếu trạng thái rõ ràng, tài khoản quảng cáo khó kiểm soát, và việc nhắc việc/duyệt nội dung cần nhiều thao tác thủ công.
+Workspace MIZ là nền tảng vận hành nội bộ cho Performance Marketing, Sales Operations và quản trị đội nhóm của DASNOTRI/MKTRe. Hệ thống tập trung giải quyết các bài toán vận hành hàng ngày: nhập báo cáo theo ca, theo dõi KPI, quản lý data thả nổi, đồng bộ tài khoản quảng cáo Meta, quản lý nguồn marketing, liên hệ khách hàng, công việc/checklist, đào tạo, điểm danh, tài sản, sản phẩm và hóa đơn bán hàng.
+
+Định vị hiện tại của dự án không phải là ERP tổng quát như Odoo. Workspace MIZ phù hợp hơn với vai trò **Performance Marketing & Sales Operations Platform**: hệ thống giúp đội Marketing/Sale vận hành nhanh, đo lường sát, kiểm soát dữ liệu quảng cáo và báo cáo nội bộ theo đúng nghiệp vụ riêng.
 
 Đối tượng sử dụng chính:
 
-- **Nhân viên Marketing**: nhập báo cáo, xem dashboard, theo dõi KPI, Ads Dashboard, kho thả nổi, tài sản, công việc, điểm danh và đào tạo.
-- **Leader Marketing**: theo dõi team, báo cáo team, KPI team, ranking, Ads Dashboard, kho thả nổi team và tài liệu đào tạo.
-- **Nhân viên Sale**: nhận lead, gọi số, báo cáo Sale, KPI Sale, điểm danh và đào tạo Sale.
-- **Leader Sale**: vừa xử lý lead như Sale, vừa xem dashboard/báo cáo/KPI/thành viên team Sale.
-- **Admin/Manager**: quản lý toàn bộ người dùng, team, báo cáo, KPI, tài sản, lead, Ads Dashboard và tài liệu đào tạo.
+- Admin vận hành toàn hệ thống.
+- Manager theo dõi hiệu suất và đội nhóm.
+- Leader Marketing quản lý báo cáo, KPI, công việc, data và tài khoản ads của team Marketing.
+- Nhân viên Marketing nhập báo cáo, quản lý Ads Dashboard, nguồn marketing, liên hệ khách hàng, ngân sách, công việc và data.
+- Leader Sale quản lý báo cáo, KPI, dashboard, công việc và kho data của team Sale.
+- Nhân viên Sale nhập báo cáo, nhận data, tạo hóa đơn, xem sản phẩm, công việc và đào tạo.
 
-## 2. My Role
+## User Roles
 
-Dự án được định hướng theo góc nhìn của **Nguyễn Hữu Huy** với vai trò:
+| Role | Mã trong hệ thống | Phạm vi chính | Trạng thái |
+| --- | --- | --- | --- |
+| Admin | `admin` | Toàn quyền quản trị người dùng, team, báo cáo, KPI, Ads Dashboard, sản phẩm, hóa đơn, công việc, tài sản, đào tạo | Completed |
+| Manager | `manager` | Theo dõi dashboard, KPI, báo cáo, task, attendance, ranking, team và nhân sự cấp quản lý | Mostly Completed |
+| Leader Marketing | `leader` | Quản lý team Marketing, báo cáo, Ads Dashboard, KPI, kho thả nổi, task, tài sản, ranking, đào tạo | Mostly Completed |
+| Nhân viên Marketing | `employee` | Nhập báo cáo, Ads Dashboard, nguồn marketing, liên hệ khách hàng, ngân sách, data, KPI cá nhân, task, tài sản, đào tạo | Mostly Completed |
+| Leader Sale | `leader_sale` | Quản lý team Sale, báo cáo team, KPI team, dashboard sale, kho thả nổi, task, hóa đơn, sản phẩm, đào tạo | Mostly Completed |
+| Nhân viên Sale | `sale` | Nhập báo cáo sale, nhận data, KPI sale, kho thả nổi, tạo hóa đơn, xem sản phẩm, task, đào tạo | Mostly Completed |
 
-**Product Owner / System Designer / Marketing Operations Builder**
+## Current Navigation by Role
 
-Trong dự án này, tôi chịu trách nhiệm định hình logic nghiệp vụ, thiết kế luồng vận hành, tổ chức module theo từng vai trò và chuẩn hóa cách dữ liệu Marketing/Sale được nhập, theo dõi, tổng hợp và phản hồi trong hệ thống.
+### Admin
 
-Các phần tôi trực tiếp định hướng:
-
-- Thiết kế cấu trúc workspace cho từng vai trò: Admin, Manager, Leader Marketing, Employee Marketing, Sale, Leader Sale.
-- Xác định logic báo cáo theo khung giờ, KPI theo team/cá nhân, ranking, chấm công và quy trình lead.
-- Xây dựng flow Ads Dashboard để kết nối dữ liệu từ Meta Ads API nhưng vẫn đảm bảo token không lộ ra frontend.
-- Tách rõ dữ liệu Marketing và Sale, tránh gộp sai chỉ số.
-- Định nghĩa cách hệ thống hỗ trợ performance marketing: từ chi phí ads, data, doanh thu, giá số, KPI đến vòng đời lead.
-
-## 3. Main Features
-
-### Dashboard Marketing
-
-Dashboard Marketing tổng hợp các chỉ số vận hành chính như chi phí ads, doanh thu, data, đơn chốt, tỷ lệ chốt, chi phí trên data và hiệu suất theo team/người. Đây là màn hình để Leader/Admin nhìn nhanh tình hình vận hành Marketing theo ngày hoặc khoảng thời gian.
-
-### Ads Dashboard
-
-Ads Dashboard là module theo dõi tài khoản quảng cáo Meta/Facebook Ads.
-
-Các chức năng chính:
-
-- Quản lý danh sách tài khoản quảng cáo được gán cho nhân sự Marketing.
-- Đồng bộ dữ liệu từ Meta Marketing API thông qua Supabase Edge Function.
-- Hiển thị Camp ON, Adset ON và giới hạn chi tiêu tài khoản.
-- Theo dõi campaign theo filter thời gian: hôm nay, hôm qua, tuần này, tháng này, tùy chỉnh.
-- Phân biệt campaign Active / All.
-- Hiển thị phân phối campaign theo trạng thái: đang hoạt động, đã lên lịch, nhóm quảng cáo tắt.
-- Theo dõi ngân sách, đã tiêu, kết quả, lượt mua và chi phí/kết quả.
-- Admin có màn Ads Dashboard riêng để xem toàn bộ tài khoản và xóa tài khoản nếu cần.
-
-### Nhập báo cáo
-
-Module nhập báo cáo cho Marketing và Sale hỗ trợ nhập số liệu theo khung giờ trong ngày. Báo cáo Marketing có các chỉ số như chi phí Ads, MESS, Data, đơn chốt, doanh số data và tổng doanh số. Báo cáo Sale tập trung vào dữ liệu nhận, dữ liệu chốt, doanh số khách mới, doanh số thả nổi và khách cũ.
-
-Hệ thống có cơ chế khóa/mở, cập nhật trong khoảng thời gian cho phép, preview/chụp ảnh báo cáo và lưu trạng thái đã gửi.
-
-### KPI Marketing
-
-KPI Marketing dùng để theo dõi mục tiêu theo team hoặc cá nhân. Các chỉ số chính hiện tập trung vào:
-
-- Doanh thu
-- DATA
-- Giá số
-- % chi phí theo mục tiêu doanh thu
-
-KPI được lọc theo thời gian, team và nhân sự. Admin/Manager/Leader có thể tạo KPI theo phạm vi tổng công ty, team hoặc cá nhân tùy vai trò.
-
-### Ranking Marketing
-
-Ranking Marketing giúp so sánh hiệu suất giữa các nhân sự/team Marketing dựa trên dữ liệu báo cáo thực tế. Đây là công cụ để tạo góc nhìn cạnh tranh, minh bạch và dễ đánh giá năng suất.
-
-### Điểm danh
-
-Module điểm danh hỗ trợ nhân sự ghi nhận trạng thái làm việc theo ngày, theo tháng và lịch sử điểm danh. Hệ thống có hỗ trợ trạng thái nghỉ phép và góc nhìn team cho Leader/Admin.
-
-Sale và Leader Sale có màn điểm danh riêng, không gắn checklist Marketing.
-
-### Quản lý tài sản
-
-Module tài sản dùng cho Marketing/Admin để quản lý các tài sản vận hành như hotline, Odoo, link tài nguyên, tài khoản hoặc tài sản nội bộ. Admin/Manager có thể quản lý tài sản theo cá nhân hoặc team.
-
-### Kho thả nổi
-
-Kho thả nổi là nơi Marketing đẩy số/data xuống để Sale xử lý.
-
-Flow chính:
-
-- Marketing thêm số vào kho.
-- Sale nhìn thấy lead trong kho.
-- Sale nhận số, cập nhật cuộc gọi, trạng thái và chốt nếu có đơn.
-- Admin/Leader có thể theo dõi vòng đời lead.
-- Hệ thống lưu lifecycle lead như mới, đã nhận, đã gọi, đã chốt, released hoặc expired.
-
-Module này giúp kiểm soát rõ lead từ Marketing sang Sale, tránh thất thoát data và hỗ trợ theo dõi hiệu suất chuyển đổi.
-
-### Đào tạo
-
-Module Đào tạo là trung tâm tài liệu nội bộ cho Marketing và Sale. Nội dung được chia theo phòng ban, hỗ trợ tài liệu, quy trình, script, link, thông báo và video YouTube embed.
-
-Admin có thể quản lý tài liệu, ghim nội dung quan trọng, phân loại theo department và upload/view tài liệu theo quyền.
-
-### Quản lý nhân sự / phân quyền
-
-Hệ thống có phân quyền theo role:
-
-- Admin
-- Manager
-- Leader Marketing
-- Nhân viên Marketing
+- Tổng quan
+- Báo cáo
+- KPI
+- Điểm danh
+- Thông báo
+- Sản phẩm
+- Hoá đơn
+- Quản lý
+  - Người dùng
+  - Quản lý team
+- Marketing
+  - ADS Dashboard
+  - Công việc
+  - Tài sản
+  - Ranking Marketing
+  - Đào tạo Marketing
 - Sale
-- Leader Sale
+  - Kho thả nổi
+  - Công việc
+  - Đào tạo Sale
 
-Admin có thể quản lý user, team Marketing, team Sale, leader, thành viên và trạng thái active/inactive. Sidebar và route được tách theo role để mỗi người chỉ thấy module phù hợp.
+### Manager
 
-### Telegram Notification / Approval
+- Tổng quan
+- KPI
+- Công việc
+- Điểm danh
+- Thông báo
+- Tài sản
+- Ranking Marketing
+- Team
+- Đào tạo
 
-Source code có tích hợp Telegram thông qua Supabase Edge Functions:
+### Leader Marketing
 
-- `telegram-webhook`
-- `telegram-send`
-- `telegram-dispatch-notifications`
-- `telegram-group-reminders`
+- Tổng quan
+- Báo cáo Marketing
+- Ads Dashboard
+- Báo cáo theo ngày
+- Kho thả nổi
+- KPI
+- Công việc
+- Điểm danh
+- Tài sản
+- Ranking Marketing
+- Đào tạo
 
-Hệ thống có logic liên kết tài khoản Telegram, gửi thông báo, nhắc việc, và duyệt một số tác vụ/onboarding/report thông qua notification/approval flow.
+### Nhân viên Marketing
 
-### Meta Ads API Integration
+- Tổng quan
+- Ads Dashboard
+- Nguồn Marketing
+- Liên hệ khách hàng
+- Ngân sách
+- Nhập báo cáo
+- Kho thả nổi
+- KPI
+- Công việc
+- Điểm danh
+- Tài sản
+- Ranking Marketing
+- Đào tạo
 
-Ads Dashboard có nền tảng tích hợp Meta Ads API:
+### Sale / Leader Sale
 
-- Lưu tài khoản quảng cáo trong `marketing_ads_accounts`.
-- Gán tài khoản cho nhân sự qua `marketing_ads_account_assignments`.
-- Cache snapshot campaign trong `marketing_ads_campaign_snapshots`.
-- Đồng bộ dữ liệu qua Edge Function `sync-ads-account`.
-- Không gọi Meta API trực tiếp từ frontend.
-- Không expose access token ra client.
+- Tổng quan
+- Báo cáo sale
+- KPI sale
+- Điểm danh
+- Kho thả nổi
+- Công việc
+- Sản phẩm
+- Hoá đơn
+- Đào tạo sale
 
-## 4. User Flows
+## Main Features
+
+| Module | Ai dùng | Chức năng chính | Dữ liệu liên quan | Trạng thái | Ghi chú |
+| --- | --- | --- | --- | --- | --- |
+| Auth, Role, Profile | Tất cả role | Đăng nhập, điều hướng theo role, hồ sơ cá nhân, Telegram link, mã nhân viên, công ty | `profiles`, `team_memberships` | Mostly Completed | User cũ có thể thiếu `employee_code`/`company_name`, UI cho phép Admin cập nhật |
+| Quản lý User | Admin | Tạo/sửa user, role, department, trạng thái, team, tài sản cố định, mã NV, công ty | `profiles`, `teams`, Edge Functions admin | Mostly Completed | Modal đã có layout mới, công ty chuẩn hiện tại là `DASNOTRI-01` |
+| Quản lý Team | Admin | Tạo/sửa team Marketing/Sale, leader, thành viên, công ty | `teams`, `team_memberships` | Mostly Completed | Team có `company_name`; user inactive bị loại khỏi danh sách vận hành |
+| Báo cáo Marketing | Admin, Manager, Leader Marketing, Employee Marketing | Nhập báo cáo Marketing, tổng hợp ngày/khoảng, team/leader/nhân viên, screenshot/report slot | Marketing report tables, `profiles`, `teams` | Mostly Completed | Logic inactive: hôm nay chỉ active, lịch sử vẫn giữ nếu có dữ liệu |
+| Báo cáo Sale | Admin, Leader Sale, Sale | Báo cáo theo khung 11h50/17h20/20h45, preview ảnh, copy/tải ảnh, team report, pivot ngang/dọc | `sale_reports` | Mostly Completed | Khung 1 mở từ 00:00 và cập nhật đến 15:50; báo cáo team lấy mỗi Sale 1 row theo khung mới nhất |
+| Dashboard Sale | Admin, Leader Sale, Sale | Tổng doanh số, data nhận/chốt, tỉ lệ chốt, TB đơn, ranking, chart, bảng hiệu suất | `sale_reports`, team scope | Mostly Completed | Leader Sale chỉ thấy Sale active trong team, không thấy leader/inactive/team khác |
+| KPI Marketing | Admin, Manager, Leader Marketing, Employee Marketing | KPI cá nhân/team/toàn hệ thống, kỳ năm/quý/tháng/tuần, KPI chiến lược toàn hệ thống | KPI target tables, reports | Mostly Completed | Popup tạo/sửa KPI đã refactor theo kỳ; KPI hệ thống chiến lược tách khỏi KPI cá nhân/team |
+| KPI Sale | Admin, Leader Sale, Sale | KPI team/cá nhân Sale, doanh số, tổng đơn, tỉ lệ chốt, TB đơn, progress | `sale_kpi_targets`, `sale_reports` | Mostly Completed | Leader được tạo/sửa KPI trong team theo scope |
+| Ads Dashboard Marketing | Admin, Leader Marketing, Employee Marketing | Quản lý account ads, cập nhật token, sync Meta, filter ngày, campaign table, pause adsets, account limit card | `marketing_ads_accounts`, snapshots, assignments, system tokens | Mostly Completed | Card account limit lấy account-level metrics; pause adsets có Edge Function riêng |
+| Admin Ads Dashboard | Admin | Xem tất cả account ads, chọn account bằng dropdown, sync, xoá account thật | Ads tables, `admin-delete-ads-account`, `sync-ads-account` | Mostly Completed | Không có dashboard tổng team ads ở phase này |
+| Nguồn Marketing | Employee Marketing | Tạo nguồn lead, sinh API ingest URL thật, copy URL, xem chi tiết, bật/tắt nguồn | `lead_sources`, `/api/leads/ingest/:sourceToken` | Partial | Backend ingest đã có; chưa có pipeline chia Sale hoàn chỉnh |
+| Liên hệ khách hàng | Employee Marketing | CRM mini cho MKT xem lead/contact, filter saved preset, kanban, cấu hình cột, popup chi tiết, note history read-only | `marketing_contacts`, `contact_notes`, `lead_sources` | Partial | Marketing chỉ xem, không xử lý như Sale; cần nối dữ liệu phân phối Sale/order thật sâu hơn |
+| Contact Notes | Admin/Marketing owner/Leader scope/Sale future | Lịch sử ghi chú thật, soft delete, fallback từ raw payload | `contact_notes` | Partial | Service đã chuẩn bị create/update/delete cho Sale dùng sau; Marketing chưa có quyền sửa |
+| Kho thả nổi Marketing | Admin, Leader Marketing, Employee Marketing | Upload/đẩy data thả nổi, filter, thống kê, leader scope theo team | `floating_leads` | Mostly Completed | Leader Marketing dùng layout giống Admin/Marketing và scope team |
+| Kho thả nổi Sale | Admin, Leader Sale, Sale | Sale nhận data, cuộc gọi 1/2/3, trạng thái, release/reclaim theo nghiệp vụ | `floating_leads` | Mostly Completed | Không sửa auto distribution nâng cao trong phase hiện tại |
+| Ngân sách Marketing | Employee Marketing | UI theo dõi tiền nhận/chi, phí dịch vụ, phí ngân hàng, link hóa đơn, filter thời gian/account | Local/UI state hoặc service hiện có | Partial | Chưa có DB/RLS/export; hiện là phase UI/local state |
+| Công việc / Checklist | Admin, Manager, Leader, Employee, Sale, Leader Sale | Task board, checklist, giao việc, gửi duyệt, duyệt/từ chối, screenshot, department marketing/sale | task tables, notifications, Telegram | Mostly Completed | Marketing và Sale dùng chung engine nhưng tách department |
+| Notification | Tất cả role | Dropdown thông báo, approval action, resolved state, task/onboarding/report/asset/leave hooks | `notifications`, related metadata | Mostly Completed | Đã có logic tránh notification pending sau khi entity được xử lý |
+| Telegram Integration | Admin/Manager/Leader/Employee/Sale | Link Telegram, gửi thông báo, webhook, group reminders, approval callback | Telegram Edge Functions, `telegram.ts` | Mostly Completed | Cần kiểm thử production bot/webhook thực tế |
+| Điểm danh / Nghỉ phép | Tất cả role vận hành | Check-in, leave request, attendance list, team filter, pagination | attendance/leave tables | Mostly Completed | GPS Checkin chưa hoàn thiện, nên xem là planned |
+| Tài sản | Admin, Manager, Marketing | Quản lý tài sản cố định/linh động, team/user owner, filter, pagination | asset tables | Mostly Completed | User/team inactive bị loại khỏi danh sách vận hành |
+| Sản phẩm | Admin, Sale, Leader Sale | Admin CRUD bảng giá/combo/quà/voucher; Sale xem read-only | `products` | Mostly Completed | Có seed sản phẩm; chưa phải inventory/stock |
+| Hoá đơn bán hàng | Sale, Leader Sale, Admin | Sale tạo invoice và preview ảnh; Admin xem danh sách, filter/search/export Excel, chi tiết | `invoices`, `invoice_items`, `xlsx` | Mostly Completed | Chưa phải kế toán/đối soát vận chuyển đầy đủ |
+| Đào tạo / Onboarding | Admin, Manager, Leader, Employee, Sale | Tài liệu đào tạo Marketing/Sale, onboarding, pinned docs | resource/training tables | Mostly Completed | Admin sidebar đã tách Đào tạo Marketing và Đào tạo Sale |
+| Ranking Marketing | Admin, Manager, Leader, Employee | Bảng xếp hạng KPI/hiệu suất Marketing | reports/KPI derived data | Mostly Completed | Sale ranking mới nằm trong dashboard/KPI Sale, chưa thành module riêng độc lập |
+| Products / Invoice bridge | Admin, Sale | Chọn sản phẩm/combo từ catalog để tạo hóa đơn | `products`, `invoice_items` | Mostly Completed | Không quản lý tồn kho |
+
+## User Flows
 
 ### Nhân viên Marketing nhập báo cáo
 
-1. Nhân viên đăng nhập vào workspace Marketing.
-2. Vào mục `Nhập báo cáo`.
-3. Chọn khung báo cáo phù hợp.
-4. Nhập chi phí ads, MESS, Data, đơn chốt, doanh số và ghi chú.
-5. Xem chỉ số tự tính realtime.
-6. Gửi báo cáo.
-7. Báo cáo được lưu để Leader/Admin tổng hợp KPI, dashboard và ranking.
+1. Điểm danh nếu nghiệp vụ yêu cầu.
+2. Vào `Nhập báo cáo`.
+3. Nhập số liệu theo khung/ngày.
+4. Chụp/tải ảnh báo cáo nếu cần.
+5. Leader/Admin xem tổng hợp theo ngày/khoảng và team.
+
+### Nhân viên Sale nhập báo cáo
+
+1. Điểm danh để mở khóa báo cáo.
+2. Chọn khung 11h50, 17h20 hoặc 20h45.
+3. Nhập data mới, data thả nổi, data tiếp cận, kết bạn Zalo, video call, doanh số, ghi chú.
+4. Gửi báo cáo trực tiếp, không cần xác nhận lại trong preview.
+5. Leader Sale/Admin xem báo cáo team, mỗi Sale một dòng theo khung mới nhất hoặc filter khung cụ thể.
 
 ### Leader/Admin xem KPI
 
-1. Leader/Admin vào module KPI.
-2. Chọn thời gian, team hoặc nhân sự.
-3. Xem KPI team/cá nhân theo doanh thu, DATA và giá số.
-4. Theo dõi tiến độ đạt/chưa đạt.
-5. Tạo KPI mới theo tổng công ty, team hoặc nhân sự.
+1. Chọn kỳ năm/quý/tháng/tuần.
+2. Chọn team/nhân sự theo scope.
+3. Xem KPI chiến lược toàn hệ thống, KPI team tự tính từ cá nhân, KPI cá nhân.
+4. Admin và leader được tạo/sửa KPI theo quyền.
 
-### Theo dõi doanh thu, data, chi phí ads
+### Ads Dashboard Marketing
 
-1. Dữ liệu được nhập từ báo cáo Marketing.
-2. Dashboard tổng hợp các chỉ số theo thời gian.
-3. KPI và ranking sử dụng cùng nguồn dữ liệu để đánh giá hiệu suất.
-4. Ads Dashboard bổ sung dữ liệu từ Meta Ads API để đối chiếu campaign, adset, spend, result và purchase.
+1. Marketing thêm tài khoản quảng cáo, chỉ nhập số ID; hệ thống chuẩn hóa `act_`.
+2. Cập nhật token/account token hoặc dùng system token.
+3. Chọn filter nhanh hoặc tùy chỉnh.
+4. Sync Meta, đọc snapshot campaign theo dataset độc lập.
+5. Xem Camp ON, Adset ON, account spend limit, campaign table, pause adsets nếu cần.
+6. Admin có dashboard riêng để xem/sync/xóa account trong toàn hệ thống.
 
-### Chấm công
+### Nguồn Marketing và Liên hệ khách hàng
 
-1. Nhân sự vào module Điểm danh.
-2. Chọn ngày hoặc thao tác điểm danh hôm nay.
-3. Hệ thống lưu trạng thái điểm danh.
-4. Leader/Admin có thể xem tổng hợp theo tháng, theo team và trạng thái.
+1. Nhân viên Marketing tạo nguồn trong `Nguồn Marketing`.
+2. Hệ thống sinh API URL `/api/leads/ingest/:sourceToken`.
+3. Landing Page/Form/Hotline gửi lead vào endpoint.
+4. API chuẩn hóa số điện thoại, kiểm tra trùng 7 ngày và insert vào `marketing_contacts`.
+5. Marketing xem data trong `Liên hệ khách hàng`, dùng filter saved preset, kanban/table, popup chi tiết, lịch sử ghi chú read-only.
 
-### Duyệt nội dung / tài sản
+### Kho thả nổi
 
-Source code có các thành phần notification và approval cho task/onboarding, bao gồm tích hợp Telegram review. Với tài sản, Admin/Manager có thể quản lý và phân bổ tài sản cho cá nhân/team.
+1. Marketing/Leader Marketing tạo hoặc quản lý data thả nổi trong scope team.
+2. Sale/Leader Sale xem kho data Sale và nhận/xử lý theo nghiệp vụ.
+3. Admin xem toàn bộ.
 
-Một số luồng duyệt chi tiết cần bổ sung thông tin thực tế nếu dùng trong portfolio, ví dụ: quy trình duyệt nội dung cụ thể, ai là người duyệt cuối và tiêu chí duyệt.
+### Công việc / Checklist
 
-## 5. Tech Stack
+1. Admin/Leader tạo checklist/task theo department Marketing hoặc Sale.
+2. Nhân viên thấy task theo scope.
+3. Nhân viên gửi duyệt.
+4. Leader/Admin duyệt/từ chối.
+5. Notification và Telegram đồng bộ trạng thái.
 
-### Frontend
+### Hoá đơn bán hàng
 
-- React 19
-- TypeScript
-- TanStack Router
-- TanStack React Query
-- TanStack Start
-- Tailwind CSS
-- Radix UI components
-- Lucide icons
-- Recharts
-- Sonner toast
+1. Sale/Leader Sale chọn sản phẩm/combo.
+2. Nhập thông tin khách hàng.
+3. Bấm tạo hóa đơn, lưu DB trước rồi mở preview ảnh.
+4. Admin vào `Hoá đơn` để xem danh sách, filter/search/export Excel và xem chi tiết.
 
-### Backend
+## Database / Backend
 
-- Supabase
-- Supabase Edge Functions
-- PostgreSQL functions/RPC
-- Row Level Security policies
+Backend chính dùng Supabase PostgreSQL, Supabase Auth/RLS, Supabase Edge Functions và route server của TanStack Start/Vite cho lead ingest.
 
-### Database
+Nhóm bảng chính:
 
-- PostgreSQL qua Supabase
-- Các nhóm bảng chính:
-  - `profiles`, `user_roles`, `teams`, `team_memberships`
-  - `marketing_reports`
-  - `sale_reports`
-  - `kpi_targets`, `sale_kpi_targets`
-  - `floating_leads`
-  - `attendance_records`
-  - `assets`, `fixed_assets`
-  - `tasks`, checklist/onboarding tables
-  - `notifications`
-  - `onboarding_documents`, onboarding cards/sections
-  - `marketing_ads_accounts`, `marketing_ads_account_assignments`, `marketing_ads_campaign_snapshots`
+- Người dùng/team: `profiles`, `teams`, `team_memberships`.
+- Báo cáo Marketing: các bảng report/slot/audit liên quan Marketing.
+- Báo cáo Sale: `sale_reports`.
+- KPI: KPI target tables, `sale_kpi_targets`, period metadata.
+- Ads Dashboard: `marketing_ads_accounts`, `marketing_ads_account_assignments`, `marketing_ads_campaign_snapshots`, `marketing_ads_accounts_public`, `marketing_ads_system_tokens`.
+- Floating leads: `floating_leads`.
+- Nguồn/Contact Marketing: `lead_sources`, `marketing_contacts`, `contact_notes`.
+- Product/Invoice: `products`, `invoices`, `invoice_items`.
+- Task/Checklist: task template/completion/approval tables.
+- Attendance/Leave: attendance and leave request tables.
+- Notifications/Telegram: `notifications` and Telegram link/config related tables.
+- Assets/Resources/Ranking: asset/resource/ranking related tables.
 
-### Auth
+Backend/API đáng chú ý:
 
-- Supabase Auth
-- Profile-based role resolution
-- Role-based route/sidebar guards
-- Active/inactive account handling
+- `/api/leads/ingest/:sourceToken`: nhận lead từ Landing Page/Form, chuẩn hóa số, duplicate 7 ngày, insert `marketing_contacts`, trả JSON mọi lỗi.
+- `sync-ads-account`: đồng bộ Meta Ads account/campaign/adset insights.
+- `pause-adsets`: pause adsets bằng Meta Marketing API, ưu tiên system token.
+- `admin-delete-ads-account`: admin xóa thật tài khoản ads.
+- `upsert-ads-account-test`: thêm account ads.
+- `update-ads-account-token`: cập nhật token account.
+- `admin-upsert-ads-system-token`, `admin-delete-ads-system-token`: quản lý system token Meta.
+- `admin-create-user`, `admin-update-user`, `bootstrap-admin`: quản trị user.
+- `telegram-webhook`, `telegram-send`, `telegram-dispatch-notifications`, `telegram-group-reminders`: tích hợp Telegram.
+- `facebook-ad-spend-sync`: đồng bộ spend Facebook nếu dùng job riêng.
 
-### API Integrations
+RLS/phân quyền:
 
-- Meta Marketing API for Ads Dashboard
-- Telegram Bot/Webhook integration for notifications and approval flows
+- Admin/manager có quyền rộng theo từng module.
+- Leader Marketing/Leader Sale đọc dữ liệu theo team scope.
+- Employee Marketing đọc/ghi dữ liệu của chính mình hoặc team theo policy.
+- Sale/Leader Sale đọc/ghi báo cáo, hóa đơn và data theo scope Sale.
+- Token Meta không expose ra frontend; frontend dùng public views hoặc Edge Functions.
+- `contact_notes` dùng soft delete; Marketing chỉ đọc, Sale sẽ được chuẩn bị quyền ghi theo contact được phân phối.
 
-### Deployment
+## Integrations
 
-Source code sử dụng Vite, TanStack Start và Cloudflare Vite plugin/Wrangler artifacts. Deployment production thực tế cần bổ sung thông tin cụ thể: domain, hosting target, environment strategy và CI/CD nếu có.
+| Integration | Mục đích | Trạng thái |
+| --- | --- | --- |
+| Meta Marketing API | Sync Ads Dashboard, account limit, campaign/adset metrics, pause adsets | Mostly Completed |
+| Telegram Bot/Webhook | Thông báo, reminders, approval action | Mostly Completed |
+| Landing Page/Form API | Ingest lead từ nguồn marketing vào Workspace | Partial |
+| Supabase Auth/Postgres/RLS/Edge Functions | Auth, DB, server-side secure operations | Completed |
+| Excel/XLSX | Export hóa đơn và một số danh sách | Mostly Completed |
+| html-to-image | Chụp báo cáo, hóa đơn, checklist thành ảnh | Mostly Completed |
+| Cloudflare/Vite/TanStack Start | Frontend/server route deployment target | Partial, cần xác nhận production |
 
-## 6. Portfolio Case Study
+## Current Development Stage
 
-### Problem
+Workspace MIZ đang ở giai đoạn **internal operations platform / beta vận hành nội bộ**. Nhiều module nghiệp vụ lõi đã có UI và data thật, đặc biệt ở Marketing/Sale reporting, KPI, Ads Dashboard, task/checklist, attendance, training, products và invoices.
 
-Đội performance marketing và sale thường vận hành bằng nhiều công cụ rời rạc: báo cáo thủ công, file tính KPI, dữ liệu ads riêng, lead riêng, chấm công riêng và tài liệu đào tạo nằm rải rác. Điều này làm giảm tốc độ ra quyết định, khó kiểm soát KPI, khó theo dõi vòng đời lead và dễ phát sinh sai lệch dữ liệu giữa Marketing, Sale và Admin.
+Các module mới như `Nguồn Marketing`, `Liên hệ khách hàng`, `Ngân sách Marketing`, contact notes và lead ingest đang ở trạng thái chuyển từ UI/mock sang backend thật từng phần. Hệ thống đủ mạnh để dùng nội bộ và demo case study, nhưng chưa nên định vị là ERP/CRM hoàn chỉnh để bán rộng nếu chưa hoàn thiện phân phối Sale, pipeline CRM, bảo mật production và audit logs.
 
-### Solution
+## Completed Modules
 
-Workspace MIZ được xây dựng như một workspace nội bộ thống nhất, tách rõ vai trò và nghiệp vụ cho từng nhóm: Marketing, Sale, Leader và Admin. Hệ thống gom các điểm vận hành cốt lõi vào một nền tảng: báo cáo, dashboard, KPI, ads data, lead, attendance, asset, training và notification.
+- Role-based layout và navigation chính.
+- Admin user/team management cơ bản.
+- Báo cáo Sale theo khung và team scope.
+- KPI Marketing/Sale theo team/cá nhân/toàn hệ thống ở mức vận hành.
+- Ads Dashboard Marketing/Admin với sync Meta, token update, system token, delete account, pause adsets.
+- Sản phẩm catalog cho Admin và Sale read-only.
+- Hóa đơn bán hàng: Sale tạo, Admin xem/export.
+- Training/Resources Marketing/Sale.
+- Task/Checklist shared engine cho Marketing/Sale.
+- Attendance/Leave cơ bản.
+- Notification và Telegram integration ở mức vận hành.
 
-### Key Features
+## In-progress / Partial Modules
 
-- Dashboard Marketing theo dữ liệu báo cáo thực tế.
-- Ads Dashboard kết nối dữ liệu Meta Ads API qua backend an toàn.
-- Báo cáo Marketing/Sale theo khung giờ.
-- KPI team/cá nhân theo từng vai trò.
-- Ranking Marketing để so sánh hiệu suất.
-- Kho thả nổi quản lý lead từ Marketing sang Sale.
-- Điểm danh nhân sự.
-- Quản lý tài sản nội bộ.
-- Đào tạo và onboarding theo department.
-- Telegram notification và approval flow.
-- Admin workspace quản lý user, team, KPI, lead, report và ads accounts.
+- Liên hệ khách hàng: UI nâng cao, contact notes thật, saved filters, kanban; chưa phải CRM Sale đầy đủ.
+- Nguồn Marketing và API ingest: có backend thật, nhưng chưa có module chia số Sale hoàn chỉnh.
+- Ngân sách Marketing: chủ yếu UI/local flow, chưa có DB/RLS/export chính thức.
+- Contact notes: DB/service đã có, UI Marketing read-only; Sale UI ghi chú chưa gắn.
+- Manager analytics/revenue/salary: có route/module, cần xác nhận mức hoàn thiện nghiệp vụ.
+- Floating pool advanced automation: có nền tảng, nhưng auto distribution và lifecycle sâu còn cần hoàn thiện.
 
-### Impact
+## Planned / Not Started Modules
 
-Dự án giúp chuẩn hóa vận hành giữa Marketing và Sale, giảm phụ thuộc vào file thủ công, tăng tính minh bạch của KPI và giúp Leader/Admin theo dõi hiệu suất nhanh hơn. Hệ thống cũng tạo nền tảng để mở rộng automation, notification, Meta Ads sync và quản lý hiệu suất theo team.
+- GPS Checkin thực địa: planned, chưa coi là completed.
+- CRM Sale đầy đủ sau khi lead được chia: planned/partial.
+- Order fulfillment/logistics/kho vận: not started.
+- Accounting/finance chính thức: not started.
+- Inventory/stock management: not started.
+- Customer portal/public CRM: not started.
+- Full Odoo replacement: not started và không nên định vị ở giai đoạn hiện tại.
 
-Không có số liệu business impact cụ thể trong source code. Cần bổ sung thông tin thực tế nếu muốn đưa vào portfolio, ví dụ: số người dùng nội bộ, số team sử dụng, thời gian tiết kiệm, số report xử lý mỗi ngày hoặc mức giảm sai lệch báo cáo.
+## Missing Modules Compared With Odoo
 
-### What I Built
+Workspace MIZ hiện chưa thay thế được các mảng Odoo/ERP sau:
 
-Tôi thiết kế và định hướng một hệ thống vận hành nội bộ gồm nhiều module có liên kết dữ liệu:
+- CRM pipeline đầy đủ từ lead, opportunity, quotation, sales order đến after-sale.
+- Sales ERP gồm báo giá, hợp đồng, chiết khấu phức tạp, công nợ.
+- Inventory/kho vận/tồn kho/điều chuyển.
+- Purchase/vendor management.
+- Accounting, ledger, invoice tax, payment reconciliation.
+- Delivery/logistics integration, shipping carrier, COD reconciliation.
+- POS bán tại quầy.
+- Manufacturing/MRP.
+- HR payroll, hợp đồng lao động, bảo hiểm.
+- Customer portal và support ticket chính thức.
+- Advanced BI/report builder cho nhiều phòng ban ngoài Marketing/Sale.
 
-- Role-based workspace cho Admin, Manager, Leader, Employee, Sale và Leader Sale.
-- Cấu trúc báo cáo Marketing/Sale.
-- KPI Marketing/Sale theo team và cá nhân.
-- Ads Dashboard với kiến trúc không expose token frontend.
-- Floating lead lifecycle từ Marketing sang Sale.
-- Notification và Telegram approval flow.
-- Training/Onboarding hub cho tài liệu nội bộ.
+## Odoo Comparison Readiness
 
-### Why It Matters for Performance Marketing
+Workspace MIZ mạnh hơn Odoo tiêu chuẩn ở lớp vận hành đặc thù Performance Marketing:
 
-Performance marketing không chỉ cần chạy ads, mà cần một hệ thống vận hành giúp đọc số nhanh, kiểm tra KPI nhanh, phát hiện vấn đề nhanh và phản hồi nhanh giữa Marketing và Sale. Workspace MIZ biến dữ liệu hằng ngày thành một quy trình quản trị hiệu suất: từ chi phí ads, data, lead, doanh thu đến KPI và hành động của từng nhân sự.
+- KPI Marketing/Sale theo nghiệp vụ nội bộ.
+- Báo cáo ca/ngày của MKT/Sale sát thực tế vận hành.
+- Ads Dashboard có Meta account sync, account spend limit, campaign/adset status và pause adsets.
+- Lead source API và contact workflow dành cho data Marketing.
+- Kho thả nổi, ranking, checklist, notification, Telegram và training tích hợp trong cùng workspace.
 
-## 7. Short Portfolio Description
+Workspace MIZ chưa nên được so sánh như ERP thay thế Odoo toàn diện. Hiện tại nên định vị là:
 
-### Phiên bản 1 câu ngắn
+**Performance Marketing & Sales Operations Platform** cho doanh nghiệp phụ thuộc quảng cáo, data, đội sale và KPI nội bộ.
 
-Workspace MIZ là hệ thống quản trị vận hành nội bộ giúp đội Marketing/Sale theo dõi báo cáo, KPI, Ads Dashboard, lead, điểm danh và đào tạo trên một nền tảng thống nhất.
+Cách nói an toàn trong proposal:
 
-### Phiên bản 1 đoạn ngắn
+- Workspace MIZ có thể đứng cạnh Odoo để xử lý lớp vận hành Marketing/Sale tốc độ cao.
+- Workspace MIZ có thể đẩy dữ liệu đơn/lead sang Odoo trong roadmap tích hợp.
+- Workspace MIZ chưa thay thế Odoo ở kế toán, kho vận, mua hàng, logistics và ERP tổng quát.
 
-Workspace MIZ là một internal operations workspace được xây dựng cho đội Marketing và Sale của MKTRe. Hệ thống gom các quy trình quan trọng như nhập báo cáo, theo dõi KPI, ranking, Ads Dashboard, quản lý lead thả nổi, điểm danh, tài sản và đào tạo nội bộ vào một nền tảng có phân quyền rõ ràng theo Admin, Leader, Employee và Sale.
+## Commercial Potential
 
-### Phiên bản chuyên nghiệp cho portfolio
+### Khách hàng mục tiêu
 
-Workspace MIZ is an internal performance operations platform designed for MKTRe’s Marketing and Sales teams. The system centralizes reporting, KPI tracking, Meta Ads performance monitoring, lead lifecycle management, attendance, asset management, training documents, and role-based administration. As Product Owner and System Designer, I structured the business logic, user flows, role permissions, and performance dashboards to help leadership manage daily marketing operations with clearer data and faster decision-making.
+- Doanh nghiệp D2C/e-commerce chạy quảng cáo hiệu suất cao.
+- Phòng Marketing có nhiều tài khoản quảng cáo, nhiều nhân viên, nhiều báo cáo ngày.
+- Đội Sale nhận data từ Facebook/Landing Page/Hotline và cần kiểm soát chia số.
+- Công ty SME đã thấy Odoo/ERP quá rộng nhưng thiếu dashboard Marketing/Sale đặc thù.
+- Agency/performance team cần quản trị nhiều tài khoản ads và KPI nhân sự.
 
-## 8. Suggested Screenshots
+### Điểm khác biệt so với Odoo/ERP truyền thống
 
-Các màn hình nên chụp để đưa vào portfolio:
+- Tập trung vào vận hành Marketing/Sale, không bị nặng ERP.
+- Có Ads Dashboard và Meta API workflow native.
+- Có KPI theo team/cá nhân/khung báo cáo, phù hợp quản lý hiệu suất.
+- Có lead source ingest, duplicate check và contact workflow riêng cho MKT.
+- Có Telegram notification và screenshot/report sharing phục vụ vận hành hàng ngày.
+- UI được thiết kế theo workflow thực tế thay vì module ERP tổng quát.
 
-1. **Dashboard Marketing**  
-   Chụp màn hình tổng quan có doanh thu, chi phí ads, data và chỉ số hiệu suất.
+### Module có thể thương mại hóa sớm
 
-2. **Ads Dashboard**  
-   Chụp phần account selector, card giới hạn chi tiêu, bảng campaign, filter Active/All và trạng thái phân phối.
+- Ads Dashboard Marketing.
+- KPI Marketing/Sale.
+- Báo cáo Marketing/Sale.
+- Task/Checklist/Approval.
+- Nguồn Marketing + Liên hệ khách hàng.
+- Training/Resources.
+- Attendance/Leave cơ bản.
 
-3. **Nhập báo cáo Marketing**  
-   Chụp form nhập báo cáo theo khung giờ và phần chỉ số tự tính.
+### Module cần hoàn thiện trước khi bán
 
-4. **KPI Marketing**  
-   Chụp màn KPI team/cá nhân với bộ lọc thời gian, team, nhân sự và tiến độ KPI.
+- CRM lead distribution cho Sale.
+- Contact lifecycle và note history cho Sale.
+- Permission/RLS audit toàn diện.
+- Billing/subscription nếu bán SaaS.
+- Production observability: logs, error tracking, audit trail.
+- Backup/restore và data retention.
+- Import/export chuẩn cho khách hàng.
+- Tích hợp Odoo/ERP hoặc webhook outbound.
 
-5. **Ranking Marketing**  
-   Chụp bảng xếp hạng nhân sự/team theo hiệu suất.
+### Rủi ro kỹ thuật / vận hành / bảo mật
 
-6. **Kho thả nổi**  
-   Chụp luồng Marketing upload số và Sale xử lý lead, hoặc Admin xem toàn bộ lifecycle.
+- Token Meta và system token cần audit bảo mật nghiêm ngặt.
+- RLS cần test theo từng role/team để tránh lộ dữ liệu.
+- Lead ingest public endpoint cần rate limit, spam protection và signature/API key nếu dùng production.
+- Dữ liệu khách hàng chứa số điện thoại, cần phân quyền và log truy cập.
+- Telegram approval cần đảm bảo idempotency và resolved state.
+- Module mới nhiều, cần regression suite để tránh thay đổi UI làm lệch nghiệp vụ.
 
-7. **Sale Workspace**  
-   Chụp trang Sale dashboard hoặc kho thả nổi để thể hiện hệ thống không chỉ phục vụ Marketing.
+## Suggested Roadmap
 
-8. **Đào tạo**  
-   Chụp giao diện tài liệu, tab Marketing/Sale, pinned documents và video/tài liệu nội bộ.
+### Phase 1: Stabilize Internal Operations
 
-9. **Điểm danh**  
-   Chụp lịch điểm danh tháng và trạng thái nhân sự.
+- Hoàn thiện test role scope cho Admin/Manager/Leader/Employee/Sale.
+- Chuẩn hóa RLS và audit log cho contact, report, invoice, ads account.
+- Hoàn thiện Liên hệ khách hàng với dữ liệu thật thay vì sample.
+- Gắn Sale note UI vào `contact_notes`.
+- Hoàn thiện Ngân sách Marketing bằng DB thật.
 
-10. **Admin User / Team Management**  
-   Chụp màn quản lý user, role, team Marketing/Sale để thể hiện phân quyền hệ thống.
+### Phase 2: Lead Distribution & CRM Layer
 
-11. **Notification / Telegram Integration**  
-   Nếu có ảnh thực tế, chụp notification center hoặc luồng Telegram approval. Nếu không, ghi chú là “Cần bổ sung ảnh thực tế”.
+- Xây module chia số tự động cho Sale.
+- Xây màn Sale xử lý contact được chia.
+- Chuẩn hóa lifecycle: mới, đang xử lý, đã gọi, đã nhận/chốt, trùng, resale.
+- Tích hợp đơn hàng/invoice với contact.
+- Export/import và webhook outbound.
 
-12. **Meta Ads Sync Architecture**  
-   Có thể chụp Ads Dashboard kèm mô tả ngắn: frontend không giữ token, sync qua Supabase Edge Function.
+### Phase 3: Commercial Product Readiness
 
-## Notes for Portfolio Finalization
+- Multi-company/multi-tenant model.
+- Billing/subscription.
+- Deployment pipeline, monitoring, rate limit.
+- Data privacy, audit trail, backup.
+- Marketplace/demo workspace.
+- Optional Odoo integration connector.
 
-- Cần bổ sung thông tin thực tế về quy mô sử dụng: số lượng nhân sự, số team, số report/ngày, số lead/ngày.
-- Cần bổ sung impact định lượng nếu có: thời gian tiết kiệm, mức giảm lỗi báo cáo, tốc độ tổng hợp KPI.
-- Cần bổ sung ảnh chụp giao diện production hoặc staging với dữ liệu đã được ẩn thông tin nhạy cảm.
-- Nên làm mờ số điện thoại, token, email cá nhân, doanh thu thật hoặc tên tài khoản quảng cáo nếu dùng ảnh public.
+## Notes for Business Proposal
+
+Nên giới thiệu Workspace MIZ như một case study xây dựng hệ thống vận hành nội bộ chuyên biệt cho Performance Marketing và Sales Ops.
+
+Điểm nên nhấn mạnh:
+
+- Xuất phát từ nhu cầu thật của đội Marketing/Sale.
+- Có phân quyền theo vai trò và team.
+- Có Meta Ads API integration.
+- Có báo cáo, KPI, ranking, attendance, task approval, training và notification trong một workspace.
+- Có hướng mở rộng thành lead ingestion/contact management.
+- Có thể tích hợp với ERP/Odoo thay vì thay thế ERP ngay.
+
+Điểm cần tránh nói quá:
+
+- Không nói Workspace MIZ đã là ERP đầy đủ.
+- Không nói đã thay thế Odoo ở kế toán/kho vận/logistics.
+- Không nói CRM đã hoàn chỉnh nếu Sale contact pipeline chưa xong.
+- Không nói GPS Checkin đã hoàn thiện nếu hiện mới là định hướng.
+
+Thông tin cần bổ sung thực tế trước khi làm proposal thương mại:
+
+- Số lượng user nội bộ đang dùng thật.
+- Khối lượng report/contact/ads account thực tế.
+- Kết quả tiết kiệm thời gian hoặc giảm lỗi vận hành.
+- Domain/deployment production chính thức.
+- Chính sách backup và bảo mật token.
+- Danh sách màn hình đã deploy ổn định.
+
+## Suggested Screenshots
+
+- Admin Dashboard và sidebar phân nhóm.
+- Ads Dashboard Marketing/Admin.
+- Báo cáo Sale và pivot view.
+- KPI Marketing với KPI toàn hệ thống.
+- KPI Sale Leader/Admin.
+- Nguồn Marketing và API URL.
+- Liên hệ khách hàng table/kanban/detail popup.
+- Kho thả nổi Marketing/Sale.
+- Task/Checklist approval.
+- Sản phẩm và Hóa đơn bán hàng.
+- Đào tạo Marketing/Sale.
