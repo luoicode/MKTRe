@@ -2,12 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import {
   CalendarDays,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
   Columns3,
   Copy,
-  Eye,
   Filter,
   GripVertical,
   Heart,
@@ -85,9 +85,7 @@ const PAGE_SIZE = 50;
 const FILTER_PRESET_STORAGE_KEY = "workspace-miz:employee-marketing-contacts-filter-presets";
 const COLUMN_CONFIG_STORAGE_KEY = "workspace-miz:employee-marketing-contacts-column-config";
 const ALL_CONTACTS_COLUMN_CONFIG_KEY = "all_contacts";
-const CONTACT_DETAIL_COLUMN_WIDTH = 44;
 const CONTACT_INDEX_COLUMN_WIDTH = 48;
-const CONTACT_INDEX_COLUMN_LEFT = `${CONTACT_DETAIL_COLUMN_WIDTH}px`;
 
 type StatusFilter = ContactStatus | typeof ALL_STATUS | typeof SALE_RECEIVED_STATUS;
 type DatePreset =
@@ -131,13 +129,29 @@ const statusOptions: Array<{ key: ContactStatus; label: string }> = [
   { key: "called", label: "Đã gọi" },
   { key: "resale_received", label: "Resale nhận" },
   { key: "duplicate", label: "Trùng" },
-  { key: "success", label: "Đã nhận" },
+  { key: "success", label: "Hoàn thành" },
+  { key: "cancelled", label: "Huỷ" },
+  { key: "quoted", label: "Báo giá" },
+  { key: "shipping", label: "Đang giao" },
+  { key: "returned", label: "Hoàn" },
 ];
 
-const tabOptions: Array<{ key: StatusFilter; label: string }> = [
+const primaryTabOptions: Array<{ key: StatusFilter; label: string }> = [
   { key: ALL_STATUS, label: "Tất cả" },
   { key: SALE_RECEIVED_STATUS, label: "Sale nhận" },
-  ...statusOptions,
+  { key: "new", label: "Mới" },
+  { key: "processing", label: "Đang xử lí" },
+  { key: "called", label: "Đã gọi" },
+  { key: "duplicate", label: "Trùng" },
+];
+
+const overflowStatusOptions: Array<{ key: ContactStatus; label: string }> = [
+  { key: "quoted", label: "Báo giá" },
+  { key: "shipping", label: "Đang giao" },
+  { key: "cancelled", label: "Huỷ" },
+  { key: "returned", label: "Hoàn" },
+  { key: "success", label: "Hoàn thành" },
+  { key: "resale_received", label: "Resale nhận" },
 ];
 
 const datePresetOptions: Array<{ key: DatePreset; label: string }> = [
@@ -408,7 +422,7 @@ const rawSampleMarketingContacts: SampleMarketingContact[] = [
       "Lead được tạo từ Facebook chuyển đổi",
       "Chia cho Phạm Thị Ly Na",
       "Chuyển trạng thái Đang xử lí",
-      "Chuyển trạng thái Đã nhận",
+      "Chuyển trạng thái Hoàn thành",
     ],
     isDuplicate: false,
     duplicateOfContactId: null,
@@ -422,7 +436,7 @@ const rawSampleMarketingContacts: SampleMarketingContact[] = [
         shippingAddress: "SỐ 12 NGÕ 6, CẦU GIẤY, HÀ NỘI",
         product: "Combo 5 hũ Notrigold",
         revenue: 1755000,
-        status: "Đã nhận",
+        status: "Hoàn thành",
         currency: "VND",
         paymentMethod: "COD",
       },
@@ -546,7 +560,7 @@ const rawSampleMarketingContacts: SampleMarketingContact[] = [
     history: [
       "Lead được tạo từ Facebook mess",
       "Chia cho Tạ Ngọc Tuấn",
-      "Chuyển trạng thái Đã nhận",
+      "Chuyển trạng thái Hoàn thành",
     ],
     isDuplicate: false,
     duplicateOfContactId: null,
@@ -560,7 +574,7 @@ const rawSampleMarketingContacts: SampleMarketingContact[] = [
         shippingAddress: "XÃ ĐÔNG LA, HOÀI ĐỨC, HÀ NỘI",
         product: "Combo 3 hũ Notrigold",
         revenue: 1112000,
-        status: "Đã nhận",
+        status: "Hoàn thành",
         currency: "VND",
         paymentMethod: "COD",
       },
@@ -612,6 +626,7 @@ function MarketingContactsPage() {
   const [fetchingContacts, setFetchingContacts] = useState(false);
   const hasLoadedContactsRef = useRef(false);
   const [activeStatus, setActiveStatus] = useState<StatusFilter>(ALL_STATUS);
+  const [statusOverflowOpen, setStatusOverflowOpen] = useState(false);
   const [statusDropdownFilter, setStatusDropdownFilter] = useState<ContactStatus[]>([]);
   const [activeDatePreset, setActiveDatePreset] = useState<DatePreset>("month_to_date");
   const [appliedDateRange, setAppliedDateRange] = useState(initialDateRange);
@@ -902,7 +917,7 @@ function MarketingContactsPage() {
     >;
     for (const contact of appliedFilterContacts) {
       const key = contact.isDuplicate ? "duplicate" : contact.status;
-      byStatus[key] += 1;
+      byStatus[key] = (byStatus[key] ?? 0) + 1;
     }
     const saleReceived = byStatus.new + byStatus.processing + byStatus.called;
     return {
@@ -911,6 +926,21 @@ function MarketingContactsPage() {
       ...byStatus,
     };
   }, [appliedFilterContacts]);
+
+  const getStatusCount = useCallback(
+    (status: StatusFilter) => {
+      if (status === ALL_STATUS) return statusCounts.total;
+      if (status === SALE_RECEIVED_STATUS) return statusCounts.saleReceived;
+      return statusCounts[status] ?? 0;
+    },
+    [statusCounts],
+  );
+
+  const activeOverflowStatus = overflowStatusOptions.find((status) => status.key === activeStatus);
+  const overflowStatusCount = overflowStatusOptions.reduce(
+    (total, status) => total + getStatusCount(status.key),
+    0,
+  );
 
   const filteredContacts = useMemo(() => {
     return appliedFilterContacts.filter((contact) => {
@@ -1554,15 +1584,18 @@ function MarketingContactsPage() {
   };
 
   const renderPhoneCell = (phone: string) => (
-    <span className="group relative inline-flex max-w-full align-middle">
+    <span className="relative inline-flex max-w-full align-middle">
       <button
         type="button"
-        className="block max-w-full cursor-pointer truncate text-left font-medium tabular-nums text-blue-600 transition hover:text-blue-700"
-        onClick={() => void copyPhoneNumber(phone)}
+        className="peer block max-w-full cursor-pointer truncate text-left font-medium tabular-nums text-blue-600 transition hover:text-blue-700"
+        onClick={(event) => {
+          event.stopPropagation();
+          void copyPhoneNumber(phone);
+        }}
       >
         {phone}
       </button>
-      <span className="pointer-events-none absolute left-0 top-full z-30 mt-1 hidden whitespace-nowrap rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 shadow-lg group-hover:block">
+      <span className="pointer-events-none absolute left-0 top-full z-30 mt-1 hidden whitespace-nowrap rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 shadow-lg peer-hover:block peer-focus-visible:block">
         Click để copy số điện thoại
       </span>
     </span>
@@ -1644,13 +1677,6 @@ function MarketingContactsPage() {
     <colgroup>
       <col
         style={{
-          width: CONTACT_DETAIL_COLUMN_WIDTH,
-          minWidth: CONTACT_DETAIL_COLUMN_WIDTH,
-          maxWidth: CONTACT_DETAIL_COLUMN_WIDTH,
-        }}
-      />
-      <col
-        style={{
           width: CONTACT_INDEX_COLUMN_WIDTH,
           minWidth: CONTACT_INDEX_COLUMN_WIDTH,
           maxWidth: CONTACT_INDEX_COLUMN_WIDTH,
@@ -1662,18 +1688,6 @@ function MarketingContactsPage() {
         return <col key={column.id} className={column.width} />;
       })}
     </colgroup>
-  );
-
-  const renderDetailButton = (contact: MarketingContact) => (
-    <Button
-      variant="ghost"
-      size="icon"
-      title="Xem chi tiết"
-      className="h-8 w-8 rounded-lg text-slate-500 hover:bg-blue-50 hover:text-blue-600"
-      onClick={() => setDetailContact(contact)}
-    >
-      <Eye className="h-4 w-4" />
-    </Button>
   );
 
   const advancedFilterGroups = useMemo<AdvancedFilterGroupConfig[]>(
@@ -1902,14 +1916,9 @@ function MarketingContactsPage() {
 
         <div className="mt-2 flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0 overflow-x-auto">
-            <div className="inline-flex min-w-max rounded-xl bg-slate-100 p-1">
-              {tabOptions.map((tab) => {
-                const count =
-                  tab.key === ALL_STATUS
-                    ? statusCounts.total
-                    : tab.key === SALE_RECEIVED_STATUS
-                      ? statusCounts.saleReceived
-                      : statusCounts[tab.key];
+            <div className="inline-flex min-w-max items-center rounded-xl bg-slate-100 p-1">
+              {primaryTabOptions.map((tab) => {
+                const count = getStatusCount(tab.key);
                 return (
                   <button
                     key={tab.key}
@@ -1936,6 +1945,72 @@ function MarketingContactsPage() {
                   </button>
                 );
               })}
+              <Popover open={statusOverflowOpen} onOpenChange={setStatusOverflowOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      "flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition",
+                      activeOverflowStatus
+                        ? "bg-white text-blue-700 shadow-sm ring-1 ring-slate-200"
+                        : "text-slate-500 hover:text-slate-900",
+                    )}
+                  >
+                    <span>{activeOverflowStatus?.label ?? "Khác"}</span>
+                    <span
+                      className={cn(
+                        "min-w-5 rounded-full px-1.5 py-0.5 text-center text-[11px] leading-none",
+                        activeOverflowStatus
+                          ? "bg-blue-50 text-blue-700"
+                          : "bg-white text-slate-500",
+                      )}
+                    >
+                      {activeOverflowStatus
+                        ? getStatusCount(activeOverflowStatus.key)
+                        : overflowStatusCount}
+                    </span>
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  sideOffset={6}
+                  className="w-56 rounded-xl border-slate-200 p-1.5 shadow-xl"
+                >
+                  {overflowStatusOptions.map((status) => {
+                    const selected = activeStatus === status.key;
+                    return (
+                      <button
+                        key={status.key}
+                        type="button"
+                        onClick={() => {
+                          setActiveStatus(status.key);
+                          setStatusOverflowOpen(false);
+                        }}
+                        className={cn(
+                          "flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium transition",
+                          selected
+                            ? "bg-blue-50 text-blue-700"
+                            : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
+                        )}
+                      >
+                        <span className="inline-flex min-w-0 items-center gap-2">
+                          <StatusDot status={status.key} />
+                          <span className="truncate">{status.label}</span>
+                        </span>
+                        <span
+                          className={cn(
+                            "min-w-5 rounded-full px-1.5 py-0.5 text-center text-[11px] leading-none",
+                            selected ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500",
+                          )}
+                        >
+                          {getStatusCount(status.key)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
 
@@ -2290,18 +2365,8 @@ function MarketingContactsPage() {
                 <thead className="text-xs font-semibold text-slate-500">
                   <tr className="h-10 border-b border-slate-200">
                     <th
-                      className="sticky left-0 top-0 z-50 bg-slate-50 p-0 text-center shadow-[0_1px_0_0_rgba(226,232,240,1)]"
+                      className="sticky left-0 top-0 z-50 rounded-tl-2xl bg-slate-50 p-0 text-center shadow-[6px_0_12px_-12px_rgba(15,23,42,0.35),0_1px_0_0_rgba(226,232,240,0.9)]"
                       style={{
-                        width: CONTACT_DETAIL_COLUMN_WIDTH,
-                        minWidth: CONTACT_DETAIL_COLUMN_WIDTH,
-                        maxWidth: CONTACT_DETAIL_COLUMN_WIDTH,
-                      }}
-                      aria-label="Xem chi tiết"
-                    />
-                    <th
-                      className="sticky top-0 z-50 border-r border-slate-200 bg-slate-50 p-0 text-center shadow-[4px_0_10px_-8px_rgba(15,23,42,0.45),0_1px_0_0_rgba(226,232,240,1)]"
-                      style={{
-                        left: CONTACT_INDEX_COLUMN_LEFT,
                         width: CONTACT_INDEX_COLUMN_WIDTH,
                         minWidth: CONTACT_INDEX_COLUMN_WIDTH,
                         maxWidth: CONTACT_INDEX_COLUMN_WIDTH,
@@ -2327,7 +2392,7 @@ function MarketingContactsPage() {
                   {loadingContacts ? (
                     <tr>
                       <td
-                        colSpan={2 + visibleColumnIds.length}
+                        colSpan={1 + visibleColumnIds.length}
                         className="px-4 py-12 text-center text-sm text-slate-500"
                       >
                         Đang tải liên hệ khách hàng...
@@ -2336,7 +2401,7 @@ function MarketingContactsPage() {
                   ) : filteredContacts.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={2 + visibleColumnIds.length}
+                        colSpan={1 + visibleColumnIds.length}
                         className="px-4 py-12 text-center text-sm text-slate-500"
                       >
                         Chưa có liên hệ khách hàng phù hợp.
@@ -2344,21 +2409,14 @@ function MarketingContactsPage() {
                     </tr>
                   ) : (
                     paginatedContacts.map((contact, index) => (
-                      <tr key={contact.id} className="group h-11 transition hover:bg-slate-50/80">
+                      <tr
+                        key={contact.id}
+                        className="group h-11 cursor-pointer transition hover:bg-slate-50/80"
+                        onClick={() => setDetailContact(contact)}
+                      >
                         <td
-                          className="sticky left-0 z-30 bg-white p-0 text-center align-middle transition group-hover:bg-slate-50"
+                          className="sticky left-0 z-30 bg-white p-0 text-center align-middle text-slate-500 shadow-[6px_0_12px_-12px_rgba(15,23,42,0.35)] transition group-hover:bg-slate-50"
                           style={{
-                            width: CONTACT_DETAIL_COLUMN_WIDTH,
-                            minWidth: CONTACT_DETAIL_COLUMN_WIDTH,
-                            maxWidth: CONTACT_DETAIL_COLUMN_WIDTH,
-                          }}
-                        >
-                          {renderDetailButton(contact)}
-                        </td>
-                        <td
-                          className="sticky z-30 border-r border-slate-100 bg-white p-0 text-center align-middle text-slate-500 shadow-[4px_0_10px_-8px_rgba(15,23,42,0.45)] transition group-hover:bg-slate-50"
-                          style={{
-                            left: CONTACT_INDEX_COLUMN_LEFT,
                             width: CONTACT_INDEX_COLUMN_WIDTH,
                             minWidth: CONTACT_INDEX_COLUMN_WIDTH,
                             maxWidth: CONTACT_INDEX_COLUMN_WIDTH,
@@ -2967,6 +3025,10 @@ function StatusPill({ status }: { status: ContactStatus }) {
     resale_received: "bg-teal-50 text-teal-700 ring-teal-100",
     duplicate: "bg-rose-50 text-rose-700 ring-rose-100",
     success: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+    cancelled: "bg-slate-100 text-slate-600 ring-slate-200",
+    quoted: "bg-indigo-50 text-indigo-700 ring-indigo-100",
+    shipping: "bg-orange-50 text-orange-700 ring-orange-100",
+    returned: "bg-green-50 text-green-700 ring-green-100",
   }[status];
 
   return (
@@ -3501,11 +3563,32 @@ function buildContactNoteHistory(contact: MarketingContact) {
       createdBy: note.createdBy?.trim() || "—",
     }));
 
+  const latestNote = getContactRecentNote(contact).trim();
+  const hasLatestNote =
+    latestNote &&
+    !isEmptyNoteText(latestNote) &&
+    !noteHistory.some(
+      (note) => normalizeNoteContent(note.content) === normalizeNoteContent(latestNote),
+    );
+
+  if (hasLatestNote) {
+    noteHistory.push({
+      id: `${contact.id}-latest-note-fallback`,
+      createdAt: contact.updatedAt || contact.createdAtFull || contact.createdAt,
+      content: latestNote,
+      createdBy: !isUnassignedValue(contact.salesOwner) ? contact.salesOwner : "Hệ thống",
+    });
+  }
+
   return noteHistory.sort((left, right) => {
     const leftTime = getSortableDateTime(left.createdAt);
     const rightTime = getSortableDateTime(right.createdAt);
     return rightTime - leftTime;
   });
+}
+
+function normalizeNoteContent(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 function isEmptyNoteText(value: string) {
@@ -3554,7 +3637,7 @@ function getContactTableMinWidth(columnIds: ContactColumnId[]) {
     const width = contactColumnMeta.find((column) => column.id === columnId)?.width ?? "";
     const parsedWidth = Number(width.match(/\d+/)?.[0] ?? 150);
     return total + parsedWidth;
-  }, CONTACT_DETAIL_COLUMN_WIDTH + CONTACT_INDEX_COLUMN_WIDTH);
+  }, CONTACT_INDEX_COLUMN_WIDTH);
 
   return Math.max(760, visibleWidth);
 }
@@ -3584,6 +3667,10 @@ function getKanbanColumnCountTone(status: ContactStatus) {
     processing: "bg-amber-50 text-amber-700 ring-amber-100",
     resale_received: "bg-teal-50 text-teal-700 ring-teal-100",
     success: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+    cancelled: "bg-slate-100 text-slate-600 ring-slate-200",
+    quoted: "bg-indigo-50 text-indigo-700 ring-indigo-100",
+    shipping: "bg-orange-50 text-orange-700 ring-orange-100",
+    returned: "bg-green-50 text-green-700 ring-green-100",
   }[status];
 }
 
@@ -3646,6 +3733,10 @@ function StatusDot({ status }: { status: ContactStatus }) {
     resale_received: "bg-teal-500",
     duplicate: "bg-rose-500",
     success: "bg-emerald-500",
+    cancelled: "bg-slate-500",
+    quoted: "bg-indigo-500",
+    shipping: "bg-orange-500",
+    returned: "bg-green-500",
   }[status];
 
   return <span className={cn("h-2 w-2 rounded-full", colorClass)} />;

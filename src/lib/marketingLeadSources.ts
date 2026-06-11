@@ -112,12 +112,17 @@ export type ContactStatus =
   | "called"
   | "resale_received"
   | "duplicate"
-  | "success";
+  | "success"
+  | "cancelled"
+  | "quoted"
+  | "shipping"
+  | "returned";
 
 export interface MarketingContact {
   id: string;
   createdAt: string;
   createdAtFull: string;
+  updatedAt?: string | null;
   name: string;
   email: string;
   phone: string;
@@ -291,7 +296,7 @@ export async function fetchEmployeeMarketingContacts(): Promise<MarketingContact
   const { data, error } = await db
     .from("marketing_contacts")
     .select(
-      "id, created_at, owner_user_id, team_id, customer_name, email, phone, message, source_name, source_channel, sales_owner_name, sales_team_name, status, is_duplicate, duplicate_of_contact_id, duplicate_checked_at, eligible_for_sale_distribution, raw_payload, profiles(full_name, username, email, employee_code, company_name), teams(name), lead_sources(name, product)",
+      "id, created_at, updated_at, owner_user_id, team_id, customer_name, email, phone, message, source_name, source_channel, sales_owner_name, sales_team_name, status, is_duplicate, duplicate_of_contact_id, duplicate_checked_at, eligible_for_sale_distribution, raw_payload, profiles(full_name, username, email, employee_code, company_name), teams(name), lead_sources(name, product)",
     )
     .order("created_at", { ascending: false });
 
@@ -344,7 +349,7 @@ export async function createMarketingContact(input: CreateMarketingContactInput)
       },
     })
     .select(
-      "id, created_at, owner_user_id, team_id, customer_name, email, phone, message, source_name, source_channel, sales_owner_name, sales_team_name, status, is_duplicate, duplicate_of_contact_id, duplicate_checked_at, eligible_for_sale_distribution, raw_payload, profiles(full_name, username, email, employee_code, company_name), teams(name), lead_sources(name, product)",
+      "id, created_at, updated_at, owner_user_id, team_id, customer_name, email, phone, message, source_name, source_channel, sales_owner_name, sales_team_name, status, is_duplicate, duplicate_of_contact_id, duplicate_checked_at, eligible_for_sale_distribution, raw_payload, profiles(full_name, username, email, employee_code, company_name), teams(name), lead_sources(name, product)",
     )
     .single();
 
@@ -515,6 +520,7 @@ function mapMarketingContactRow(
     id: row.id,
     createdAtFull: String(row.created_at ?? ""),
     createdAt: String(row.created_at ?? "").slice(0, 10),
+    updatedAt: row.updated_at ?? null,
     name: row.customer_name || asString(rawPayload.name) || "Chưa có tên",
     email: row.email || asString(rawPayload.email),
     phone: row.phone,
@@ -578,17 +584,55 @@ function formatActorLabel(name: string, employeeCode?: string | null, team?: str
 
 function normalizeContactStatus(status: string | null, isDuplicate: boolean): ContactStatus {
   if (isDuplicate) return "duplicate";
+  const normalizedStatus = status?.trim().toLowerCase() ?? "";
   if (
-    status === "new" ||
-    status === "processing" ||
-    status === "called" ||
-    status === "resale_received" ||
-    status === "duplicate" ||
-    status === "success"
+    normalizedStatus === "new" ||
+    normalizedStatus === "processing" ||
+    normalizedStatus === "called" ||
+    normalizedStatus === "resale_received" ||
+    normalizedStatus === "duplicate" ||
+    normalizedStatus === "success" ||
+    normalizedStatus === "cancelled" ||
+    normalizedStatus === "quoted" ||
+    normalizedStatus === "shipping" ||
+    normalizedStatus === "returned"
   ) {
-    return status;
+    return normalizedStatus;
   }
-  if (status === "closed") return "success";
+  if (normalizedStatus === "closed") return "success";
+  if (normalizedStatus === "completed" || normalizedStatus === "complete") return "success";
+  if (
+    normalizedStatus === "cancel" ||
+    normalizedStatus === "canceled" ||
+    normalizedStatus === "huỷ" ||
+    normalizedStatus === "hủy"
+  ) {
+    return "cancelled";
+  }
+  if (
+    normalizedStatus === "quote" ||
+    normalizedStatus === "quoted" ||
+    normalizedStatus === "bao_gia" ||
+    normalizedStatus === "báo giá"
+  ) {
+    return "quoted";
+  }
+  if (
+    normalizedStatus === "delivering" ||
+    normalizedStatus === "shipping" ||
+    normalizedStatus === "dang_giao" ||
+    normalizedStatus === "đang giao"
+  ) {
+    return "shipping";
+  }
+  if (
+    normalizedStatus === "returned" ||
+    normalizedStatus === "return" ||
+    normalizedStatus === "hoan" ||
+    normalizedStatus === "hoàn"
+  ) {
+    return "returned";
+  }
   return "new";
 }
 

@@ -453,7 +453,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     <div className="flex h-full min-h-0 w-full min-w-0 bg-background md:h-screen md:overflow-hidden md:bg-[#F3F5F7]">
       <aside
         className={cn(
-          "relative z-50 hidden shrink-0 bg-[#F3F5F7] transition-[width] duration-200 ease-out md:flex md:min-h-0 md:flex-col",
+          "relative z-[90] hidden shrink-0 bg-[#F3F5F7] transition-[width] duration-200 ease-out md:flex md:min-h-0 md:flex-col",
           sidebarCollapsed ? "w-20" : "w-60",
         )}
       >
@@ -743,7 +743,7 @@ function SidebarNavLink({
         >
           <item.icon className={cn("h-5 w-5 shrink-0", active ? "text-blue-700" : "")} />
         </Link>
-        <div className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 opacity-0 transition group-hover:pointer-events-auto group-hover:opacity-100">
+        <div className="pointer-events-none absolute left-[calc(100%+0.625rem)] top-1/2 z-[120] -translate-y-1/2 opacity-0 transition group-hover:pointer-events-auto group-hover:opacity-100">
           <div className="relative rounded-lg bg-slate-950 px-3 py-2 text-xs font-semibold text-white shadow-xl">
             <span className="absolute -left-1 top-1/2 h-2 w-2 -translate-y-1/2 rotate-45 bg-slate-950" />
             <span className="relative z-10 whitespace-nowrap">{item.label}</span>
@@ -875,7 +875,7 @@ function CollapsedNavGroup({
       <div
         aria-hidden={!open}
         className={cn(
-          "absolute left-full top-0 z-50 ml-1 min-w-64 transition",
+          "absolute left-[calc(100%+0.5rem)] top-0 z-[120] min-w-64 transition",
           open
             ? "pointer-events-auto translate-x-0 opacity-100"
             : "pointer-events-none -translate-x-1 opacity-0",
