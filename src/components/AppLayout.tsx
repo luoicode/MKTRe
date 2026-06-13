@@ -239,6 +239,12 @@ const NAV: NavItem[] = [
     roles: [...SALE_ROLES],
   },
   { to: "/sale/kpi", label: "KPI sale", icon: Target, roles: [...SALE_ROLES] },
+  {
+    to: "/sale/contacts",
+    label: "Liên hệ khách hàng",
+    icon: UsersRound,
+    roles: ["sale"],
+  },
   { to: "/sale/attendance", label: "Điểm danh", icon: CalendarCheck, roles: [...SALE_ROLES] },
   {
     to: "/sale/floating-pool",
@@ -454,7 +460,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <aside
         className={cn(
           "relative z-[90] hidden shrink-0 bg-[#F3F5F7] transition-[width] duration-200 ease-out md:flex md:min-h-0 md:flex-col",
-          sidebarCollapsed ? "w-20" : "w-60",
+          sidebarCollapsed ? "w-[72px]" : "w-60",
         )}
       >
         <SidebarContent
@@ -556,15 +562,15 @@ function SidebarContent({
   onToggleCollapsed?: () => void;
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#F3F5F7]">
+    <div className="flex h-full min-h-0 flex-col bg-[#F3F5F7] pt-3">
       <div
         className={cn(
           "flex shrink-0 items-center",
-          collapsed ? "h-[72px] justify-center px-2 pb-2 pt-4" : "h-12 px-3",
+          collapsed ? "h-[76px] justify-center px-2 pb-2 pt-3" : "h-12 px-3",
         )}
       >
         {collapsed ? (
-          <div className="flex aspect-square h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 via-blue-600 to-violet-600 text-lg font-black text-white shadow-lg shadow-blue-500/25 ring-4 ring-blue-50">
+          <div className="flex aspect-square h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 via-blue-600 to-violet-600 text-base font-black text-white shadow-lg shadow-blue-500/25 ring-4 ring-blue-50">
             M
           </div>
         ) : (
@@ -574,7 +580,7 @@ function SidebarContent({
       <nav
         className={cn(
           "min-h-0 flex-1",
-          collapsed ? "overflow-visible px-3 py-4 pt-2" : "overflow-y-auto py-2",
+          collapsed ? "overflow-visible px-2.5 py-2.5 pt-1" : "overflow-y-auto py-2",
         )}
       >
         <NavSection
@@ -586,21 +592,21 @@ function SidebarContent({
         />
       </nav>
       {onToggleCollapsed ? (
-        <div className={cn("shrink-0", collapsed ? "p-3 pb-4" : "px-3 py-2")}>
+        <div className={cn("shrink-0", collapsed ? "p-2.5 pb-3" : "px-3 py-2")}>
           <button
             type="button"
             onClick={onToggleCollapsed}
             className={cn(
               "flex items-center text-sm font-semibold text-slate-600 transition-colors hover:bg-white hover:text-slate-950",
               collapsed
-                ? "mx-auto h-12 w-12 justify-center rounded-2xl"
+                ? "mx-auto h-10 w-10 justify-center rounded-xl"
                 : "mx-0 h-12 w-full gap-2.5 rounded-2xl px-3",
             )}
             aria-label={collapsed ? "Mở rộng sidebar" : "Thu gọn sidebar"}
             title={collapsed ? "Mở rộng" : undefined}
           >
             {collapsed ? (
-              <PanelLeftOpen className="h-5 w-5 shrink-0" />
+              <PanelLeftOpen className="h-[18px] w-[18px] shrink-0" />
             ) : (
               <>
                 <PanelLeftClose className="h-5 w-5 shrink-0" />
@@ -636,7 +642,7 @@ function NavSection({
   );
 
   return (
-    <div className={cn(collapsed ? "space-y-2.5" : "space-y-0.5")}>
+    <div className={cn(collapsed ? "space-y-2" : "space-y-0.5")}>
       {entries.map((entry) => {
         if (!isNavGroup(entry)) {
           return (
@@ -735,13 +741,13 @@ function SidebarNavLink({
           onClick={onNavigate}
           aria-label={item.label}
           className={cn(
-            "flex h-12 w-12 items-center justify-center rounded-2xl transition-colors",
+            "flex h-10 w-10 items-center justify-center rounded-xl transition-colors",
             active
               ? "bg-blue-100 text-blue-700 shadow-sm shadow-blue-200/60"
               : "text-slate-500 hover:bg-slate-100 hover:text-slate-950",
           )}
         >
-          <item.icon className={cn("h-5 w-5 shrink-0", active ? "text-blue-700" : "")} />
+          <item.icon className={cn("h-[18px] w-[18px] shrink-0", active ? "text-blue-700" : "")} />
         </Link>
         <div className="pointer-events-none absolute left-[calc(100%+0.625rem)] top-1/2 z-[120] -translate-y-1/2 opacity-0 transition group-hover:pointer-events-auto group-hover:opacity-100">
           <div className="relative rounded-lg bg-slate-950 px-3 py-2 text-xs font-semibold text-white shadow-xl">
@@ -864,13 +870,13 @@ function CollapsedNavGroup({
         type="button"
         aria-label={group.label}
         className={cn(
-          "flex h-12 w-12 items-center justify-center rounded-2xl transition-colors",
+          "flex h-10 w-10 items-center justify-center rounded-xl transition-colors",
           active
             ? "bg-blue-100 text-blue-700 shadow-sm shadow-blue-200/60"
             : "text-slate-500 hover:bg-slate-100 hover:text-slate-950",
         )}
       >
-        <group.icon className={cn("h-5 w-5 shrink-0", active ? "text-blue-700" : "")} />
+        <group.icon className={cn("h-[18px] w-[18px] shrink-0", active ? "text-blue-700" : "")} />
       </button>
       <div
         aria-hidden={!open}

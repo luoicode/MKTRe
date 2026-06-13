@@ -23,6 +23,7 @@ import { Route as AuthenticatedSaleKpiRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedSaleInvoicesRouteImport } from './routes/_authenticated/sale/invoices'
 import { Route as AuthenticatedSaleFloatingPoolRouteImport } from './routes/_authenticated/sale/floating-pool'
 import { Route as AuthenticatedSaleDashboardRouteImport } from './routes/_authenticated/sale/dashboard'
+import { Route as AuthenticatedSaleContactsRouteImport } from './routes/_authenticated/sale/contacts'
 import { Route as AuthenticatedSaleAttendanceRouteImport } from './routes/_authenticated/sale/attendance'
 import { Route as AuthenticatedManagerTodayTeamsRouteImport } from './routes/_authenticated/manager/today-teams'
 import { Route as AuthenticatedManagerTeamsRouteImport } from './routes/_authenticated/manager/teams'
@@ -165,6 +166,12 @@ const AuthenticatedSaleDashboardRoute =
   AuthenticatedSaleDashboardRouteImport.update({
     id: '/sale/dashboard',
     path: '/sale/dashboard',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedSaleContactsRoute =
+  AuthenticatedSaleContactsRouteImport.update({
+    id: '/sale/contacts',
+    path: '/sale/contacts',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedSaleAttendanceRoute =
@@ -634,6 +641,7 @@ export interface FileRoutesByFullPath {
   '/manager/teams': typeof AuthenticatedManagerTeamsRoute
   '/manager/today-teams': typeof AuthenticatedManagerTodayTeamsRoute
   '/sale/attendance': typeof AuthenticatedSaleAttendanceRoute
+  '/sale/contacts': typeof AuthenticatedSaleContactsRoute
   '/sale/dashboard': typeof AuthenticatedSaleDashboardRoute
   '/sale/floating-pool': typeof AuthenticatedSaleFloatingPoolRoute
   '/sale/invoices': typeof AuthenticatedSaleInvoicesRoute
@@ -716,6 +724,7 @@ export interface FileRoutesByTo {
   '/manager/teams': typeof AuthenticatedManagerTeamsRoute
   '/manager/today-teams': typeof AuthenticatedManagerTodayTeamsRoute
   '/sale/attendance': typeof AuthenticatedSaleAttendanceRoute
+  '/sale/contacts': typeof AuthenticatedSaleContactsRoute
   '/sale/dashboard': typeof AuthenticatedSaleDashboardRoute
   '/sale/floating-pool': typeof AuthenticatedSaleFloatingPoolRoute
   '/sale/invoices': typeof AuthenticatedSaleInvoicesRoute
@@ -800,6 +809,7 @@ export interface FileRoutesById {
   '/_authenticated/manager/teams': typeof AuthenticatedManagerTeamsRoute
   '/_authenticated/manager/today-teams': typeof AuthenticatedManagerTodayTeamsRoute
   '/_authenticated/sale/attendance': typeof AuthenticatedSaleAttendanceRoute
+  '/_authenticated/sale/contacts': typeof AuthenticatedSaleContactsRoute
   '/_authenticated/sale/dashboard': typeof AuthenticatedSaleDashboardRoute
   '/_authenticated/sale/floating-pool': typeof AuthenticatedSaleFloatingPoolRoute
   '/_authenticated/sale/invoices': typeof AuthenticatedSaleInvoicesRoute
@@ -884,6 +894,7 @@ export interface FileRouteTypes {
     | '/manager/teams'
     | '/manager/today-teams'
     | '/sale/attendance'
+    | '/sale/contacts'
     | '/sale/dashboard'
     | '/sale/floating-pool'
     | '/sale/invoices'
@@ -966,6 +977,7 @@ export interface FileRouteTypes {
     | '/manager/teams'
     | '/manager/today-teams'
     | '/sale/attendance'
+    | '/sale/contacts'
     | '/sale/dashboard'
     | '/sale/floating-pool'
     | '/sale/invoices'
@@ -1049,6 +1061,7 @@ export interface FileRouteTypes {
     | '/_authenticated/manager/teams'
     | '/_authenticated/manager/today-teams'
     | '/_authenticated/sale/attendance'
+    | '/_authenticated/sale/contacts'
     | '/_authenticated/sale/dashboard'
     | '/_authenticated/sale/floating-pool'
     | '/_authenticated/sale/invoices'
@@ -1167,6 +1180,13 @@ declare module '@tanstack/react-router' {
       path: '/sale/dashboard'
       fullPath: '/sale/dashboard'
       preLoaderRoute: typeof AuthenticatedSaleDashboardRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/sale/contacts': {
+      id: '/_authenticated/sale/contacts'
+      path: '/sale/contacts'
+      fullPath: '/sale/contacts'
+      preLoaderRoute: typeof AuthenticatedSaleContactsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/sale/attendance': {
@@ -1709,6 +1729,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedManagerTeamsRoute: typeof AuthenticatedManagerTeamsRoute
   AuthenticatedManagerTodayTeamsRoute: typeof AuthenticatedManagerTodayTeamsRoute
   AuthenticatedSaleAttendanceRoute: typeof AuthenticatedSaleAttendanceRoute
+  AuthenticatedSaleContactsRoute: typeof AuthenticatedSaleContactsRoute
   AuthenticatedSaleDashboardRoute: typeof AuthenticatedSaleDashboardRoute
   AuthenticatedSaleFloatingPoolRoute: typeof AuthenticatedSaleFloatingPoolRoute
   AuthenticatedSaleInvoicesRoute: typeof AuthenticatedSaleInvoicesRoute
@@ -1794,6 +1815,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedManagerTeamsRoute: AuthenticatedManagerTeamsRoute,
   AuthenticatedManagerTodayTeamsRoute: AuthenticatedManagerTodayTeamsRoute,
   AuthenticatedSaleAttendanceRoute: AuthenticatedSaleAttendanceRoute,
+  AuthenticatedSaleContactsRoute: AuthenticatedSaleContactsRoute,
   AuthenticatedSaleDashboardRoute: AuthenticatedSaleDashboardRoute,
   AuthenticatedSaleFloatingPoolRoute: AuthenticatedSaleFloatingPoolRoute,
   AuthenticatedSaleInvoicesRoute: AuthenticatedSaleInvoicesRoute,

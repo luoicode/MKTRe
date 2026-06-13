@@ -7,7 +7,6 @@ import {
   ChevronRight,
   ClipboardList,
   Columns3,
-  Copy,
   Filter,
   GripVertical,
   Heart,
@@ -24,7 +23,15 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -82,10 +89,59 @@ const ALL_MARKETING_TEAM = "all";
 const ALL_PRODUCT = "all";
 const ALL_AMOUNT = "all";
 const PAGE_SIZE = 50;
-const FILTER_PRESET_STORAGE_KEY = "workspace-miz:employee-marketing-contacts-filter-presets";
-const COLUMN_CONFIG_STORAGE_KEY = "workspace-miz:employee-marketing-contacts-column-config";
+const FILTER_PRESET_STORAGE_KEY_PREFIX = "workspace:saved-filters:marketing-contacts";
+const COLUMN_CONFIG_STORAGE_KEY_PREFIX = "workspace:column-config:marketing-contacts";
+const FILTER_PRESET_MIGRATION_KEY_PREFIX = "workspace:saved-filters:migrated:marketing-contacts";
+const COLUMN_CONFIG_MIGRATION_KEY_PREFIX = "workspace:column-config:migrated:marketing-contacts";
+const LEGACY_FILTER_PRESET_STORAGE_KEYS = [
+  "workspace-miz:employee-marketing-contacts-filter-presets",
+  "workspace:saved-filters:marketing-contacts",
+  "marketing-contacts-saved-filters",
+  "contacts-saved-filters",
+];
+const LEGACY_COLUMN_CONFIG_STORAGE_KEYS = [
+  "workspace-miz:employee-marketing-contacts-column-config",
+  "workspace:column-config:marketing-contacts",
+];
 const ALL_CONTACTS_COLUMN_CONFIG_KEY = "all_contacts";
 const CONTACT_INDEX_COLUMN_WIDTH = 48;
+
+function getUserScopedStorageKey(prefix: string, profileId: string | null) {
+  return `${prefix}:${profileId ?? "anonymous"}`;
+}
+
+function normalizeVietnameseText(value: string | null | undefined) {
+  return (
+    value
+      ?.normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim() ?? ""
+  );
+}
+
+function isLegacyMarketingFilterOwner(fullName: string | null, employeeCode: string | null) {
+  return employeeCode === "DT00014" || normalizeVietnameseText(fullName) === "nguyen huu huy";
+}
+
+function readFirstLocalStorageValue(keys: string[]) {
+  if (typeof window === "undefined") return null;
+  for (const key of keys) {
+    const value = window.localStorage.getItem(key);
+    if (value) return value;
+  }
+  return null;
+}
+
+function hasStoredSavedFilterPresets(raw: string | null) {
+  if (!raw) return false;
+  try {
+    const stored = JSON.parse(raw);
+    return Array.isArray(stored) && stored.some((preset) => preset?.id && preset?.name);
+  } catch {
+    return true;
+  }
+}
 
 type StatusFilter = ContactStatus | typeof ALL_STATUS | typeof SALE_RECEIVED_STATUS;
 type DatePreset =
@@ -658,8 +714,6 @@ function MarketingContactsPage() {
   const [morePresetsOpen, setMorePresetsOpen] = useState(false);
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [deletePresetConfirmOpen, setDeletePresetConfirmOpen] = useState(false);
-  const [copyPresetOpen, setCopyPresetOpen] = useState(false);
-  const [copyPresetName, setCopyPresetName] = useState("");
   const [panelPresetName, setPanelPresetName] = useState("");
   const [panelPresetDescription, setPanelPresetDescription] = useState("");
   const [panelPresetDefault, setPanelPresetDefault] = useState(false);
@@ -677,8 +731,9 @@ function MarketingContactsPage() {
   const [columnConfigOpen, setColumnConfigOpen] = useState(false);
   const [columnConfigByPreset, setColumnConfigByPreset] = useState<
     Record<string, ContactColumnId[]>
-  >(() => loadStoredColumnConfigByPreset());
+  >({});
   const columnConfigByPresetRef = useRef(columnConfigByPreset);
+  const filterPanelRef = useRef<HTMLDivElement>(null);
   const [visibleColumnIds, setVisibleColumnIds] =
     useState<ContactColumnId[]>(defaultVisibleColumnIds);
   const [draftVisibleColumnIds, setDraftVisibleColumnIds] =
@@ -696,6 +751,22 @@ function MarketingContactsPage() {
   const profileFullName = profile?.full_name ?? null;
   const profileEmployeeCode = profileWithHrFields?.employee_code ?? null;
   const profileCompanyName = profileWithHrFields?.company_name ?? null;
+  const filterPresetStorageKey = useMemo(
+    () => getUserScopedStorageKey(FILTER_PRESET_STORAGE_KEY_PREFIX, profileId),
+    [profileId],
+  );
+  const columnConfigStorageKey = useMemo(
+    () => getUserScopedStorageKey(COLUMN_CONFIG_STORAGE_KEY_PREFIX, profileId),
+    [profileId],
+  );
+  const filterPresetMigrationKey = useMemo(
+    () => getUserScopedStorageKey(FILTER_PRESET_MIGRATION_KEY_PREFIX, profileId),
+    [profileId],
+  );
+  const columnConfigMigrationKey = useMemo(
+    () => getUserScopedStorageKey(COLUMN_CONFIG_MIGRATION_KEY_PREFIX, profileId),
+    [profileId],
+  );
   const profileSnapshot = useMemo<MarketingContactsProfileSnapshot | null>(() => {
     if (!profileId || !profileFullName) return null;
     return {
@@ -709,15 +780,76 @@ function MarketingContactsPage() {
     columnConfigByPresetRef.current = columnConfigByPreset;
   }, [columnConfigByPreset]);
 
+  useEffect(() => {
+    if (!filterPanelOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (filterPanelRef.current?.contains(target)) return;
+      if (
+        target instanceof Element &&
+        target.closest("[data-radix-popper-content-wrapper], [role='listbox']")
+      ) {
+        return;
+      }
+      setFilterPanelOpen(false);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFilterPanelOpen(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [filterPanelOpen]);
+
   const persistColumnConfigByPreset = useCallback(
     (nextConfig: Record<string, ContactColumnId[]>) => {
       setColumnConfigByPreset(nextConfig);
       if (typeof window !== "undefined") {
-        window.localStorage.setItem(COLUMN_CONFIG_STORAGE_KEY, JSON.stringify(nextConfig));
+        window.localStorage.setItem(columnConfigStorageKey, JSON.stringify(nextConfig));
       }
     },
-    [],
+    [columnConfigStorageKey],
   );
+
+  useEffect(() => {
+    if (!profileId) {
+      columnConfigByPresetRef.current = {};
+      setColumnConfigByPreset({});
+      setVisibleColumnIds(defaultVisibleColumnIds);
+      return;
+    }
+
+    let storedConfig = loadStoredColumnConfigByPreset(columnConfigStorageKey);
+    const migrationCompleted = window.localStorage.getItem(columnConfigMigrationKey) === "true";
+    if (
+      Object.keys(storedConfig).length === 0 &&
+      !migrationCompleted &&
+      isLegacyMarketingFilterOwner(profileFullName, profileEmployeeCode)
+    ) {
+      const legacyRaw = readFirstLocalStorageValue(LEGACY_COLUMN_CONFIG_STORAGE_KEYS);
+      if (legacyRaw) {
+        window.localStorage.setItem(columnConfigStorageKey, legacyRaw);
+        storedConfig = loadStoredColumnConfigByPreset(columnConfigStorageKey);
+      }
+      window.localStorage.setItem(columnConfigMigrationKey, "true");
+    }
+    columnConfigByPresetRef.current = storedConfig;
+    setColumnConfigByPreset(storedConfig);
+    setVisibleColumnIds(resolveAllContactsVisibleColumnIds(storedConfig));
+  }, [
+    columnConfigMigrationKey,
+    columnConfigStorageKey,
+    profileEmployeeCode,
+    profileFullName,
+    profileId,
+  ]);
 
   const applyPresetFilters = useCallback((preset: SavedMarketingContactFilterPreset) => {
     const presetDatePreset = getStoredDatePreset(preset);
@@ -746,8 +878,30 @@ function MarketingContactsPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const raw = window.localStorage.getItem(FILTER_PRESET_STORAGE_KEY);
-    if (!raw) return;
+    if (!profileId) {
+      setSavedPresets([]);
+      setSelectedPresetId(null);
+      return;
+    }
+
+    let raw = window.localStorage.getItem(filterPresetStorageKey);
+    const migrationCompleted = window.localStorage.getItem(filterPresetMigrationKey) === "true";
+    if (
+      !hasStoredSavedFilterPresets(raw) &&
+      !migrationCompleted &&
+      isLegacyMarketingFilterOwner(profileFullName, profileEmployeeCode)
+    ) {
+      raw = readFirstLocalStorageValue(LEGACY_FILTER_PRESET_STORAGE_KEYS);
+      if (raw) {
+        window.localStorage.setItem(filterPresetStorageKey, raw);
+      }
+      window.localStorage.setItem(filterPresetMigrationKey, "true");
+    }
+    if (!raw) {
+      setSavedPresets([]);
+      setSelectedPresetId(null);
+      return;
+    }
 
     try {
       const stored = JSON.parse(raw) as SavedMarketingContactFilterPreset[];
@@ -756,7 +910,7 @@ function MarketingContactsPage() {
           .filter((preset) => preset.id && preset.name)
           .map(normalizeSavedMarketingContactPreset);
         if (JSON.stringify(stored) !== JSON.stringify(normalizedPresets)) {
-          window.localStorage.setItem(FILTER_PRESET_STORAGE_KEY, JSON.stringify(normalizedPresets));
+          window.localStorage.setItem(filterPresetStorageKey, JSON.stringify(normalizedPresets));
         }
         setSavedPresets(normalizedPresets);
         const defaultPreset = normalizedPresets.find((preset) => preset.isDefault);
@@ -767,9 +921,16 @@ function MarketingContactsPage() {
       }
     } catch (error) {
       console.error("[marketing-contacts][restore-filter-presets]", error);
-      window.localStorage.removeItem(FILTER_PRESET_STORAGE_KEY);
+      window.localStorage.removeItem(filterPresetStorageKey);
     }
-  }, [applyPresetFilters]);
+  }, [
+    applyPresetFilters,
+    filterPresetMigrationKey,
+    filterPresetStorageKey,
+    profileEmployeeCode,
+    profileFullName,
+    profileId,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -1306,7 +1467,7 @@ function MarketingContactsPage() {
   const persistPresets = (nextPresets: SavedMarketingContactFilterPreset[]) => {
     setSavedPresets(nextPresets);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(FILTER_PRESET_STORAGE_KEY, JSON.stringify(nextPresets));
+      window.localStorage.setItem(filterPresetStorageKey, JSON.stringify(nextPresets));
     }
   };
 
@@ -1504,32 +1665,6 @@ function MarketingContactsPage() {
     setSelectedPresetId(null);
     if (shouldReset) resetAllFilters();
     toast.success("Đã xoá bộ lọc.");
-  };
-
-  const handleSavePresetCopy = () => {
-    if (!selectedPreset) return;
-    const normalizedName = copyPresetName.trim().slice(0, 50);
-    if (!normalizedName) return;
-    const copiedPreset: SavedMarketingContactFilterPreset = {
-      ...buildPanelPresetPayload(selectedPreset),
-      id: `preset_${Date.now()}`,
-      name: normalizedName,
-      isDefault: false,
-    };
-    const nextPresets = [copiedPreset, ...savedPresets];
-    persistPresets(nextPresets);
-    persistColumnConfigByPreset({
-      ...columnConfigByPreset,
-      [copiedPreset.id]: resolvePresetVisibleColumnIds(
-        selectedPreset.id,
-        columnConfigByPreset,
-        selectedPreset.visibleColumnIds,
-      ),
-    });
-    setCopyPresetOpen(false);
-    setCopyPresetName("");
-    loadPresetIntoPanel(copiedPreset);
-    toast.success("Đã lưu bản sao bộ lọc.");
   };
 
   const handleOpenColumnConfig = () => {
@@ -1779,7 +1914,7 @@ function MarketingContactsPage() {
     advancedFilterGroups[0];
 
   return (
-    <div className="flex h-[calc(100dvh-88px)] max-h-[calc(100dvh-88px)] min-h-0 flex-col overflow-hidden bg-slate-50 px-3 py-2 text-slate-950 md:px-5">
+    <div className="relative flex h-[calc(100dvh-88px)] max-h-[calc(100dvh-88px)] min-h-0 flex-col overflow-hidden bg-slate-50 px-3 py-2 text-slate-950 md:px-5">
       <section className="shrink-0 rounded-2xl border border-slate-200 bg-white px-5 py-2.5 shadow-sm">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
@@ -2523,11 +2658,13 @@ function MarketingContactsPage() {
 
       {filterPanelOpen ? (
         <div
-          className="fixed inset-0 z-50 flex justify-end bg-slate-950/20"
-          onClick={() => setFilterPanelOpen(false)}
+          ref={filterPanelRef}
+          className="absolute right-3 top-[72px] z-[150] w-[min(420px,calc(100%-1.5rem))] md:right-5 md:w-[min(420px,calc(100%-2.5rem))]"
+          role="dialog"
+          aria-label="Chỉnh sửa bộ lọc"
         >
           <aside
-            className="flex h-full w-full max-w-[430px] flex-col border-l border-slate-200 bg-white shadow-2xl"
+            className="flex max-h-[calc(100dvh-11rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/15"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
@@ -2709,7 +2846,7 @@ function MarketingContactsPage() {
                 </div>
               </div>
 
-              <div className="space-y-3 border-t border-slate-100 px-5 py-4">
+              <div className="border-t border-slate-100 px-5 py-4">
                 {selectedPreset ? (
                   <div className="grid grid-cols-2 gap-2">
                     <Button
@@ -2719,30 +2856,39 @@ function MarketingContactsPage() {
                       onClick={() => setDeletePresetConfirmOpen(true)}
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
-                      Xoá bộ lọc
+                      Xoá
                     </Button>
+                    <Button
+                      type="button"
+                      className="rounded-xl"
+                      disabled={!panelPresetName.trim()}
+                      onClick={handleSavePanelPreset}
+                    >
+                      <Save className="mr-2 h-4 w-4" />
+                      Lưu
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
                     <Button
                       type="button"
                       variant="outline"
                       className="rounded-xl"
-                      onClick={() => {
-                        setCopyPresetName("");
-                        setCopyPresetOpen(true);
-                      }}
+                      onClick={() => setFilterPanelOpen(false)}
                     >
-                      Lưu bản sao
+                      Huỷ
+                    </Button>
+                    <Button
+                      type="button"
+                      className="rounded-xl"
+                      disabled={!panelPresetName.trim()}
+                      onClick={handleSavePanelPreset}
+                    >
+                      <Save className="mr-2 h-4 w-4" />
+                      Lưu
                     </Button>
                   </div>
-                ) : null}
-                <Button
-                  type="button"
-                  className="w-full rounded-xl"
-                  disabled={!panelPresetName.trim()}
-                  onClick={handleSavePanelPreset}
-                >
-                  <Save className="mr-2 h-4 w-4" />
-                  {selectedPreset ? "Lưu chỉnh sửa" : "Lưu bộ lọc mới"}
-                </Button>
+                )}
               </div>
             </>
           </aside>
@@ -2769,37 +2915,8 @@ function MarketingContactsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={copyPresetOpen} onOpenChange={setCopyPresetOpen}>
-        <DialogContent className="rounded-2xl sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Lưu bản sao bộ lọc</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between gap-3">
-              <Label>Tên bộ lọc mới</Label>
-              <span className="text-xs font-medium text-slate-400">{copyPresetName.length}/50</span>
-            </div>
-            <Input
-              value={copyPresetName}
-              maxLength={50}
-              onChange={(event) => setCopyPresetName(event.target.value.slice(0, 50))}
-              className="h-10 rounded-xl"
-              placeholder="Ví dụ: Data trùng tuần này"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCopyPresetOpen(false)}>
-              Hủy
-            </Button>
-            <Button disabled={!copyPresetName.trim()} onClick={handleSavePresetCopy}>
-              Lưu
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={columnConfigOpen} onOpenChange={setColumnConfigOpen}>
-        <DialogContent className="rounded-2xl sm:max-w-5xl">
+        <DialogContent className="w-[min(94vw,960px)] max-w-none rounded-2xl">
           <DialogHeader>
             <DialogTitle>Cấu hình cột</DialogTitle>
           </DialogHeader>
@@ -3205,11 +3322,12 @@ function CarrierBadge({ phone }: { phone: string }) {
 
 function DetailPhoneValue({ phone }: { phone?: string | null }) {
   const normalizedPhone = phone?.trim();
-  const copyPhone = async () => {
+  const copyPhone = async (event: ReactMouseEvent<HTMLButtonElement>) => {
     if (!normalizedPhone) return;
     try {
       await navigator.clipboard.writeText(normalizedPhone);
       toast.success("Đã copy SĐT");
+      event.currentTarget.blur();
     } catch {
       toast.error("Không copy được SĐT");
     }
@@ -3219,14 +3337,13 @@ function DetailPhoneValue({ phone }: { phone?: string | null }) {
 
   return (
     <span className="inline-flex min-w-0 flex-wrap items-center gap-2">
-      <span className="font-medium text-slate-900">{normalizedPhone}</span>
       <button
         type="button"
-        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600"
-        title="Copy SĐT"
+        className="select-none font-semibold tabular-nums text-blue-600 transition hover:text-blue-700 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+        title="Click để copy số điện thoại"
         onClick={copyPhone}
       >
-        <Copy className="h-3.5 w-3.5" />
+        {normalizedPhone}
       </button>
       <CarrierBadge phone={normalizedPhone} />
     </span>
@@ -3265,7 +3382,7 @@ function ContactDetailContent({
         <div className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className="min-h-0 space-y-4 pr-1">
             <div className="grid gap-3 md:grid-cols-2">
-              <DetailSectionCard title="Thông tin lead">
+              <DetailSectionCard title="THÔNG TIN KHÁCH HÀNG">
                 <DetailField label="Ngày lên số" value={formatDateTime(contact.createdAtFull)} />
                 <DetailField label="SĐT" value={<DetailPhoneValue phone={contact.phone} />} />
                 <DetailField
@@ -3275,19 +3392,16 @@ function ContactDetailContent({
                 <DetailField label="Trạng thái" value={<StatusPill status={effectiveStatus} />} />
               </DetailSectionCard>
 
-              <DetailSectionCard title="Nguồn Marketing">
+              <DetailSectionCard title="THÔNG TIN MARKETING">
                 <DetailField label="Marketer" value={formatContactActor(contact)} />
-                <DetailField label="Team" value={contact.marketingTeam} />
-                <DetailField
-                  label="Công ty"
-                  value={contact.marketerCompanyName?.trim() || "Chưa cập nhật"}
-                />
-                <DetailField label="Sản phẩm" value={contact.product} />
-                <DetailField label="Nguồn" value={contact.sourceName} />
+                <DetailField label="Team" value={contact.marketingTeam?.trim() || "—"} />
+                <DetailField label="Công ty" value={contact.marketerCompanyName?.trim() || "—"} />
+                <DetailField label="Sản phẩm" value={contact.product?.trim() || "—"} />
+                <DetailField label="Nguồn" value={contact.sourceName?.trim() || "—"} />
                 <DetailField label="Nguồn URL" value={contact.sourceUrl?.trim() || "—"} />
               </DetailSectionCard>
 
-              <DetailSectionCard title="Phân phối Sale" className="md:col-span-2">
+              <DetailSectionCard title="PHÂN PHỐI SALE" className="md:col-span-2">
                 <DetailField
                   label="NVKD"
                   value={hasSaleDistribution ? formatSalesOwnerDisplay(contact) : "Chưa phân phối"}
@@ -3720,9 +3834,11 @@ function formatContactTotalAmount(contact: MarketingContact) {
 }
 
 function formatContactActor(contact: MarketingContact) {
-  const employeeCode = contact.marketerEmployeeCode?.trim() || "Chưa có mã NV";
-  const team = contact.marketingTeam?.trim() || "Chưa có team";
-  return `${contact.marketerName || "Chưa cập nhật"} (${employeeCode} - ${team})`;
+  const marketerName = contact.marketerName?.trim() || "—";
+  const employeeCode = contact.marketerEmployeeCode?.trim();
+  const team = contact.marketingTeam?.trim();
+  if (!employeeCode || !team) return marketerName;
+  return `${marketerName} (${employeeCode} - ${team})`;
 }
 
 function StatusDot({ status }: { status: ContactStatus }) {
@@ -4125,9 +4241,9 @@ function normalizeSavedMarketingContactPreset(
   };
 }
 
-function loadStoredColumnConfigByPreset() {
+function loadStoredColumnConfigByPreset(storageKey: string) {
   if (typeof window === "undefined") return {};
-  const raw = window.localStorage.getItem(COLUMN_CONFIG_STORAGE_KEY);
+  const raw = window.localStorage.getItem(storageKey);
   if (!raw) return {};
 
   try {
@@ -4143,7 +4259,7 @@ function loadStoredColumnConfigByPreset() {
     );
   } catch (error) {
     console.error("[marketing-contacts][restore-column-config]", error);
-    window.localStorage.removeItem(COLUMN_CONFIG_STORAGE_KEY);
+    window.localStorage.removeItem(storageKey);
     return {};
   }
 }

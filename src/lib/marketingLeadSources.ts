@@ -42,9 +42,11 @@ interface MarketingContactRow {
   customer_name: string | null;
   email: string | null;
   phone: string;
+  normalized_phone?: string | null;
   message: string | null;
   source_name: string | null;
   source_channel: string | null;
+  landing_url?: string | null;
   sales_owner_name: string | null;
   sales_team_name: string | null;
   status: string | null;
@@ -73,6 +75,32 @@ interface ContactNoteRow {
   created_at: string;
   updated_at: string | null;
   deleted_at: string | null;
+}
+
+interface CrmCustomerRow {
+  id: string;
+  normalized_phone: string;
+}
+
+interface CrmCustomerNoteRow {
+  id: string;
+  customer_id: string;
+  note: string;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string | null;
+  deleted_at: string | null;
+}
+
+interface CrmCustomerActivityRow {
+  id: string;
+  customer_id: string;
+  activity_type: string | null;
+  description: string | null;
+  actor_id: string | null;
+  actor_name: string | null;
+  created_at: string;
 }
 
 interface CurrentProfileRow {
@@ -296,7 +324,7 @@ export async function fetchEmployeeMarketingContacts(): Promise<MarketingContact
   const { data, error } = await db
     .from("marketing_contacts")
     .select(
-      "id, created_at, updated_at, owner_user_id, team_id, customer_name, email, phone, message, source_name, source_channel, sales_owner_name, sales_team_name, status, is_duplicate, duplicate_of_contact_id, duplicate_checked_at, eligible_for_sale_distribution, raw_payload, profiles(full_name, username, email, employee_code, company_name), teams(name), lead_sources(name, product)",
+      "id, created_at, updated_at, owner_user_id, team_id, customer_name, email, phone, normalized_phone, message, landing_url, source_name, source_channel, sales_owner_name, sales_team_name, status, is_duplicate, duplicate_of_contact_id, duplicate_checked_at, eligible_for_sale_distribution, raw_payload, profiles(full_name, username, email, employee_code, company_name), teams(name), lead_sources(name, product)",
     )
     .order("created_at", { ascending: false });
 
@@ -304,8 +332,23 @@ export async function fetchEmployeeMarketingContacts(): Promise<MarketingContact
 
   const rows = (data ?? []) as MarketingContactRow[];
   const notesByContactId = await fetchContactNotesByContactIds(rows.map((row) => row.id));
+  const crmNotesByPhone = await fetchCrmNotesByNormalizedPhones(
+    rows.map((row) => getMarketingContactNormalizedPhone(row)),
+  );
+  const crmActivityGroupsByPhone = await fetchCrmActivityGroupsByNormalizedPhones(
+    rows.map((row) => getMarketingContactNormalizedPhone(row)),
+  );
 
-  return rows.map((row) => mapMarketingContactRow(row, notesByContactId.get(row.id) ?? []));
+  return rows.map((row) =>
+    mapMarketingContactRow(
+      row,
+      mergeContactNotes(
+        crmNotesByPhone.get(getMarketingContactNormalizedPhone(row)) ?? [],
+        notesByContactId.get(row.id) ?? [],
+      ),
+      crmActivityGroupsByPhone.get(getMarketingContactNormalizedPhone(row)) ?? [],
+    ),
+  );
 }
 
 export async function createMarketingContact(input: CreateMarketingContactInput) {
@@ -349,7 +392,7 @@ export async function createMarketingContact(input: CreateMarketingContactInput)
       },
     })
     .select(
-      "id, created_at, updated_at, owner_user_id, team_id, customer_name, email, phone, message, source_name, source_channel, sales_owner_name, sales_team_name, status, is_duplicate, duplicate_of_contact_id, duplicate_checked_at, eligible_for_sale_distribution, raw_payload, profiles(full_name, username, email, employee_code, company_name), teams(name), lead_sources(name, product)",
+      "id, created_at, updated_at, owner_user_id, team_id, customer_name, email, phone, normalized_phone, message, landing_url, source_name, source_channel, sales_owner_name, sales_team_name, status, is_duplicate, duplicate_of_contact_id, duplicate_checked_at, eligible_for_sale_distribution, raw_payload, profiles(full_name, username, email, employee_code, company_name), teams(name), lead_sources(name, product)",
     )
     .single();
 
@@ -453,6 +496,132 @@ async function fetchContactNotesByContactIds(contactIds: string[]) {
   return notesByContactId;
 }
 
+async function fetchCrmNotesByNormalizedPhones(normalizedPhones: Array<string | null | undefined>) {
+  const uniquePhones = [
+    ...new Set(normalizedPhones.map((phone) => phone?.trim()).filter(Boolean)),
+  ] as string[];
+  const notesByPhone = new Map<string, ContactNote[]>();
+  if (!uniquePhones.length) return notesByPhone;
+
+  const { data: customersData, error: customersError } = await db
+    .from("customers")
+    .select("id, normalized_phone")
+    .in("normalized_phone", uniquePhones);
+
+  if (customersError) throw customersError;
+
+  const customers = (customersData ?? []) as CrmCustomerRow[];
+  const phoneByCustomerId = new Map<string, string>();
+  for (const customer of customers) {
+    phoneByCustomerId.set(customer.id, customer.normalized_phone);
+  }
+
+  const customerIds = customers.map((customer) => customer.id);
+  if (!customerIds.length) return notesByPhone;
+
+  const { data: notesData, error: notesError } = await db
+    .from("customer_notes")
+    .select(
+      "id, customer_id, note, created_by, created_by_name, created_at, updated_at, deleted_at",
+    )
+    .in("customer_id", customerIds)
+    .order("created_at", { ascending: false });
+
+  if (notesError) throw notesError;
+
+  for (const note of (notesData ?? []) as CrmCustomerNoteRow[]) {
+    if (note.deleted_at) continue;
+    const phone = phoneByCustomerId.get(note.customer_id);
+    if (!phone) continue;
+    const mappedNote = mapCrmCustomerNoteRow(note);
+    const currentNotes = notesByPhone.get(phone) ?? [];
+    currentNotes.push(mappedNote);
+    notesByPhone.set(phone, currentNotes);
+  }
+
+  return notesByPhone;
+}
+
+async function fetchCrmActivityGroupsByNormalizedPhones(
+  normalizedPhones: Array<string | null | undefined>,
+) {
+  const uniquePhones = [
+    ...new Set(normalizedPhones.map((phone) => phone?.trim()).filter(Boolean)),
+  ] as string[];
+  const groupsByPhone = new Map<string, MarketingContactActivityGroup[]>();
+  if (!uniquePhones.length) return groupsByPhone;
+
+  const { data: customersData, error: customersError } = await db
+    .from("customers")
+    .select("id, normalized_phone")
+    .in("normalized_phone", uniquePhones);
+
+  if (customersError) throw customersError;
+
+  const customers = (customersData ?? []) as CrmCustomerRow[];
+  const phoneByCustomerId = new Map<string, string>();
+  for (const customer of customers) {
+    phoneByCustomerId.set(customer.id, customer.normalized_phone);
+  }
+
+  const customerIds = customers.map((customer) => customer.id);
+  if (!customerIds.length) return groupsByPhone;
+
+  const { data: activitiesData, error: activitiesError } = await db
+    .from("customer_activities")
+    .select("id, customer_id, activity_type, description, actor_id, actor_name, created_at")
+    .in("customer_id", customerIds)
+    .order("created_at", { ascending: false });
+
+  if (activitiesError) throw activitiesError;
+
+  const actionRowsByPhone = new Map<
+    string,
+    Array<{ actor: string; content: string; time: string }>
+  >();
+  for (const activity of (activitiesData ?? []) as CrmCustomerActivityRow[]) {
+    const phone = phoneByCustomerId.get(activity.customer_id);
+    const content = activity.description?.trim();
+    if (!phone || !content) continue;
+    const rows = actionRowsByPhone.get(phone) ?? [];
+    rows.push({
+      actor: activity.actor_name?.trim() || "Hệ thống",
+      content,
+      time: activity.created_at,
+    });
+    actionRowsByPhone.set(phone, rows);
+  }
+
+  for (const [phone, rows] of actionRowsByPhone) {
+    const grouped = new Map<string, MarketingContactActivityGroup["actions"]>();
+    for (const row of rows) {
+      const actions = grouped.get(row.actor) ?? [];
+      actions.push({ content: row.content, time: row.time });
+      grouped.set(row.actor, actions);
+    }
+    groupsByPhone.set(
+      phone,
+      Array.from(grouped.entries()).map(([actor, actions]) => ({ actor, actions })),
+    );
+  }
+
+  return groupsByPhone;
+}
+
+function mergeContactNotes(primaryNotes: ContactNote[], fallbackNotes: ContactNote[]) {
+  const merged: ContactNote[] = [];
+  const seen = new Set<string>();
+
+  for (const note of [...primaryNotes, ...fallbackNotes]) {
+    const key = `${note.content.trim()}::${note.createdAt}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(note);
+  }
+
+  return merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
 async function fetchCurrentProfileSummary() {
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError) throw authError;
@@ -472,6 +641,7 @@ async function fetchCurrentProfileSummary() {
 function mapMarketingContactRow(
   row: MarketingContactRow,
   contactNotes: ContactNote[],
+  activityGroups: MarketingContactActivityGroup[] = [],
 ): MarketingContact {
   const source = (row.source_channel ?? "Facebook mess") as LeadChannel;
   const status = normalizeContactStatus(row.status, Boolean(row.is_duplicate));
@@ -484,7 +654,7 @@ function mapMarketingContactRow(
   const marketerCompanyName = row.profiles?.company_name ?? null;
   const marketingTeam = row.teams?.name ?? "";
   const sourceName = row.source_name || row.lead_sources?.name || "";
-  const sourceUrl = asString(rawPayload.landing_url);
+  const sourceUrl = row.landing_url || asString(rawPayload.landing_url);
   const saleNote = asString(rawPayload.sale_note);
   const legacyNoteHistory = parseContactNoteHistory(
     rawPayload.sale_notes ?? rawPayload.note_history ?? rawPayload.notes,
@@ -547,6 +717,7 @@ function mapMarketingContactRow(
     latest_note: latestNote || undefined,
     noteHistory,
     history,
+    activityGroups,
     isDuplicate,
     duplicateOfContactId: row.duplicate_of_contact_id ?? null,
     duplicateCheckedAt: row.duplicate_checked_at ?? "",
@@ -564,6 +735,22 @@ function mapContactNoteRow(row: ContactNoteRow): ContactNote {
     createdAt: row.created_at,
     updatedAt: row.updated_at ?? null,
   };
+}
+
+function mapCrmCustomerNoteRow(row: CrmCustomerNoteRow): ContactNote {
+  return {
+    id: row.id,
+    contactId: row.customer_id,
+    content: row.note,
+    createdById: row.created_by ?? null,
+    createdBy: row.created_by_name || "—",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at ?? null,
+  };
+}
+
+function getMarketingContactNormalizedPhone(row: MarketingContactRow) {
+  return row.normalized_phone || normalizeVietnamesePhone(row.phone);
 }
 
 function isMissingContactNotesTableError(error: unknown) {
