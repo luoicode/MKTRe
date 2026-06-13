@@ -10,6 +10,7 @@ import {
   Filter,
   GripVertical,
   Heart,
+  ImageIcon,
   List,
   Loader2,
   Pencil,
@@ -38,12 +39,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  InvoiceBuilder,
+  type InvoiceBuilderSnapshot,
+} from "@/components/workspace/InvoiceWorkspace";
 import { useAuth } from "@/lib/auth";
 import {
+  createSaleCrmOrder,
   createCustomerNote,
   deleteCustomerNote,
   fetchSaleCrmContacts,
+  saveSaleCrmQuote,
+  updateCustomerStatus,
   updateCustomerNote,
+  updateSaleCrmOrderStatus,
   type SaleCrmContact,
   type SaleCrmNote,
   type SaleCrmStatus,
@@ -72,7 +81,15 @@ type DatePreset =
   | "custom";
 type SaleEditableStatus = Extract<
   SaleCrmStatus,
-  "new" | "processing" | "called" | "quoted" | "shipping" | "success" | "returned" | "cancelled"
+  | "new"
+  | "processing"
+  | "called"
+  | "quoted"
+  | "waiting_shipping"
+  | "shipping"
+  | "success"
+  | "returned"
+  | "cancelled"
 >;
 type ColumnId =
   | "createdAt"
@@ -95,6 +112,7 @@ const primaryTabs: Array<{ key: StatusFilter; label: string }> = [
 ];
 
 const overflowStatuses: Array<{ key: SaleCrmStatus; label: string }> = [
+  { key: "waiting_shipping", label: "Chờ giao hàng" },
   { key: "shipping", label: "Đang giao" },
   { key: "success", label: "Hoàn thành" },
   { key: "returned", label: "Hoàn" },
@@ -106,11 +124,32 @@ const saleEditableStatusOptions: Array<{ key: SaleEditableStatus; label: string 
   { key: "processing", label: "Đang xử lí" },
   { key: "called", label: "Đã gọi" },
   { key: "quoted", label: "Báo giá" },
+  { key: "waiting_shipping", label: "Chờ giao hàng" },
   { key: "shipping", label: "Đang giao" },
   { key: "success", label: "Hoàn thành" },
   { key: "returned", label: "Hoàn" },
   { key: "cancelled", label: "Huỷ" },
 ];
+
+const saleOrderStatusSteps: Array<{ key: SaleEditableStatus; label: string }> = [
+  { key: "new", label: "Mới" },
+  { key: "quoted", label: "Báo giá" },
+  { key: "processing", label: "Đang xử lí" },
+  { key: "waiting_shipping", label: "Chờ giao hàng" },
+  { key: "shipping", label: "Đang giao" },
+  { key: "success", label: "Hoàn thành" },
+  { key: "returned", label: "Hoàn" },
+  { key: "cancelled", label: "Huỷ" },
+];
+
+const processingChecklistItems = [
+  { key: "customer", label: "Xác nhận thông tin khách hàng" },
+  { key: "address", label: "Xác nhận địa chỉ" },
+  { key: "products", label: "Xác nhận sản phẩm/số lượng" },
+  { key: "payment", label: "Kiểm tra thanh toán/COD" },
+] as const;
+
+type ProcessingChecklistKey = (typeof processingChecklistItems)[number]["key"];
 
 const datePresetOptions: Array<{ key: DatePreset; label: string }> = [
   { key: "today", label: "Hôm nay" },
@@ -211,6 +250,14 @@ function SaleContactsPage() {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+
+  useEffect(() => {
+    if (!selectedContact) return;
+    const refreshedContact = contacts.find((contact) => contact.id === selectedContact.id);
+    if (refreshedContact && refreshedContact !== selectedContact) {
+      setSelectedContact(refreshedContact);
+    }
+  }, [contacts, selectedContact]);
 
   const dateRange = useMemo(
     () => resolveDateRange(datePreset, customStartDate, customEndDate),
@@ -1870,6 +1917,18 @@ function SaleContactDetailDialog({
   const [noteContent, setNoteContent] = useState("");
   const [editingNote, setEditingNote] = useState<SaleCrmNote | null>(null);
   const [noteFormOpen, setNoteFormOpen] = useState(false);
+  const [orderPreviewOpen, setOrderPreviewOpen] = useState(false);
+  const [quoteOrderId, setQuoteOrderId] = useState<string | null>(null);
+  const [currentStatus, setCurrentStatus] = useState<SaleCrmStatus>("new");
+  const [viewStatus, setViewStatus] = useState<SaleCrmStatus>("new");
+  const [processingChecklist, setProcessingChecklist] = useState<
+    Record<ProcessingChecklistKey, boolean>
+  >({
+    customer: false,
+    address: true,
+    products: true,
+    payment: true,
+  });
 
   const activeContact = contact;
   const latestSource = activeContact?.sources[0];
@@ -1879,6 +1938,19 @@ function SaleContactDetailDialog({
     setNoteFormOpen(false);
     setEditingNote(null);
     setNoteContent("");
+    setOrderPreviewOpen(false);
+    setQuoteOrderId(
+      activeContact.orders.find((order) => order.status.trim().toLowerCase() === "báo giá")?.id ??
+        null,
+    );
+    setCurrentStatus(activeContact.status);
+    setViewStatus(activeContact.status);
+    setProcessingChecklist({
+      customer: false,
+      address: true,
+      products: true,
+      payment: true,
+    });
   }, [activeContact]);
 
   const invalidate = async () => {
@@ -1917,267 +1989,781 @@ function SaleContactDetailDialog({
     onError: (error) => toast.error(getErrorMessage(error)),
   });
 
+  const statusMutation = useMutation({
+    mutationFn: async (status: SaleCrmStatus) => {
+      if (!activeContact || !actor) return;
+      await updateCustomerStatus(activeContact.id, status, actor);
+    },
+    onSuccess: async (_, status) => {
+      setCurrentStatus(status);
+      setViewStatus(status);
+      await invalidate();
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
+  });
+
+  const changeWorkflowView = (status: SaleEditableStatus) => {
+    if (!["new", "quoted", "processing"].includes(status)) return;
+    setViewStatus(status);
+  };
+
+  const openQuoteScreen = () => {
+    setViewStatus("quoted");
+  };
+
+  const handleSaveDraft = async (snapshot: InvoiceBuilderSnapshot) => {
+    if (!activeContact || !actor) throw new Error("Không tìm thấy hồ sơ Sale.");
+    const currentQuote = activeContact.orders.find(
+      (order) => order.id === quoteOrderId || order.status.trim().toLowerCase() === "báo giá",
+    );
+    const savedQuoteId = await saveSaleCrmQuote(
+      {
+        orderId: currentQuote?.id ?? quoteOrderId ?? undefined,
+        customerId: activeContact.id,
+        orderCode: currentQuote?.orderCode || `BG${Date.now().toString().slice(-8)}`,
+        productName: snapshot.productSummary || "Báo giá",
+        amount: snapshot.total,
+        orderDate: snapshot.invoiceDate,
+      },
+      actor,
+    );
+    setQuoteOrderId(savedQuoteId);
+    if (currentStatus !== "quoted") await statusMutation.mutateAsync("quoted");
+    else setViewStatus("quoted");
+    await invalidate();
+  };
+
+  const handleCreateOrder = async (
+    snapshot: InvoiceBuilderSnapshot,
+    invoice: { invoice_code: string; invoice_date: string },
+  ) => {
+    if (!activeContact || !actor) throw new Error("Không tìm thấy hồ sơ Sale.");
+    await createSaleCrmOrder(
+      {
+        orderId: quoteOrderId ?? undefined,
+        customerId: activeContact.id,
+        orderCode: invoice.invoice_code,
+        productName: snapshot.productSummary || "Đơn hàng",
+        amount: snapshot.total,
+        status: "Đang xử lí",
+        orderDate: invoice.invoice_date,
+      },
+      actor,
+    );
+    await updateCustomerStatus(activeContact.id, "processing", actor);
+    setCurrentStatus("processing");
+    setViewStatus("processing");
+    await invalidate();
+  };
+
+  const cancelOrderMutation = useMutation({
+    mutationFn: async () => {
+      if (!activeContact || !actor) throw new Error("Không tìm thấy hồ sơ Sale.");
+      const latestOrder = activeContact.orders[0];
+      if (latestOrder) {
+        await updateSaleCrmOrderStatus(latestOrder.id, activeContact.id, "Huỷ", actor);
+      }
+      await updateCustomerStatus(activeContact.id, "cancelled", actor);
+    },
+    onSuccess: async () => {
+      setCurrentStatus("cancelled");
+      setViewStatus("cancelled");
+      toast.success("Đã huỷ đơn");
+      await invalidate();
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
+  });
+
+  const moveToWaitingShippingMutation = useMutation({
+    mutationFn: async () => {
+      if (!activeContact || !actor) throw new Error("Không tìm thấy hồ sơ Sale.");
+      const latestOrder = activeContact.orders[0];
+      if (latestOrder) {
+        await updateSaleCrmOrderStatus(latestOrder.id, activeContact.id, "Chờ giao hàng", actor);
+      }
+      await updateCustomerStatus(activeContact.id, "waiting_shipping", actor);
+    },
+    onSuccess: async () => {
+      setCurrentStatus("waiting_shipping");
+      setViewStatus("waiting_shipping");
+      toast.success("Đã chuyển đơn sang chờ giao hàng");
+      await invalidate();
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
+  });
+
   if (!activeContact) return null;
 
   const latestNote = activeContact.notes[0]?.note || "Chưa có ghi chú.";
+  const latestOrder = activeContact.orders[0];
+  const totalOrderAmount = activeContact.orders.reduce((sum, order) => sum + order.amount, 0);
   const sortedActivities = [...activeContact.activities].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
+  const activeStepIndex = Math.max(
+    saleOrderStatusSteps.findIndex((step) => step.key === viewStatus),
+    0,
+  );
+  const showQuoteBuilder = viewStatus === "quoted";
+  const showDetailScreen = !showQuoteBuilder;
+  const showProcessingScreen = viewStatus === "processing";
+  const showDefaultDetailScreen = showDetailScreen && !showProcessingScreen;
+  const canShowOrderTotal = viewStatus !== "new" && totalOrderAmount > 0;
+  const completedChecklistItems = processingChecklistItems.filter(
+    (item) => processingChecklist[item.key],
+  ).length;
+  const checklistProgress = Math.round(
+    (completedChecklistItems / processingChecklistItems.length) * 100,
+  );
+  const processingOrderAmount = latestOrder?.amount ?? totalOrderAmount;
 
   return (
-    <Dialog open={Boolean(activeContact)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex max-h-[85vh] w-[92vw] max-w-[1200px] flex-col overflow-hidden rounded-2xl p-0">
-        <DialogHeader className="shrink-0 border-b border-slate-200 px-5 py-4">
-          <div className="flex items-start justify-between gap-12 pr-8">
-            <div className="min-w-0">
-              <DialogTitle className="truncate text-xl font-semibold text-slate-950">
+    <>
+      <Dialog open={Boolean(activeContact)} onOpenChange={(open) => !open && onClose()}>
+        <DialogContent className="flex max-h-[88vh] w-[94vw] max-w-[1320px] flex-col overflow-hidden rounded-3xl p-0">
+          <DialogHeader className="shrink-0 border-b border-slate-200 bg-white px-6 pb-4 pt-5">
+            <div className="flex items-center justify-between gap-12 pr-8">
+              <DialogTitle className="truncate text-2xl font-bold text-slate-950">
                 {activeContact.name}
               </DialogTitle>
+              <StatusBadge status={currentStatus} />
             </div>
-            <StatusBadge status={activeContact.status} />
-          </div>
-        </DialogHeader>
-
-        <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/60 px-5 py-4">
-          <div className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-            <div className="min-h-0 space-y-4 pr-1">
-              <div className="grid gap-3 md:grid-cols-2">
-                <DetailCard title="THÔNG TIN KHÁCH HÀNG">
-                  <DetailRow label="Ngày lên số" value={formatDateTime(activeContact.createdAt)} />
-                  <DetailRow label="SĐT" value={<DetailPhoneValue phone={activeContact.phone} />} />
-                  <DetailRow
-                    label="SĐT phụ"
-                    value={<DetailPhoneValue phone={activeContact.secondaryPhone} />}
-                  />
-                  <DetailRow
-                    label="Trạng thái"
-                    value={<StatusBadge status={activeContact.status} />}
-                  />
-                </DetailCard>
-
-                <DetailCard title="THÔNG TIN MARKETING">
-                  <DetailRow label="Marketer" value={formatSaleMarketerDisplay(latestSource)} />
-                  <DetailRow label="Team" value={latestSource?.marketingTeam?.trim() || "—"} />
-                  <DetailRow
-                    label="Công ty"
-                    value={latestSource?.marketerCompanyName?.trim() || "—"}
-                  />
-                  <DetailRow
-                    label="Sản phẩm"
-                    value={
-                      latestSource?.productName?.trim() ||
-                      inferProductName(latestSource?.sourceName)
-                    }
-                  />
-                  <DetailRow label="Nguồn" value={latestSource?.sourceName?.trim() || "—"} />
-                  <DetailRow label="Nguồn URL" value={latestSource?.landingUrl?.trim() || "—"} />
-                </DetailCard>
-
-                <DetailCard title="PHÂN PHỐI SALE" className="md:col-span-2">
-                  <DetailRow label="NVKD" value={activeContact.assignedSaleName || "—"} />
-                  <DetailRow label="Đội ngũ bán hàng" value={activeContact.saleTeamName || "—"} />
-                  <DetailRow label="Ghi chú gần đây" value={latestNote} />
-                </DetailCard>
-
-                <DetailCard
-                  title="LỊCH SỬ GHI CHÚ"
-                  className="md:col-span-2"
-                  action={
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="h-8 rounded-lg px-2.5"
-                      onClick={() => {
-                        setEditingNote(null);
-                        setNoteContent("");
-                        setNoteFormOpen(true);
-                      }}
-                    >
-                      <Plus className="mr-1 h-3.5 w-3.5" />
-                      Ghi chú
-                    </Button>
-                  }
-                >
-                  <div className="space-y-3">
-                    {noteFormOpen ? (
-                      <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-                        <Label>{editingNote ? "Sửa ghi chú" : "Thêm ghi chú"}</Label>
-                        <Textarea
-                          value={noteContent}
-                          onChange={(event) => setNoteContent(event.target.value)}
-                          placeholder="Nhập ghi chú chăm sóc khách hàng..."
-                          className="mt-2 min-h-20 bg-white"
-                        />
-                        <div className="mt-2 flex justify-end gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setEditingNote(null);
-                              setNoteContent("");
-                              setNoteFormOpen(false);
-                            }}
-                          >
-                            Hủy
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => noteMutation.mutate()}
-                            disabled={noteMutation.isPending || !noteContent.trim()}
-                          >
-                            {editingNote ? "Lưu ghi chú" : "Thêm ghi chú"}
-                          </Button>
-                        </div>
-                      </div>
+            <div className="mt-4 grid grid-cols-8 overflow-hidden rounded-full bg-slate-50 p-1">
+              {saleOrderStatusSteps.map((step, index) => {
+                const canSelect = ["new", "quoted", "processing"].includes(step.key);
+                return (
+                  <button
+                    type="button"
+                    key={step.key}
+                    disabled={!canSelect || statusMutation.isPending}
+                    onClick={(event) => {
+                      event.currentTarget.blur();
+                      changeWorkflowView(step.key);
+                    }}
+                    className={cn(
+                      "relative flex h-8 items-center justify-center px-2 text-xs font-semibold text-slate-500 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0",
+                      index === activeStepIndex && "rounded-full bg-blue-100 text-blue-800",
+                      index < activeStepIndex && viewStatus !== "cancelled" && "text-blue-700",
+                      canSelect
+                        ? "cursor-pointer transition-colors hover:bg-blue-50 hover:text-blue-700"
+                        : "cursor-not-allowed opacity-55",
+                    )}
+                  >
+                    {step.label}
+                    {index < saleOrderStatusSteps.length - 1 ? (
+                      <ChevronRight className="absolute -right-1 h-3.5 w-3.5 text-slate-300" />
                     ) : null}
-                    <div className="overflow-hidden rounded-2xl border border-slate-200">
-                      <table className="w-full text-sm">
-                        <thead className="bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
-                          <tr>
-                            <th className="px-3 py-2">#</th>
-                            <th className="px-3 py-2">Được tạo vào</th>
-                            <th className="px-3 py-2">Nội dung</th>
-                            <th className="px-3 py-2">Được tạo bởi</th>
-                            <th className="px-3 py-2 text-right">Thao tác</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {activeContact.notes.length ? (
-                            activeContact.notes.map((note, index) => (
-                              <tr key={note.id} className="border-t border-slate-100">
-                                <td className="px-3 py-2">{index + 1}</td>
-                                <td className="px-3 py-2">{formatDateTime(note.createdAt)}</td>
-                                <td className="px-3 py-2">{note.note}</td>
-                                <td className="px-3 py-2">{note.createdBy}</td>
-                                <td className="px-3 py-2">
-                                  <div className="flex justify-end gap-1">
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => {
-                                        setEditingNote(note);
-                                        setNoteContent(note.note);
-                                        setNoteFormOpen(true);
-                                      }}
-                                    >
-                                      <Pencil className="h-4 w-4" />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8 text-red-600 hover:text-red-700"
-                                      onClick={() => deleteNoteMutation.mutate(note)}
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </div>
+                  </button>
+                );
+              })}
+            </div>
+          </DialogHeader>
+
+          <div
+            className={cn(
+              "min-h-0 flex-1 bg-slate-50 px-6 py-5",
+              showQuoteBuilder ? "overflow-hidden" : "overflow-y-auto",
+            )}
+          >
+            {showQuoteBuilder ? (
+              <InvoiceBuilder
+                mode="embedded"
+                initialCustomer={{
+                  name: activeContact.name,
+                  phone: activeContact.phone,
+                  address: activeContact.address,
+                  note: latestNote === "Chưa có ghi chú." ? "" : latestNote,
+                  productName:
+                    latestSource?.productName?.trim() || inferProductName(latestSource?.sourceName),
+                }}
+                saveDraftLabel="Lưu báo giá"
+                createButtonLabel="Tạo đơn hàng"
+                hideResetAction
+                embeddedActivityContent={
+                  <DetailCard title="LỊCH SỬ HOẠT ĐỘNG">
+                    <div className="max-h-[240px] space-y-3 overflow-y-auto pr-1">
+                      {sortedActivities.length ? (
+                        sortedActivities.map((activity) => (
+                          <div key={activity.id} className="border-l-2 border-blue-100 pl-3">
+                            <p className="font-bold text-slate-900">{activity.actorName}</p>
+                            <p className="mt-1 text-sm font-medium text-slate-700">
+                              {activity.description}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {formatDateTime(activity.createdAt)}
+                            </p>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                          Chưa có lịch sử hoạt động.
+                        </div>
+                      )}
+                    </div>
+                  </DetailCard>
+                }
+                onSaveDraft={handleSaveDraft}
+                onCreateOrder={handleCreateOrder}
+              />
+            ) : null}
+
+            {showProcessingScreen ? (
+              <div className="grid min-h-0 gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(300px,3fr)]">
+                <div className="min-h-0 space-y-5">
+                  <DetailCard title="ĐƠN HÀNG ĐANG XỬ LÍ">
+                    {latestOrder ? (
+                      <div className="space-y-4">
+                        <div className="flex flex-wrap gap-x-7 gap-y-2 text-sm text-slate-600">
+                          <span>
+                            Mã đơn:{" "}
+                            <strong className="text-slate-900">
+                              {latestOrder.orderCode || "—"}
+                            </strong>
+                          </span>
+                          <span>
+                            Trạng thái: <strong className="text-slate-900">Đang xử lí</strong>
+                          </span>
+                          <span>
+                            Ngày tạo:{" "}
+                            <strong className="text-slate-900">
+                              {formatDateTime(latestOrder.createdAt)}
+                            </strong>
+                          </span>
+                          <span>
+                            Tổng tiền:{" "}
+                            <strong className="text-slate-900">
+                              {formatCurrency(latestOrder.amount)}
+                            </strong>
+                          </span>
+                          <span>
+                            COD:{" "}
+                            <strong className="text-slate-900">
+                              {formatCurrency(latestOrder.amount)}
+                            </strong>
+                          </span>
+                          <span>
+                            Sale:{" "}
+                            <strong className="text-slate-900">
+                              {activeContact.assignedSaleName || "—"}
+                            </strong>
+                          </span>
+                        </div>
+                        <div className="overflow-hidden rounded-xl border border-slate-200">
+                          <table className="w-full text-sm">
+                            <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-500">
+                              <tr>
+                                <th className="px-3 py-2.5">Sản phẩm</th>
+                                <th className="px-3 py-2.5">Số lượng</th>
+                                <th className="px-3 py-2.5">Đơn giá</th>
+                                <th className="px-3 py-2.5">Thành tiền</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr className="border-t border-slate-100">
+                                <td className="px-3 py-3 font-medium text-slate-900">
+                                  {latestOrder.productName || "—"}
+                                </td>
+                                <td className="px-3 py-3">{latestOrder.quantity || 1}</td>
+                                <td className="px-3 py-3">
+                                  {formatCurrency(
+                                    latestOrder.amount / Math.max(latestOrder.quantity || 1, 1),
+                                  )}
+                                </td>
+                                <td className="px-3 py-3 font-semibold text-slate-900">
+                                  {formatCurrency(latestOrder.amount)}
                                 </td>
                               </tr>
-                            ))
-                          ) : (
-                            <tr>
-                              <td colSpan={5} className="px-3 py-5 text-center text-slate-500">
-                                Chưa có lịch sử ghi chú.
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                        Chưa có đơn hàng đang xử lí.
+                      </div>
+                    )}
+                  </DetailCard>
+
+                  <DetailCard title="THÔNG TIN NHẬN HÀNG">
+                    <div className="grid gap-x-5 gap-y-3 sm:grid-cols-2">
+                      <DetailRow label="Họ tên" value={activeContact.name} />
+                      <DetailRow
+                        label="Số điện thoại"
+                        value={<DetailPhoneValue phone={activeContact.phone} />}
+                      />
+                      <DetailRow label="Địa chỉ" value={activeContact.address || "—"} />
+                      <DetailRow label="Xã/phường" value="—" />
+                      <DetailRow label="Quận/huyện" value="—" />
+                      <DetailRow label="Tỉnh/thành" value="—" />
+                      <DetailRow label="Quốc gia" value="Việt Nam" />
+                      <div className="sm:col-span-2">
+                        <DetailRow label="Ghi chú đơn hàng" value={latestNote} />
+                      </div>
                     </div>
-                  </div>
-                </DetailCard>
-              </div>
+                  </DetailCard>
 
-              <DetailCard
-                title="LỊCH SỬ ĐƠN HÀNG"
-                action={
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8 rounded-lg px-2.5"
-                    onClick={() => toast.info("Chức năng tạo đơn sẽ được bổ sung sau.")}
+                  <DetailCard
+                    title="LỊCH SỬ GHI CHÚ"
+                    action={
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 rounded-lg px-2.5 text-blue-700"
+                        onClick={() => {
+                          setEditingNote(null);
+                          setNoteContent("");
+                          setNoteFormOpen(true);
+                        }}
+                      >
+                        <Plus className="mr-1 h-3.5 w-3.5" />
+                        Ghi chú
+                      </Button>
+                    }
                   >
-                    <Plus className="mr-1 h-3.5 w-3.5" />
-                    Tạo đơn
-                  </Button>
-                }
-              >
-                {activeContact.orders.length ? (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                      <thead className="bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
-                        <tr>
-                          <th className="px-3 py-2">Mã đơn</th>
-                          <th className="px-3 py-2">Ngày</th>
-                          <th className="px-3 py-2">Sản phẩm</th>
-                          <th className="px-3 py-2">Doanh thu</th>
-                          <th className="px-3 py-2">Trạng thái</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {activeContact.orders.slice(0, 5).map((order) => (
-                          <tr key={order.id} className="border-t border-slate-100">
-                            <td className="px-3 py-2 font-semibold">{order.orderCode || "—"}</td>
-                            <td className="px-3 py-2">{formatDateTime(order.orderDate)}</td>
-                            <td className="px-3 py-2">{order.productName || "—"}</td>
-                            <td className="px-3 py-2">{formatCurrency(order.amount)}</td>
-                            <td className="px-3 py-2">{order.status || "—"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
-                    Chưa có lịch sử mua hàng.
-                  </div>
-                )}
-              </DetailCard>
-            </div>
+                    <div className="space-y-3">
+                      {noteFormOpen ? (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                          <Label>{editingNote ? "Sửa ghi chú" : "Thêm ghi chú"}</Label>
+                          <Textarea
+                            value={noteContent}
+                            onChange={(event) => setNoteContent(event.target.value)}
+                            placeholder="Nhập ghi chú chăm sóc khách hàng..."
+                            className="mt-2 min-h-20 bg-white"
+                          />
+                          <div className="mt-2 flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setEditingNote(null);
+                                setNoteContent("");
+                                setNoteFormOpen(false);
+                              }}
+                            >
+                              Hủy
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => noteMutation.mutate()}
+                              disabled={noteMutation.isPending || !noteContent.trim()}
+                            >
+                              {editingNote ? "Lưu ghi chú" : "Thêm ghi chú"}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+                      <div className="overflow-hidden rounded-xl border border-slate-200">
+                        <table className="w-full text-sm">
+                          <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-500">
+                            <tr>
+                              <th className="px-3 py-2">#</th>
+                              <th className="px-3 py-2">Được tạo vào</th>
+                              <th className="px-3 py-2">Nội dung</th>
+                              <th className="px-3 py-2">Được tạo bởi</th>
+                              <th className="px-3 py-2 text-right">Thao tác</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {activeContact.notes.length ? (
+                              activeContact.notes.map((note, index) => (
+                                <tr key={note.id} className="border-t border-slate-100">
+                                  <td className="px-3 py-2">{index + 1}</td>
+                                  <td className="px-3 py-2">{formatDateTime(note.createdAt)}</td>
+                                  <td className="px-3 py-2">{note.note}</td>
+                                  <td className="px-3 py-2">{note.createdBy}</td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex justify-end gap-1">
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={() => {
+                                          setEditingNote(note);
+                                          setNoteContent(note.note);
+                                          setNoteFormOpen(true);
+                                        }}
+                                      >
+                                        <Pencil className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-red-600 hover:text-red-700"
+                                        onClick={() => deleteNoteMutation.mutate(note)}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan={5} className="px-3 py-5 text-center text-slate-500">
+                                  Chưa có lịch sử ghi chú.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </DetailCard>
+                </div>
 
-            <DetailCard title="LỊCH SỬ HOẠT ĐỘNG" className="self-start">
-              <div className="space-y-3">
-                {sortedActivities.length ? (
-                  sortedActivities.map((activity) => (
-                    <div
-                      key={activity.id}
-                      className="rounded-2xl border border-slate-100 bg-slate-50 p-3"
-                    >
-                      <p className="font-bold text-slate-900">{activity.actorName}</p>
-                      <div className="mt-2 flex gap-2">
-                        <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
-                          <Check className="h-3.5 w-3.5" />
-                        </span>
-                        <div>
-                          <p className="text-sm font-medium text-slate-700">
+                <div className="min-h-0 space-y-5">
+                  <DetailCard
+                    title="CHECKLIST XỬ LÝ ĐƠN"
+                    action={
+                      <span className="text-sm font-bold text-slate-800">{checklistProgress}%</span>
+                    }
+                  >
+                    <div className="space-y-3">
+                      <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
+                        <div
+                          className="h-full rounded-full bg-blue-600 transition-[width]"
+                          style={{ width: `${checklistProgress}%` }}
+                        />
+                      </div>
+                      <div className="divide-y divide-slate-100">
+                        {processingChecklistItems.map((item) => {
+                          const checked = processingChecklist[item.key];
+                          return (
+                            <label
+                              key={item.key}
+                              className="flex cursor-pointer items-center gap-3 py-3 text-sm font-medium text-slate-800"
+                            >
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={(value) =>
+                                  setProcessingChecklist((current) => ({
+                                    ...current,
+                                    [item.key]: value === true,
+                                  }))
+                                }
+                              />
+                              <span className={checked ? "text-slate-500 line-through" : ""}>
+                                {item.label}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </DetailCard>
+
+                  <DetailCard title="LỊCH SỬ HOẠT ĐỘNG">
+                    <div className="max-h-[360px] space-y-3 overflow-y-auto pr-1">
+                      {sortedActivities.length ? (
+                        sortedActivities.map((activity) => (
+                          <div key={activity.id} className="border-l-2 border-blue-100 pl-3">
+                            <p className="font-bold text-slate-900">{activity.actorName}</p>
+                            <p className="mt-1 text-sm font-medium text-slate-700">
+                              {activity.description}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {formatDateTime(activity.createdAt)}
+                            </p>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                          Chưa có lịch sử hoạt động.
+                        </div>
+                      )}
+                    </div>
+                  </DetailCard>
+                </div>
+              </div>
+            ) : null}
+
+            {showDefaultDetailScreen ? (
+              <div className="grid min-h-0 gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(280px,3fr)]">
+                <div className="min-h-0 space-y-5">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <DetailCard title="THÔNG TIN">
+                      <DetailRow
+                        label="Ngày lên số"
+                        value={formatDateTime(activeContact.createdAt)}
+                      />
+                      <DetailRow label="NVKD" value={activeContact.assignedSaleName || "—"} />
+                      <DetailRow
+                        label="Đội ngũ bán hàng"
+                        value={activeContact.saleTeamName || "—"}
+                      />
+                      <DetailRow label="Marketer" value={formatSaleMarketerDisplay(latestSource)} />
+                      <DetailRow label="Team" value={latestSource?.marketingTeam?.trim() || "—"} />
+                      <DetailRow label="Kênh" value={latestSource?.sourceChannel?.trim() || "—"} />
+                      <DetailRow
+                        label="Nguồn URL"
+                        value={latestSource?.landingUrl?.trim() || "—"}
+                      />
+                    </DetailCard>
+
+                    <DetailCard title="KHÁCH HÀNG">
+                      <DetailRow label="Tên" value={activeContact.name} />
+                      <DetailRow
+                        label="SĐT"
+                        value={<DetailPhoneValue phone={activeContact.phone} />}
+                      />
+                      <DetailRow
+                        label="SĐT phụ"
+                        value={<DetailPhoneValue phone={activeContact.secondaryPhone} />}
+                      />
+                      <DetailRow label="Ghi chú KH" value={latestNote} />
+                    </DetailCard>
+                  </div>
+
+                  <DetailCard
+                    title="LỊCH SỬ GHI CHÚ"
+                    action={
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 rounded-lg px-2.5 text-blue-700"
+                        onClick={() => {
+                          setEditingNote(null);
+                          setNoteContent("");
+                          setNoteFormOpen(true);
+                        }}
+                      >
+                        <Plus className="mr-1 h-3.5 w-3.5" />
+                        Ghi chú
+                      </Button>
+                    }
+                  >
+                    <div className="space-y-3">
+                      {noteFormOpen ? (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                          <Label>{editingNote ? "Sửa ghi chú" : "Thêm ghi chú"}</Label>
+                          <Textarea
+                            value={noteContent}
+                            onChange={(event) => setNoteContent(event.target.value)}
+                            placeholder="Nhập ghi chú chăm sóc khách hàng..."
+                            className="mt-2 min-h-20 bg-white"
+                          />
+                          <div className="mt-2 flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setEditingNote(null);
+                                setNoteContent("");
+                                setNoteFormOpen(false);
+                              }}
+                            >
+                              Hủy
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => noteMutation.mutate()}
+                              disabled={noteMutation.isPending || !noteContent.trim()}
+                            >
+                              {editingNote ? "Lưu ghi chú" : "Thêm ghi chú"}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+                      <div className="overflow-hidden rounded-xl border border-slate-200">
+                        <table className="w-full text-sm">
+                          <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-500">
+                            <tr>
+                              <th className="px-3 py-2">#</th>
+                              <th className="px-3 py-2">Được tạo vào</th>
+                              <th className="px-3 py-2">Nội dung</th>
+                              <th className="px-3 py-2">Được tạo bởi</th>
+                              <th className="px-3 py-2 text-right">Thao tác</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {activeContact.notes.length ? (
+                              activeContact.notes.map((note, index) => (
+                                <tr key={note.id} className="border-t border-slate-100">
+                                  <td className="px-3 py-2">{index + 1}</td>
+                                  <td className="px-3 py-2">{formatDateTime(note.createdAt)}</td>
+                                  <td className="px-3 py-2">{note.note}</td>
+                                  <td className="px-3 py-2">{note.createdBy}</td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex justify-end gap-1">
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={() => {
+                                          setEditingNote(note);
+                                          setNoteContent(note.note);
+                                          setNoteFormOpen(true);
+                                        }}
+                                      >
+                                        <Pencil className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-red-600 hover:text-red-700"
+                                        onClick={() => deleteNoteMutation.mutate(note)}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan={5} className="px-3 py-5 text-center text-slate-500">
+                                  Chưa có lịch sử ghi chú.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </DetailCard>
+
+                  <DetailCard title="LỊCH SỬ ĐƠN HÀNG">
+                    {activeContact.orders.length ? (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm">
+                          <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-500">
+                            <tr>
+                              <th className="px-3 py-2">Mã đơn</th>
+                              <th className="px-3 py-2">Ngày</th>
+                              <th className="px-3 py-2">Sản phẩm</th>
+                              <th className="px-3 py-2">Doanh thu</th>
+                              <th className="px-3 py-2">Trạng thái</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {activeContact.orders.slice(0, 5).map((order) => (
+                              <tr key={order.id} className="border-t border-slate-100">
+                                <td className="px-3 py-2 font-semibold">
+                                  {order.orderCode || "—"}
+                                </td>
+                                <td className="px-3 py-2">{formatDateTime(order.orderDate)}</td>
+                                <td className="px-3 py-2">{order.productName || "—"}</td>
+                                <td className="px-3 py-2">{formatCurrency(order.amount)}</td>
+                                <td className="px-3 py-2">{order.status || "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                        Chưa có lịch sử đơn hàng.
+                      </div>
+                    )}
+                  </DetailCard>
+                </div>
+
+                <DetailCard title="LỊCH SỬ HOẠT ĐỘNG" className="self-start">
+                  <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
+                    {sortedActivities.length ? (
+                      sortedActivities.map((activity) => (
+                        <div key={activity.id} className="border-l-2 border-blue-100 pl-3">
+                          <p className="font-bold text-slate-900">{activity.actorName}</p>
+                          <p className="mt-1 text-sm font-medium text-slate-700">
                             {activity.description}
                           </p>
                           <p className="text-xs text-slate-500">
                             {formatDateTime(activity.createdAt)}
                           </p>
                         </div>
+                      ))
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                        Chưa có lịch sử hoạt động.
                       </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
-                    Chưa có lịch sử hoạt động.
+                    )}
                   </div>
-                )}
+                </DetailCard>
               </div>
-            </DetailCard>
+            ) : null}
           </div>
-        </div>
 
-        <DialogFooter className="shrink-0 border-t border-slate-200 bg-white px-5 py-3">
-          <Button variant="outline" onClick={onClose}>
-            Đóng
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          {!showQuoteBuilder ? (
+            <DialogFooter className="shrink-0 border-t border-slate-200 bg-white px-6 py-3">
+              <div className="flex w-full flex-wrap items-center justify-between gap-3">
+                {canShowOrderTotal ? (
+                  <p className="text-lg font-bold text-slate-950">
+                    {viewStatus === "processing"
+                      ? `Tổng tiền: ${formatCurrency(processingOrderAmount)} | COD: ${formatCurrency(processingOrderAmount)}`
+                      : `Tổng tiền: ${formatCurrency(totalOrderAmount)}`}
+                  </p>
+                ) : (
+                  <span />
+                )}
+                <div className="flex items-center gap-2">
+                  {viewStatus === "processing" ? (
+                    <>
+                      <Button
+                        variant="outline"
+                        className="rounded-xl"
+                        onClick={() => setOrderPreviewOpen(true)}
+                      >
+                        <ImageIcon className="mr-2 h-4 w-4" />
+                        In hoá đơn
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="rounded-xl border-red-200 text-red-600 hover:bg-red-50"
+                        onClick={() => cancelOrderMutation.mutate()}
+                        disabled={cancelOrderMutation.isPending || currentStatus !== "processing"}
+                      >
+                        Huỷ đơn
+                      </Button>
+                      <Button
+                        className="rounded-xl"
+                        onClick={() => moveToWaitingShippingMutation.mutate()}
+                        disabled={
+                          moveToWaitingShippingMutation.isPending || currentStatus !== "processing"
+                        }
+                      >
+                        <ChevronRight className="mr-2 h-4 w-4" />
+                        Chuyển chờ giao hàng
+                      </Button>
+                    </>
+                  ) : null}
+                  {viewStatus === "new" ? (
+                    <Button className="rounded-xl" onClick={openQuoteScreen}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Tạo đơn
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            </DialogFooter>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={orderPreviewOpen} onOpenChange={setOrderPreviewOpen}>
+        <DialogContent className="flex max-h-[92vh] w-[96vw] max-w-[1500px] flex-col overflow-hidden rounded-3xl p-0">
+          <DialogHeader className="shrink-0 border-b border-slate-200 px-5 py-4">
+            <DialogTitle>In hoá đơn của {activeContact.name}</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-hidden p-4">
+            <InvoiceBuilder
+              mode="embedded"
+              initialCustomer={{
+                name: activeContact.name,
+                phone: activeContact.phone,
+                address: activeContact.address,
+                note: latestNote === "Chưa có ghi chú." ? "" : latestNote,
+                productName:
+                  latestSource?.productName?.trim() || inferProductName(latestSource?.sourceName),
+              }}
+              hideResetAction
+              hideCreateAction
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -2240,6 +2826,7 @@ function statusBadgeClass(status: SaleCrmStatus) {
   if (status === "called") return "border-violet-200 bg-violet-50 text-violet-700";
   if (status === "success") return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (status === "quoted") return "border-indigo-200 bg-indigo-50 text-indigo-700";
+  if (status === "waiting_shipping") return "border-yellow-200 bg-yellow-50 text-yellow-700";
   if (status === "shipping") return "border-orange-200 bg-orange-50 text-orange-700";
   if (status === "returned") return "border-green-200 bg-green-50 text-green-700";
   if (status === "cancelled") return "border-slate-200 bg-slate-100 text-slate-600";
@@ -2252,6 +2839,7 @@ function statusDotClass(status: SaleCrmStatus) {
   if (status === "called") return "bg-violet-500";
   if (status === "success") return "bg-emerald-500";
   if (status === "quoted") return "bg-indigo-500";
+  if (status === "waiting_shipping") return "bg-yellow-500";
   if (status === "shipping") return "bg-orange-500";
   if (status === "returned") return "bg-green-500";
   if (status === "cancelled") return "bg-slate-500";

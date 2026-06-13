@@ -1,4 +1,4 @@
-import { forwardRef, useMemo, useRef, useState, type ReactNode } from "react";
+import { forwardRef, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Copy, Download, ImageIcon, Plus, Receipt, RefreshCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -25,8 +25,14 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/lib/auth";
 import { captureElementAsPngBlob, downloadBlob } from "@/lib/captureImage";
-import { createInvoice, fetchInvoiceProducts, type InvoiceProduct } from "@/lib/invoices";
+import {
+  createInvoice,
+  fetchInvoiceProducts,
+  type InvoiceProduct,
+  type InvoiceRow,
+} from "@/lib/invoices";
 import { formatVnd, parseVndInput } from "@/lib/products";
+import { cn } from "@/lib/utils";
 import { copyReportImageToClipboard } from "@/utils/reportImageStorage";
 
 type InvoiceLine = {
@@ -43,6 +49,43 @@ type InvoiceLine = {
   gift: string;
   nextVoucher: string;
   imageUrl: string;
+};
+
+export type InvoiceBuilderInitialCustomer = {
+  name?: string;
+  phone?: string;
+  address?: string;
+  note?: string;
+  productName?: string;
+};
+
+export type InvoiceBuilderSnapshot = {
+  customerName: string;
+  customerPhone: string;
+  customerAddress: string;
+  invoiceDate: string;
+  internalNote: string;
+  orderNote: string;
+  subtotal: number;
+  discount: number;
+  shippingFee: number;
+  total: number;
+  productSummary: string;
+};
+
+type InvoiceBuilderProps = {
+  mode?: "page" | "embedded";
+  initialCustomer?: InvoiceBuilderInitialCustomer;
+  embeddedActivityContent?: ReactNode;
+  saveDraftLabel?: string;
+  createButtonLabel?: string;
+  hideResetAction?: boolean;
+  hideCreateAction?: boolean;
+  onSaveDraft?: (snapshot: InvoiceBuilderSnapshot) => void | Promise<void>;
+  onCreateOrder?: (
+    snapshot: InvoiceBuilderSnapshot,
+    invoice: Pick<InvoiceRow, "invoice_code" | "invoice_date">,
+  ) => void | Promise<void>;
 };
 
 const emptyLine = (): InvoiceLine => ({
@@ -62,21 +105,58 @@ const emptyLine = (): InvoiceLine => ({
 });
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
+const buildEmbeddedOrderCode = () => `DH${Date.now().toString().slice(-8)}`;
+
+const VIETNAM_ADDRESS_OPTIONS: Record<string, Record<string, string[]>> = {
+  "Hà Nội": {
+    "Quận Hoàn Kiếm": ["Phường Tràng Tiền"],
+  },
+  "TP. Hồ Chí Minh": {
+    "Quận 1": ["Phường Bến Nghé"],
+  },
+  "Đà Nẵng": {
+    "Quận Hải Châu": ["Phường Hải Châu I"],
+  },
+};
 
 export function InvoiceWorkspace() {
+  return <InvoiceBuilder mode="page" />;
+}
+
+export function InvoiceBuilder({
+  mode = "page",
+  initialCustomer,
+  embeddedActivityContent,
+  saveDraftLabel,
+  createButtonLabel,
+  hideResetAction = false,
+  hideCreateAction = false,
+  onSaveDraft,
+  onCreateOrder,
+}: InvoiceBuilderProps) {
   const { profile } = useAuth();
   const previewRef = useRef<HTMLDivElement | null>(null);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
+  const [ward, setWard] = useState("");
+  const [district, setDistrict] = useState("");
+  const [province, setProvince] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(todayIso());
   const [internalNote, setInternalNote] = useState("");
+  const [orderNote, setOrderNote] = useState("");
   const [discountAmount, setDiscountAmount] = useState("");
+  const [discountType, setDiscountType] = useState<"percent" | "amount">(
+    mode === "embedded" ? "percent" : "amount",
+  );
+  const [shippingFeeAmount, setShippingFeeAmount] = useState("");
   const [lines, setLines] = useState<InvoiceLine[]>([emptyLine()]);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [capturing, setCapturing] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const initialProductAppliedRef = useRef(false);
 
   const { data: products = [], isLoading } = useQuery({
     queryKey: ["invoice-products"],
@@ -101,6 +181,11 @@ export function InvoiceWorkspace() {
     map.forEach((items) => items.sort((a, b) => a.sort_order - b.sort_order));
     return map;
   }, [products]);
+  const comboProducts = useMemo(
+    () =>
+      products.filter((product) => product.parent_id).sort((a, b) => a.sort_order - b.sort_order),
+    [products],
+  );
 
   const subtotal = useMemo(
     () => lines.reduce((sum, line) => sum + parseVndInput(line.total), 0),
@@ -110,13 +195,18 @@ export function InvoiceWorkspace() {
     () => lines.reduce((sum, line) => sum + parseVndInput(line.discount), 0),
     [lines],
   );
-  const invoiceDiscount = parseVndInput(discountAmount);
-  const discount = productDiscount + invoiceDiscount;
+  const discountInput = parseVndInput(discountAmount);
   const totalAfterProductDiscount = useMemo(
     () => lines.reduce((sum, line) => sum + parseVndInput(line.totalAfterDiscount), 0),
     [lines],
   );
-  const total = Math.max(totalAfterProductDiscount - invoiceDiscount, 0);
+  const invoiceDiscount =
+    discountType === "percent"
+      ? Math.round(totalAfterProductDiscount * (Math.min(discountInput, 100) / 100))
+      : discountInput;
+  const discount = productDiscount + invoiceDiscount;
+  const shippingFee = parseVndInput(shippingFeeAmount);
+  const total = Math.max(totalAfterProductDiscount - invoiceDiscount + shippingFee, 0);
   const productImages = useMemo(
     () => Array.from(new Set(lines.map((line) => line.imageUrl).filter(Boolean))).slice(0, 3),
     [lines],
@@ -130,6 +220,14 @@ export function InvoiceWorkspace() {
 
   const selectParent = (lineId: string, parentId: string) => {
     updateLine(lineId, { ...emptyLine(), id: lineId, parentId });
+  };
+
+  const selectEmbeddedMainProduct = (lineId: string, productId: string) => {
+    selectProduct(lineId, productId);
+  };
+
+  const selectEmbeddedCombo = (lineId: string, productId: string) => {
+    selectProduct(lineId, productId);
   };
 
   const selectProduct = (lineId: string, productId: string) => {
@@ -186,13 +284,109 @@ export function InvoiceWorkspace() {
     setCustomerName("");
     setCustomerPhone("");
     setCustomerAddress("");
+    setWard("");
+    setDistrict("");
+    setProvince("");
     setInvoiceDate(todayIso());
     setInternalNote("");
+    setOrderNote("");
     setDiscountAmount("");
+    setDiscountType(isEmbedded ? "percent" : "amount");
+    setShippingFeeAmount("");
     setLines([emptyLine()]);
   };
 
   const selectedLines = useMemo(() => lines.filter((line) => line.productId), [lines]);
+  const formattedCustomerAddress = useMemo(
+    () =>
+      [customerAddress, ward, district, province, "Việt Nam"]
+        .map((part) => part.trim())
+        .filter((part, index, values) => part && values.indexOf(part) === index)
+        .join(", "),
+    [customerAddress, district, province, ward],
+  );
+
+  useEffect(() => {
+    setCustomerName(initialCustomer?.name ?? "");
+    setCustomerPhone(initialCustomer?.phone ?? "");
+    setCustomerAddress(initialCustomer?.address ?? "");
+    setInternalNote(initialCustomer?.note ?? "");
+  }, [
+    initialCustomer?.address,
+    initialCustomer?.name,
+    initialCustomer?.note,
+    initialCustomer?.phone,
+  ]);
+
+  useEffect(() => {
+    initialProductAppliedRef.current = false;
+  }, [initialCustomer?.productName]);
+
+  useEffect(() => {
+    const productName = initialCustomer?.productName?.trim().toLowerCase();
+    if (!productName || !products.length || initialProductAppliedRef.current) return;
+    const matchingProduct = products.find((product) => {
+      const searchable = [product.name, product.product_group]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return searchable.includes(productName) || productName.includes(product.name.toLowerCase());
+    });
+    if (!matchingProduct) return;
+    initialProductAppliedRef.current = true;
+    const parent = matchingProduct.parent_id
+      ? products.find((product) => product.id === matchingProduct.parent_id)
+      : undefined;
+    const lineSubtotal = matchingProduct.base_price || matchingProduct.price_before_tax || 0;
+    const lineTotalAfterDiscount =
+      matchingProduct.final_price_after_discount ||
+      matchingProduct.price_after_discount ||
+      lineSubtotal;
+    const quantity = matchingProduct.quantity || 1;
+    setLines((current) =>
+      current.map((line, index) =>
+        index === 0
+          ? {
+              ...line,
+              productId: matchingProduct.id,
+              parentId: matchingProduct.parent_id ?? matchingProduct.id,
+              displayName: matchingProduct.name,
+              quantity: String(quantity),
+              unit: matchingProduct.unit || parent?.unit || "hũ",
+              unitPrice: formatVnd(
+                quantity > 0 ? Math.round(lineSubtotal / quantity) : lineSubtotal,
+              ),
+              total: formatVnd(lineSubtotal),
+              discount: formatVnd(Math.max(lineSubtotal - lineTotalAfterDiscount, 0)),
+              totalAfterDiscount: formatVnd(lineTotalAfterDiscount),
+              gift: normalizeBenefit(matchingProduct.gift),
+              nextVoucher: normalizeBenefit(matchingProduct.next_voucher),
+              imageUrl: matchingProduct.image_url || parent?.image_url || "",
+            }
+          : line,
+      ),
+    );
+  }, [initialCustomer?.productName, products]);
+
+  const buildSnapshot = (): InvoiceBuilderSnapshot => ({
+    customerName,
+    customerPhone,
+    customerAddress: invoiceCustomerAddress,
+    invoiceDate,
+    internalNote,
+    orderNote,
+    subtotal,
+    discount,
+    shippingFee,
+    total,
+    productSummary:
+      selectedLines
+        .map((line) => line.displayName.trim())
+        .filter(Boolean)
+        .join(", ") ||
+      initialCustomer?.productName ||
+      "",
+  });
 
   const validateInvoice = () => {
     if (!customerName.trim()) throw new Error("Nhập tên khách hàng");
@@ -205,20 +399,68 @@ export function InvoiceWorkspace() {
     }
   };
 
+  const saveDraft = async () => {
+    try {
+      validateInvoice();
+      setSavingDraft(true);
+      await onSaveDraft?.(buildSnapshot());
+      toast.success(saveDraftLabel ? `Đã ${saveDraftLabel.toLowerCase()}` : "Đã lưu nháp hoá đơn");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Không lưu được nháp hoá đơn");
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
+  const renderInvoicePreview = async () => {
+    const blob = await captureElementAsPngBlob({
+      target: previewRef.current,
+      pixelRatio: 2,
+      backgroundColor: "#ffffff",
+    });
+    const url = URL.createObjectURL(blob);
+    setPreviewBlob(blob);
+    setPreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return url;
+    });
+    setPreviewOpen(true);
+  };
+
+  const previewInvoice = async () => {
+    try {
+      validateInvoice();
+      setCapturing(true);
+      await renderInvoicePreview();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Không tạo được preview hoá đơn");
+    } finally {
+      setCapturing(false);
+    }
+  };
+
   const captureInvoice = async () => {
     try {
       validateInvoice();
       setCapturing(true);
-      await createInvoice({
+      if (isEmbedded && onCreateOrder) {
+        await onCreateOrder(buildSnapshot(), {
+          invoice_code: buildEmbeddedOrderCode(),
+          invoice_date: invoiceDate,
+        });
+        toast.success("Đã tạo đơn");
+        return;
+      }
+      const invoice = await createInvoice({
         invoice_date: invoiceDate,
         created_by: profile?.id ?? "",
         customer_name: customerName,
         customer_phone: customerPhone,
-        customer_address: customerAddress,
+        customer_address: invoiceCustomerAddress,
         subtotal_amount: subtotal,
         discount_amount: discount,
         final_amount: total,
-        notes: internalNote,
+        notes: orderNote.trim() || internalNote,
         items: selectedLines.map((line) => {
           const product = products.find((item) => item.id === line.productId);
           const parent = products.find((item) => item.id === line.parentId);
@@ -234,18 +476,8 @@ export function InvoiceWorkspace() {
           };
         }),
       });
-      const blob = await captureElementAsPngBlob({
-        target: previewRef.current,
-        pixelRatio: 2,
-        backgroundColor: "#ffffff",
-      });
-      const url = URL.createObjectURL(blob);
-      setPreviewBlob(blob);
-      setPreviewUrl((current) => {
-        if (current) URL.revokeObjectURL(current);
-        return url;
-      });
-      setPreviewOpen(true);
+      await onCreateOrder?.(buildSnapshot(), invoice);
+      await renderInvoicePreview();
       toast.success("Đã tạo hoá đơn");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Không chụp được hóa đơn");
@@ -270,32 +502,70 @@ export function InvoiceWorkspace() {
     downloadBlob(previewBlob, buildInvoiceFilename(customerName));
   };
 
-  return (
-    <div className="min-h-screen bg-slate-50/70 p-3 md:p-4">
-      <Card className="mb-4 rounded-2xl border-slate-200/80 shadow-sm">
-        <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-              <Receipt className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight text-slate-950">Tạo hoá đơn</h1>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Tạo ảnh hoá đơn bán hàng từ bảng giá sản phẩm.
-              </p>
-            </div>
-          </div>
-          {!profile?.phone ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-              Chưa có số điện thoại cá nhân, hotline trên hoá đơn sẽ để trống.
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
+  const isEmbedded = mode === "embedded";
+  const invoiceCustomerAddress = isEmbedded ? formattedCustomerAddress : customerAddress;
+  const createLabel = createButtonLabel ?? (isEmbedded ? "Tạo đơn" : "Tạo hoá đơn");
+  const draftLabel = saveDraftLabel ?? "Lưu nháp";
+  const districtOptions = province ? Object.keys(VIETNAM_ADDRESS_OPTIONS[province] ?? {}) : [];
+  const wardOptions =
+    province && district ? (VIETNAM_ADDRESS_OPTIONS[province]?.[district] ?? []) : [];
 
-      <div className="grid gap-4 xl:grid-cols-[520px_minmax(0,1fr)]">
-        <Card className="overflow-hidden rounded-2xl border-slate-200/80 shadow-sm">
-          <CardContent className="max-h-[calc(100vh-156px)] space-y-4 overflow-y-auto p-4 pb-24">
+  const updateAdministrativeAddress = (
+    nextProvince: string,
+    nextDistrict: string,
+    nextWard: string,
+  ) => {
+    setProvince(nextProvince);
+    setDistrict(nextDistrict);
+    setWard(nextWard);
+  };
+
+  return (
+    <div
+      className={cn(
+        isEmbedded
+          ? "flex h-full min-h-0 flex-col bg-slate-50/70"
+          : "min-h-screen bg-slate-50/70 p-3 md:p-4",
+      )}
+    >
+      {!isEmbedded ? (
+        <Card className="mb-4 rounded-2xl border-slate-200/80 shadow-sm">
+          <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                <Receipt className="h-5 w-5" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight text-slate-950">Tạo hoá đơn</h1>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  Tạo ảnh hoá đơn bán hàng từ bảng giá sản phẩm.
+                </p>
+              </div>
+            </div>
+            {!profile?.phone ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                Chưa có số điện thoại cá nhân, hotline trên hoá đơn sẽ để trống.
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <div
+        className={cn(
+          "grid gap-4 overflow-hidden",
+          isEmbedded
+            ? "min-h-0 flex-1 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,1fr)]"
+            : "xl:grid-cols-[520px_minmax(0,1fr)]",
+        )}
+      >
+        <Card className="min-h-0 overflow-hidden rounded-2xl border-slate-200/80 shadow-sm">
+          <CardContent
+            className={cn(
+              "space-y-4 overflow-y-auto p-4",
+              isEmbedded ? "h-full" : "max-h-[calc(100vh-156px)] pb-24",
+            )}
+          >
             <SectionTitle title="Thông tin khách hàng" />
             <div className="grid gap-3 md:grid-cols-2">
               <Field label="Tên khách hàng">
@@ -318,24 +588,119 @@ export function InvoiceWorkspace() {
                 />
               </Field>
               <Field label="Chiết khấu hoá đơn">
-                <Input
-                  inputMode="numeric"
-                  value={discountAmount}
-                  onChange={(event) =>
-                    setDiscountAmount(formatVnd(parseVndInput(event.target.value)))
-                  }
-                  placeholder="0"
-                />
+                {isEmbedded ? (
+                  <div className="grid grid-cols-[minmax(0,1fr)_92px] gap-2">
+                    <Input
+                      inputMode={discountType === "percent" ? "decimal" : "numeric"}
+                      value={discountAmount}
+                      onChange={(event) => {
+                        const value = parseVndInput(event.target.value);
+                        setDiscountAmount(
+                          discountType === "percent"
+                            ? String(Math.min(value, 100))
+                            : formatVnd(value),
+                        );
+                      }}
+                      placeholder="0"
+                    />
+                    <Select
+                      value={discountType}
+                      onValueChange={(value: "percent" | "amount") => {
+                        setDiscountType(value);
+                        setDiscountAmount("");
+                      }}
+                    >
+                      <SelectTrigger aria-label="Loại chiết khấu">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="percent">%</SelectItem>
+                        <SelectItem value="amount">VNĐ</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <Input
+                    inputMode="numeric"
+                    value={discountAmount}
+                    onChange={(event) =>
+                      setDiscountAmount(formatVnd(parseVndInput(event.target.value)))
+                    }
+                    placeholder="0"
+                  />
+                )}
               </Field>
               <div className="md:col-span-2">
                 <Field label="Địa chỉ">
                   <Textarea
                     value={customerAddress}
                     onChange={(event) => setCustomerAddress(event.target.value)}
-                    className="min-h-16 resize-none"
+                    className="h-12 min-h-12 resize-none"
                   />
                 </Field>
               </div>
+              {isEmbedded ? (
+                <>
+                  <Field label="Tỉnh/thành phố">
+                    <Select
+                      value={province}
+                      onValueChange={(value) => updateAdministrativeAddress(value, "", "")}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Chọn tỉnh/thành" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.keys(VIETNAM_ADDRESS_OPTIONS).map((item) => (
+                          <SelectItem key={item} value={item}>
+                            {item}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label="Quận/huyện">
+                    <Select
+                      value={district}
+                      disabled={!province}
+                      onValueChange={(value) => updateAdministrativeAddress(province, value, "")}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Chọn quận/huyện" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {districtOptions.map((item) => (
+                          <SelectItem key={item} value={item}>
+                            {item}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label="Xã/phường">
+                    <Select
+                      value={ward}
+                      disabled={!district}
+                      onValueChange={(value) =>
+                        updateAdministrativeAddress(province, district, value)
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Chọn xã/phường" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {wardOptions.map((item) => (
+                          <SelectItem key={item} value={item}>
+                            {item}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label="Quốc gia">
+                    <Input value="Việt Nam" readOnly disabled />
+                  </Field>
+                </>
+              ) : null}
               <div className="md:col-span-2">
                 <Field label="Ghi chú nội bộ">
                   <Textarea
@@ -361,32 +726,25 @@ export function InvoiceWorkspace() {
                   Thêm dòng
                 </Button>
               </div>
-              {lines.map((line, index) => (
-                <div key={line.id} className="rounded-2xl border border-slate-200 bg-white p-3">
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-sm font-bold text-slate-950">Dòng {index + 1}</p>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-red-600"
-                      disabled={lines.length === 1}
-                      onClick={() =>
-                        setLines((current) => current.filter((item) => item.id !== line.id))
-                      }
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="grid gap-2 md:grid-cols-2">
+              {lines.map((line, index) =>
+                isEmbedded ? (
+                  <div
+                    key={line.id}
+                    className="grid items-end gap-2 rounded-2xl border border-slate-200 bg-white p-3 lg:grid-cols-[minmax(150px,1fr)_minmax(170px,1.15fr)_90px_120px_120px_40px]"
+                  >
                     <Field label="Sản phẩm chính">
                       <Select
-                        value={line.parentId}
-                        onValueChange={(value) => selectParent(line.id, value)}
+                        value={
+                          line.productId &&
+                          products.find((product) => product.id === line.productId)?.parent_id ===
+                            null
+                            ? line.productId
+                            : ""
+                        }
+                        onValueChange={(value) => selectEmbeddedMainProduct(line.id, value)}
                       >
                         <SelectTrigger>
-                          <SelectValue
-                            placeholder={isLoading ? "Đang tải..." : "Chọn sản phẩm chính"}
-                          />
+                          <SelectValue placeholder={isLoading ? "Đang tải..." : "Chọn sản phẩm"} />
                         </SelectTrigger>
                         <SelectContent>
                           {parentProducts.map((product) => (
@@ -399,35 +757,25 @@ export function InvoiceWorkspace() {
                     </Field>
                     <Field label="Combo">
                       <Select
-                        value={line.productId}
-                        onValueChange={(value) => selectProduct(line.id, value)}
-                        disabled={!line.parentId}
+                        value={
+                          line.productId &&
+                          products.find((product) => product.id === line.productId)?.parent_id
+                            ? line.productId
+                            : ""
+                        }
+                        onValueChange={(value) => selectEmbeddedCombo(line.id, value)}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Chọn combo" />
                         </SelectTrigger>
                         <SelectContent>
-                          {(childrenByParent.get(line.parentId) ?? []).map((product) => (
+                          {comboProducts.map((product) => (
                             <SelectItem key={product.id} value={product.id}>
                               {product.name}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                    </Field>
-                    <Field label="Tên hiển thị">
-                      <Input
-                        value={line.displayName}
-                        onChange={(event) =>
-                          updateLine(line.id, { displayName: event.target.value })
-                        }
-                      />
-                    </Field>
-                    <Field label="Đơn vị">
-                      <Input
-                        value={line.unit}
-                        onChange={(event) => updateLine(line.id, { unit: event.target.value })}
-                      />
                     </Field>
                     <Field label="Số lượng">
                       <Input
@@ -449,54 +797,248 @@ export function InvoiceWorkspace() {
                         }
                       />
                     </Field>
+                    <Field label="Thành tiền">
+                      <div className="flex h-10 items-center justify-end rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-900">
+                        {formatVnd(parseVndInput(line.totalAfterDiscount))}
+                      </div>
+                    </Field>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 text-red-600"
+                      disabled={lines.length === 1}
+                      aria-label={`Xoá dòng ${index + 1}`}
+                      onClick={() =>
+                        setLines((current) => current.filter((item) => item.id !== line.id))
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
-                </div>
-              ))}
+                ) : (
+                  <div key={line.id} className="rounded-2xl border border-slate-200 bg-white p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className="text-sm font-bold text-slate-950">Dòng {index + 1}</p>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-red-600"
+                        disabled={lines.length === 1}
+                        onClick={() =>
+                          setLines((current) => current.filter((item) => item.id !== line.id))
+                        }
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <Field label="Sản phẩm chính">
+                        <Select
+                          value={line.parentId}
+                          onValueChange={(value) => selectParent(line.id, value)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue
+                              placeholder={isLoading ? "Đang tải..." : "Chọn sản phẩm chính"}
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {parentProducts.map((product) => (
+                              <SelectItem key={product.id} value={product.id}>
+                                {product.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      <Field label="Combo">
+                        <Select
+                          value={line.productId}
+                          onValueChange={(value) => selectProduct(line.id, value)}
+                          disabled={!line.parentId}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Chọn combo" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(childrenByParent.get(line.parentId) ?? []).map((product) => (
+                              <SelectItem key={product.id} value={product.id}>
+                                {product.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      <Field label="Tên hiển thị">
+                        <Input
+                          value={line.displayName}
+                          onChange={(event) =>
+                            updateLine(line.id, { displayName: event.target.value })
+                          }
+                        />
+                      </Field>
+                      <Field label="Đơn vị">
+                        <Input
+                          value={line.unit}
+                          onChange={(event) => updateLine(line.id, { unit: event.target.value })}
+                        />
+                      </Field>
+                      <Field label="Số lượng">
+                        <Input
+                          inputMode="decimal"
+                          value={line.quantity}
+                          onChange={(event) =>
+                            updateQuantityOrPrice(line.id, { quantity: event.target.value })
+                          }
+                        />
+                      </Field>
+                      <Field label="Đơn giá">
+                        <Input
+                          inputMode="numeric"
+                          value={line.unitPrice}
+                          onChange={(event) =>
+                            updateQuantityOrPrice(line.id, {
+                              unitPrice: formatVnd(parseVndInput(event.target.value)),
+                            })
+                          }
+                        />
+                      </Field>
+                    </div>
+                  </div>
+                ),
+              )}
             </div>
           </CardContent>
-          <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-2 border-t bg-white/95 p-3 backdrop-blur">
-            <Button variant="outline" size="sm" className="rounded-xl" onClick={resetInvoice}>
-              <RefreshCcw className="mr-2 h-4 w-4" />
-              Làm mới
-            </Button>
-            <Button size="sm" className="rounded-xl" onClick={captureInvoice} disabled={capturing}>
-              <ImageIcon className="mr-2 h-4 w-4" />
-              {capturing ? "Đang tạo..." : "Tạo hoá đơn"}
-            </Button>
-          </div>
+          {!isEmbedded ? (
+            <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-2 border-t bg-white/95 p-3 backdrop-blur">
+              <div>
+                {!hideResetAction ? (
+                  <Button variant="outline" size="sm" className="rounded-xl" onClick={resetInvoice}>
+                    <RefreshCcw className="mr-2 h-4 w-4" />
+                    Làm mới
+                  </Button>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                {!hideCreateAction ? (
+                  <Button
+                    size="sm"
+                    className="rounded-xl"
+                    onClick={captureInvoice}
+                    disabled={capturing}
+                  >
+                    <ImageIcon className="mr-2 h-4 w-4" />
+                    {capturing ? "Đang tạo..." : createLabel}
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </Card>
 
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b px-4 py-3">
-            <div>
-              <h2 className="text-base font-bold text-slate-950">Preview hoá đơn</h2>
-              <p className="text-xs text-muted-foreground">Ảnh xuất ra giữ kích thước chuẩn.</p>
-            </div>
-            <Badge variant="secondary" className="rounded-full">
-              A4 ngang
-            </Badge>
+        {isEmbedded ? (
+          <div className="min-h-0 space-y-4 overflow-y-auto pr-1">
+            <OrderSummary
+              lines={selectedLines}
+              subtotal={subtotal}
+              discount={discount}
+              discountType={discountType}
+              discountInput={discountInput}
+              total={total}
+              orderNote={orderNote}
+              onOrderNoteChange={setOrderNote}
+              shippingFeeAmount={shippingFeeAmount}
+              onShippingFeeChange={setShippingFeeAmount}
+            />
+            {embeddedActivityContent}
           </div>
-          <div className="h-[calc(100vh-214px)] overflow-auto bg-slate-100 p-4">
-            <div className="h-[650px] w-[742px]">
-              <div className="origin-top-left scale-[0.74]">
-                <InvoicePreview
-                  ref={previewRef}
-                  customerName={customerName}
-                  customerPhone={customerPhone}
-                  customerAddress={customerAddress}
-                  invoiceDate={invoiceDate}
-                  hotline={profile?.phone ?? ""}
-                  lines={lines}
-                  productImages={productImages}
-                  subtotal={subtotal}
-                  discount={discount}
-                  total={total}
-                />
+        ) : (
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div>
+                <h2 className="text-base font-bold text-slate-950">Preview hoá đơn</h2>
+                <p className="text-xs text-muted-foreground">Ảnh xuất ra giữ kích thước chuẩn.</p>
+              </div>
+              <Badge variant="secondary" className="rounded-full">
+                A4 ngang
+              </Badge>
+            </div>
+            <div className="h-[calc(100vh-214px)] overflow-auto bg-slate-100 p-4">
+              <div className="h-[650px] w-[742px]">
+                <div className="origin-top-left scale-[0.74]">
+                  <InvoicePreview
+                    ref={previewRef}
+                    customerName={customerName}
+                    customerPhone={customerPhone}
+                    customerAddress={invoiceCustomerAddress}
+                    invoiceDate={invoiceDate}
+                    hotline={profile?.phone ?? ""}
+                    lines={lines}
+                    productImages={productImages}
+                    subtotal={subtotal}
+                    discount={discount}
+                    total={total}
+                  />
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
+
+      {isEmbedded ? (
+        <div className="relative z-10 mt-3 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-4px_14px_rgba(15,23,42,0.06)]">
+          <p className="text-lg font-bold text-slate-950">
+            Tổng tiền: {new Intl.NumberFormat("vi-VN").format(total)}đ
+          </p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              variant="outline"
+              className="rounded-xl"
+              onClick={previewInvoice}
+              disabled={capturing}
+            >
+              <ImageIcon className="mr-2 h-4 w-4" />
+              In hoá đơn
+            </Button>
+            {onSaveDraft ? (
+              <Button
+                variant="outline"
+                className="rounded-xl"
+                onClick={saveDraft}
+                disabled={savingDraft}
+              >
+                {savingDraft ? "Đang lưu..." : draftLabel}
+              </Button>
+            ) : null}
+            {!hideCreateAction ? (
+              <Button className="rounded-xl" onClick={captureInvoice} disabled={capturing}>
+                <Plus className="mr-2 h-4 w-4" />
+                {capturing ? "Đang tạo..." : createLabel}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {isEmbedded ? (
+        <div className="pointer-events-none fixed -left-[10000px] top-0" aria-hidden="true">
+          <InvoicePreview
+            ref={previewRef}
+            customerName={customerName}
+            customerPhone={customerPhone}
+            customerAddress={invoiceCustomerAddress}
+            invoiceDate={invoiceDate}
+            hotline={profile?.phone ?? ""}
+            lines={lines}
+            productImages={productImages}
+            subtotal={subtotal}
+            discount={discount}
+            total={total}
+          />
+        </div>
+      ) : null}
 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-[min(92vw,980px)] rounded-3xl">
@@ -513,10 +1055,12 @@ export function InvoiceWorkspace() {
             </div>
           ) : null}
           <DialogFooter className="gap-2 sm:justify-end">
-            <Button variant="outline" onClick={downloadInvoice}>
-              <Download className="mr-2 h-4 w-4" />
-              Tải ảnh
-            </Button>
+            {!isEmbedded ? (
+              <Button variant="outline" onClick={downloadInvoice}>
+                <Download className="mr-2 h-4 w-4" />
+                Tải ảnh
+              </Button>
+            ) : null}
             <Button variant="outline" onClick={copyInvoice}>
               <Copy className="mr-2 h-4 w-4" />
               Copy ảnh
@@ -648,6 +1192,109 @@ const InvoicePreview = forwardRef<HTMLDivElement, InvoicePreviewProps>((props, r
 });
 
 InvoicePreview.displayName = "InvoicePreview";
+
+function OrderSummary({
+  lines,
+  subtotal,
+  discount,
+  discountType,
+  discountInput,
+  total,
+  orderNote,
+  onOrderNoteChange,
+  shippingFeeAmount,
+  onShippingFeeChange,
+}: {
+  lines: InvoiceLine[];
+  subtotal: number;
+  discount: number;
+  discountType: "percent" | "amount";
+  discountInput: number;
+  total: number;
+  orderNote: string;
+  onOrderNoteChange: (value: string) => void;
+  shippingFeeAmount: string;
+  onShippingFeeChange: (value: string) => void;
+}) {
+  const productCount = lines.reduce(
+    (sum, line) => sum + Math.max(Number(line.quantity || 0), 0),
+    0,
+  );
+
+  return (
+    <Card className="overflow-hidden rounded-2xl border-slate-200/80 shadow-sm">
+      <div className="border-b border-slate-200 px-4 py-3">
+        <h2 className="text-base font-bold text-slate-950">THÔNG TIN BÁO GIÁ</h2>
+      </div>
+
+      <div className="space-y-4 p-4">
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <span className="font-medium text-slate-700">Chưa tạo đơn chính thức</span>
+          <Badge className="rounded-full border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50">
+            Nháp
+          </Badge>
+        </div>
+
+        <div className="space-y-2 border-t border-slate-200 pt-4 text-sm">
+          <SummaryRow label="Số lượng sản phẩm" value={String(productCount)} />
+          <SummaryRow label="Tổng tiền hàng" value={formatVnd(subtotal)} />
+          <SummaryRow
+            label={
+              discountType === "percent" && discountInput > 0
+                ? `Chiết khấu (${Math.min(discountInput, 100)}%)`
+                : "Chiết khấu"
+            }
+            value={discount > 0 ? `-${formatVnd(discount)}` : formatVnd(0)}
+          />
+          <Field label="Phí vận chuyển">
+            <Input
+              inputMode="numeric"
+              value={shippingFeeAmount}
+              onChange={(event) =>
+                onShippingFeeChange(formatVnd(parseVndInput(event.target.value)))
+              }
+              placeholder="0"
+              className="text-right"
+            />
+          </Field>
+          <SummaryRow
+            label="Thành tiền"
+            value={formatVnd(total)}
+            className="border-t border-slate-200 pt-3 text-base font-bold text-blue-700"
+          />
+          <SummaryRow label="COD dự kiến" value={formatVnd(total)} />
+        </div>
+
+        <Field label="Ghi chú báo giá">
+          <Textarea
+            value={orderNote}
+            onChange={(event) => onOrderNoteChange(event.target.value)}
+            placeholder="Ghi chú cho khách..."
+            rows={2}
+            className="min-h-[56px] max-h-[72px] resize-none"
+          />
+        </Field>
+      </div>
+    </Card>
+  );
+}
+
+function SummaryRow({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex items-center justify-between gap-4", className)}>
+      <span>{label}</span>
+      <span>{value}</span>
+    </div>
+  );
+}
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (

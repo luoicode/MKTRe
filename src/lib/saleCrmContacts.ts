@@ -26,6 +26,7 @@ export type SaleCrmStatus =
   | "processing"
   | "called"
   | "quoted"
+  | "waiting_shipping"
   | "shipping"
   | "success"
   | "returned"
@@ -243,12 +244,24 @@ export interface SaleCrmActor {
   email?: string | null;
 }
 
+export interface CreateSaleCrmOrderInput {
+  orderId?: string;
+  customerId: string;
+  orderCode: string;
+  productName: string;
+  quantity?: number;
+  amount: number;
+  status: string;
+  orderDate?: string;
+}
+
 export const saleCrmStatusOptions: Array<{ key: SaleCrmStatus; label: string }> = [
   { key: "sale_received", label: "Sale nhận" },
   { key: "new", label: "Mới" },
   { key: "processing", label: "Đang xử lí" },
   { key: "called", label: "Đã gọi" },
   { key: "quoted", label: "Báo giá" },
+  { key: "waiting_shipping", label: "Chờ giao hàng" },
   { key: "shipping", label: "Đang giao" },
   { key: "success", label: "Hoàn thành" },
   { key: "returned", label: "Hoàn" },
@@ -384,6 +397,77 @@ export async function updateCustomerFollowup(
   await createCustomerActivity(customerId, "followup_updated", "Cập nhật lịch liên hệ", actor);
 }
 
+export async function createSaleCrmOrder(input: CreateSaleCrmOrderInput, actor: SaleCrmActor) {
+  const orderDate = input.orderDate ?? new Date().toISOString();
+  const values = {
+    customer_id: input.customerId,
+    order_code: input.orderCode,
+    product_name: input.productName || "Đơn hàng",
+    quantity: input.quantity ?? 1,
+    amount: input.amount,
+    status: input.status,
+    order_date: orderDate,
+  };
+  const { error } = input.orderId
+    ? await db.from("customer_orders").update(values).eq("id", input.orderId)
+    : await db.from("customer_orders").insert(values);
+  if (error) throw error;
+
+  await createCustomerActivity(
+    input.customerId,
+    "order_created",
+    `Tạo đơn ${input.orderCode}: ${input.productName || "Đơn hàng"} - ${formatActivityAmount(input.amount)}`,
+    actor,
+  );
+}
+
+export async function saveSaleCrmQuote(
+  input: Omit<CreateSaleCrmOrderInput, "status">,
+  actor: SaleCrmActor,
+) {
+  const orderDate = input.orderDate ?? new Date().toISOString();
+  const orderId = input.orderId ?? crypto.randomUUID();
+  const values = {
+    id: orderId,
+    customer_id: input.customerId,
+    order_code: input.orderCode,
+    product_name: input.productName || "Báo giá",
+    quantity: input.quantity ?? 1,
+    amount: input.amount,
+    status: "Báo giá",
+    order_date: orderDate,
+  };
+  const { error } = input.orderId
+    ? await db.from("customer_orders").update(values).eq("id", input.orderId)
+    : await db.from("customer_orders").insert(values);
+  if (error) throw error;
+
+  await createCustomerActivity(
+    input.customerId,
+    "quote_saved",
+    `Lưu báo giá ${input.orderCode}: ${input.productName || "Báo giá"} - ${formatActivityAmount(input.amount)}`,
+    actor,
+  );
+  return orderId;
+}
+
+export async function updateSaleCrmOrderStatus(
+  orderId: string,
+  customerId: string,
+  status: string,
+  actor: SaleCrmActor,
+) {
+  const { error } = await db.from("customer_orders").update({ status }).eq("id", orderId);
+  if (error) throw error;
+
+  await createCustomerActivity(
+    customerId,
+    "order_status_changed",
+    `Cập nhật trạng thái đơn: ${status}`,
+    actor,
+  );
+}
+
 async function createCustomerActivity(
   customerId: string,
   activityType: string,
@@ -398,6 +482,10 @@ async function createCustomerActivity(
     actor_name: getActorName(actor),
   });
   if (error) throw error;
+}
+
+function formatActivityAmount(value: number) {
+  return `${new Intl.NumberFormat("vi-VN").format(value)}đ`;
 }
 
 async function fetchSources(customerIds: string[]) {
@@ -645,6 +733,7 @@ function normalizeSaleCrmStatus(status: string | null): SaleCrmStatus {
     normalized === "processing" ||
     normalized === "called" ||
     normalized === "quoted" ||
+    normalized === "waiting_shipping" ||
     normalized === "shipping" ||
     normalized === "success" ||
     normalized === "returned" ||
@@ -661,6 +750,13 @@ function normalizeSaleCrmStatus(status: string | null): SaleCrmStatus {
   }
   if (normalized === "quote" || normalized === "báo giá" || normalized === "bao_gia") {
     return "quoted";
+  }
+  if (
+    normalized === "chờ giao hàng" ||
+    normalized === "cho_giao_hang" ||
+    normalized === "awaiting_shipping"
+  ) {
+    return "waiting_shipping";
   }
   if (normalized === "đang giao" || normalized === "dang_giao") return "shipping";
   if (normalized === "hoàn") return "returned";
