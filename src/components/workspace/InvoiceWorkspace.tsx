@@ -33,6 +33,7 @@ import {
 } from "@/lib/invoices";
 import { formatVnd, parseVndInput } from "@/lib/products";
 import { cn } from "@/lib/utils";
+import { fetchVietnamAddressData } from "@/lib/vietnamAddress";
 import { copyReportImageToClipboard } from "@/utils/reportImageStorage";
 
 type InvoiceLine = {
@@ -59,13 +60,40 @@ export type InvoiceBuilderInitialCustomer = {
   productName?: string;
 };
 
+export type InvoiceBuilderLineSnapshot = {
+  id: string;
+  parentId: string;
+  productId: string;
+  displayName: string;
+  quantity: string;
+  unit: string;
+  unitPrice: string;
+  total: string;
+  discount: string;
+  totalAfterDiscount: string;
+  gift: string;
+  nextVoucher: string;
+  imageUrl: string;
+};
+
 export type InvoiceBuilderSnapshot = {
   customerName: string;
   customerPhone: string;
   customerAddress: string;
+  streetAddress: string;
+  provinceId: string;
+  provinceName: string;
+  districtId: string;
+  districtName: string;
+  wardId: string;
+  wardName: string;
   invoiceDate: string;
   internalNote: string;
   orderNote: string;
+  discountType: "percent" | "amount";
+  discountValue: string;
+  shippingFeeValue: string;
+  lines: InvoiceBuilderLineSnapshot[];
   subtotal: number;
   discount: number;
   shippingFee: number;
@@ -76,11 +104,13 @@ export type InvoiceBuilderSnapshot = {
 type InvoiceBuilderProps = {
   mode?: "page" | "embedded";
   initialCustomer?: InvoiceBuilderInitialCustomer;
+  initialSnapshot?: InvoiceBuilderSnapshot | null;
   embeddedActivityContent?: ReactNode;
   saveDraftLabel?: string;
   createButtonLabel?: string;
   hideResetAction?: boolean;
   hideCreateAction?: boolean;
+  onSnapshotChange?: (snapshot: InvoiceBuilderSnapshot) => void;
   onSaveDraft?: (snapshot: InvoiceBuilderSnapshot) => void | Promise<void>;
   onCreateOrder?: (
     snapshot: InvoiceBuilderSnapshot,
@@ -106,17 +136,12 @@ const emptyLine = (): InvoiceLine => ({
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const buildEmbeddedOrderCode = () => `DH${Date.now().toString().slice(-8)}`;
-
-const VIETNAM_ADDRESS_OPTIONS: Record<string, Record<string, string[]>> = {
-  "Hà Nội": {
-    "Quận Hoàn Kiếm": ["Phường Tràng Tiền"],
-  },
-  "TP. Hồ Chí Minh": {
-    "Quận 1": ["Phường Bến Nghé"],
-  },
-  "Đà Nẵng": {
-    "Quận Hải Châu": ["Phường Hải Châu I"],
-  },
+const getActionErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message?: unknown }).message || fallback);
+  }
+  return fallback;
 };
 
 export function InvoiceWorkspace() {
@@ -126,22 +151,25 @@ export function InvoiceWorkspace() {
 export function InvoiceBuilder({
   mode = "page",
   initialCustomer,
+  initialSnapshot,
   embeddedActivityContent,
   saveDraftLabel,
   createButtonLabel,
   hideResetAction = false,
   hideCreateAction = false,
+  onSnapshotChange,
   onSaveDraft,
   onCreateOrder,
 }: InvoiceBuilderProps) {
   const { profile } = useAuth();
+  const isEmbedded = mode === "embedded";
   const previewRef = useRef<HTMLDivElement | null>(null);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
-  const [ward, setWard] = useState("");
-  const [district, setDistrict] = useState("");
-  const [province, setProvince] = useState("");
+  const [wardId, setWardId] = useState("");
+  const [districtId, setDistrictId] = useState("");
+  const [provinceId, setProvinceId] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(todayIso());
   const [internalNote, setInternalNote] = useState("");
   const [orderNote, setOrderNote] = useState("");
@@ -156,11 +184,21 @@ export function InvoiceBuilder({
   const [previewUrl, setPreviewUrl] = useState("");
   const [capturing, setCapturing] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
+  const [submittingOrder, setSubmittingOrder] = useState(false);
   const initialProductAppliedRef = useRef(false);
+  const initialCustomerAppliedRef = useRef(false);
+  const initialSnapshotAppliedRef = useRef(false);
+  const skipSnapshotEmissionRef = useRef(false);
 
   const { data: products = [], isLoading } = useQuery({
     queryKey: ["invoice-products"],
     queryFn: fetchInvoiceProducts,
+  });
+  const { data: vietnamAddressData, isLoading: isLoadingAddress } = useQuery({
+    queryKey: ["vietnam-address-data", "legacy-63-provinces"],
+    queryFn: fetchVietnamAddressData,
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: Number.POSITIVE_INFINITY,
   });
 
   const parentProducts = useMemo(
@@ -181,9 +219,17 @@ export function InvoiceBuilder({
     map.forEach((items) => items.sort((a, b) => a.sort_order - b.sort_order));
     return map;
   }, [products]);
-  const comboProducts = useMemo(
+  const saleableProducts = useMemo(
     () =>
-      products.filter((product) => product.parent_id).sort((a, b) => a.sort_order - b.sort_order),
+      products
+        .filter(
+          (product) =>
+            product.parent_id &&
+            (product.base_price > 0 ||
+              product.price_before_tax > 0 ||
+              product.final_price_after_discount > 0),
+        )
+        .sort((a, b) => a.sort_order - b.sort_order),
     [products],
   );
 
@@ -220,14 +266,6 @@ export function InvoiceBuilder({
 
   const selectParent = (lineId: string, parentId: string) => {
     updateLine(lineId, { ...emptyLine(), id: lineId, parentId });
-  };
-
-  const selectEmbeddedMainProduct = (lineId: string, productId: string) => {
-    selectProduct(lineId, productId);
-  };
-
-  const selectEmbeddedCombo = (lineId: string, productId: string) => {
-    selectProduct(lineId, productId);
   };
 
   const selectProduct = (lineId: string, productId: string) => {
@@ -284,9 +322,9 @@ export function InvoiceBuilder({
     setCustomerName("");
     setCustomerPhone("");
     setCustomerAddress("");
-    setWard("");
-    setDistrict("");
-    setProvince("");
+    setWardId("");
+    setDistrictId("");
+    setProvinceId("");
     setInvoiceDate(todayIso());
     setInternalNote("");
     setOrderNote("");
@@ -297,16 +335,32 @@ export function InvoiceBuilder({
   };
 
   const selectedLines = useMemo(() => lines.filter((line) => line.productId), [lines]);
+  const selectedProvince = vietnamAddressData?.provinces.find(
+    (province) => province.id === provinceId,
+  );
+  const selectedDistrict = vietnamAddressData?.districts.find(
+    (district) => district.id === districtId,
+  );
+  const selectedWard = vietnamAddressData?.wards.find((ward) => ward.id === wardId);
   const formattedCustomerAddress = useMemo(
     () =>
-      [customerAddress, ward, district, province, "Việt Nam"]
-        .map((part) => part.trim())
+      [
+        customerAddress,
+        selectedWard?.name,
+        selectedDistrict?.name,
+        selectedProvince?.name,
+        "Việt Nam",
+      ]
+        .map((part) => part?.trim() ?? "")
         .filter((part, index, values) => part && values.indexOf(part) === index)
         .join(", "),
-    [customerAddress, district, province, ward],
+    [customerAddress, selectedDistrict?.name, selectedProvince?.name, selectedWard?.name],
   );
+  const invoiceCustomerAddress = isEmbedded ? formattedCustomerAddress : customerAddress;
 
   useEffect(() => {
+    if (initialCustomerAppliedRef.current) return;
+    initialCustomerAppliedRef.current = true;
     setCustomerName(initialCustomer?.name ?? "");
     setCustomerPhone(initialCustomer?.phone ?? "");
     setCustomerAddress(initialCustomer?.address ?? "");
@@ -324,8 +378,8 @@ export function InvoiceBuilder({
 
   useEffect(() => {
     const productName = initialCustomer?.productName?.trim().toLowerCase();
-    if (!productName || !products.length || initialProductAppliedRef.current) return;
-    const matchingProduct = products.find((product) => {
+    if (!productName || !saleableProducts.length || initialProductAppliedRef.current) return;
+    const matchingProduct = saleableProducts.find((product) => {
       const searchable = [product.name, product.product_group]
         .filter(Boolean)
         .join(" ")
@@ -366,27 +420,110 @@ export function InvoiceBuilder({
           : line,
       ),
     );
-  }, [initialCustomer?.productName, products]);
+  }, [initialCustomer?.productName, products, saleableProducts]);
 
-  const buildSnapshot = (): InvoiceBuilderSnapshot => ({
-    customerName,
-    customerPhone,
-    customerAddress: invoiceCustomerAddress,
-    invoiceDate,
-    internalNote,
-    orderNote,
-    subtotal,
-    discount,
-    shippingFee,
-    total,
-    productSummary:
-      selectedLines
-        .map((line) => line.displayName.trim())
-        .filter(Boolean)
-        .join(", ") ||
-      initialCustomer?.productName ||
-      "",
-  });
+  const currentSnapshot = useMemo<InvoiceBuilderSnapshot>(
+    () => ({
+      customerName,
+      customerPhone,
+      customerAddress: invoiceCustomerAddress,
+      streetAddress: customerAddress,
+      provinceId,
+      provinceName: selectedProvince?.name ?? "",
+      districtId,
+      districtName: selectedDistrict?.name ?? "",
+      wardId,
+      wardName: selectedWard?.name ?? "",
+      invoiceDate,
+      internalNote,
+      orderNote,
+      discountType,
+      discountValue: discountAmount,
+      shippingFeeValue: shippingFeeAmount,
+      lines: lines.map((line) => ({ ...line })),
+      subtotal,
+      discount,
+      shippingFee,
+      total,
+      productSummary:
+        selectedLines
+          .map((line) => line.displayName.trim())
+          .filter(Boolean)
+          .join(", ") ||
+        initialCustomer?.productName ||
+        "",
+    }),
+    [
+      customerAddress,
+      customerName,
+      customerPhone,
+      discount,
+      discountAmount,
+      discountType,
+      districtId,
+      initialCustomer?.productName,
+      internalNote,
+      invoiceCustomerAddress,
+      invoiceDate,
+      lines,
+      orderNote,
+      provinceId,
+      selectedDistrict?.name,
+      selectedLines,
+      selectedProvince?.name,
+      selectedWard?.name,
+      shippingFee,
+      shippingFeeAmount,
+      subtotal,
+      total,
+      wardId,
+    ],
+  );
+
+  useEffect(() => {
+    if (!isEmbedded || !initialSnapshot || initialSnapshotAppliedRef.current) return;
+    initialSnapshotAppliedRef.current = true;
+    skipSnapshotEmissionRef.current = true;
+    initialProductAppliedRef.current = initialSnapshot.lines.some((line) => line.productId);
+    setCustomerName(initialSnapshot.customerName.trim() || initialCustomer?.name || "");
+    setCustomerPhone(initialSnapshot.customerPhone.trim() || initialCustomer?.phone || "");
+    setCustomerAddress(
+      initialSnapshot.streetAddress.trim() ||
+        initialSnapshot.customerAddress.trim() ||
+        initialCustomer?.address ||
+        "",
+    );
+    setProvinceId(initialSnapshot.provinceId);
+    setDistrictId(initialSnapshot.districtId);
+    setWardId(initialSnapshot.wardId);
+    setInvoiceDate(initialSnapshot.invoiceDate);
+    setInternalNote(initialSnapshot.internalNote.trim() || initialCustomer?.note || "");
+    setOrderNote(initialSnapshot.orderNote);
+    setDiscountType(initialSnapshot.discountType);
+    setDiscountAmount(initialSnapshot.discountValue);
+    setShippingFeeAmount(initialSnapshot.shippingFeeValue);
+    setLines(
+      initialSnapshot.lines.length
+        ? initialSnapshot.lines.map((line) => ({ ...line }))
+        : [emptyLine()],
+    );
+  }, [
+    initialCustomer?.address,
+    initialCustomer?.name,
+    initialCustomer?.note,
+    initialCustomer?.phone,
+    initialSnapshot,
+    isEmbedded,
+  ]);
+
+  useEffect(() => {
+    if (!isEmbedded || !onSnapshotChange) return;
+    if (skipSnapshotEmissionRef.current) {
+      skipSnapshotEmissionRef.current = false;
+      return;
+    }
+    onSnapshotChange(currentSnapshot);
+  }, [currentSnapshot, isEmbedded, onSnapshotChange]);
 
   const validateInvoice = () => {
     if (!customerName.trim()) throw new Error("Nhập tên khách hàng");
@@ -403,10 +540,10 @@ export function InvoiceBuilder({
     try {
       validateInvoice();
       setSavingDraft(true);
-      await onSaveDraft?.(buildSnapshot());
+      await onSaveDraft?.(currentSnapshot);
       toast.success(saveDraftLabel ? `Đã ${saveDraftLabel.toLowerCase()}` : "Đã lưu nháp hoá đơn");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Không lưu được nháp hoá đơn");
+      toast.error(getActionErrorMessage(error, "Không lưu được nháp hoá đơn"));
     } finally {
       setSavingDraft(false);
     }
@@ -433,9 +570,26 @@ export function InvoiceBuilder({
       setCapturing(true);
       await renderInvoicePreview();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Không tạo được preview hoá đơn");
+      toast.error(getActionErrorMessage(error, "Không tạo được preview hoá đơn"));
     } finally {
       setCapturing(false);
+    }
+  };
+
+  const submitEmbeddedOrder = async () => {
+    try {
+      validateInvoice();
+      if (!onCreateOrder) return;
+      setSubmittingOrder(true);
+      await onCreateOrder(currentSnapshot, {
+        invoice_code: buildEmbeddedOrderCode(),
+        invoice_date: invoiceDate,
+      });
+      toast.success("Đã tạo đơn hàng");
+    } catch (error) {
+      toast.error(getActionErrorMessage(error, "Không tạo được đơn hàng"));
+    } finally {
+      setSubmittingOrder(false);
     }
   };
 
@@ -443,14 +597,6 @@ export function InvoiceBuilder({
     try {
       validateInvoice();
       setCapturing(true);
-      if (isEmbedded && onCreateOrder) {
-        await onCreateOrder(buildSnapshot(), {
-          invoice_code: buildEmbeddedOrderCode(),
-          invoice_date: invoiceDate,
-        });
-        toast.success("Đã tạo đơn");
-        return;
-      }
       const invoice = await createInvoice({
         invoice_date: invoiceDate,
         created_by: profile?.id ?? "",
@@ -476,11 +622,11 @@ export function InvoiceBuilder({
           };
         }),
       });
-      await onCreateOrder?.(buildSnapshot(), invoice);
+      await onCreateOrder?.(currentSnapshot, invoice);
       await renderInvoicePreview();
       toast.success("Đã tạo hoá đơn");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Không chụp được hóa đơn");
+      toast.error(getActionErrorMessage(error, "Không tạo được hoá đơn"));
     } finally {
       setCapturing(false);
     }
@@ -502,29 +648,27 @@ export function InvoiceBuilder({
     downloadBlob(previewBlob, buildInvoiceFilename(customerName));
   };
 
-  const isEmbedded = mode === "embedded";
-  const invoiceCustomerAddress = isEmbedded ? formattedCustomerAddress : customerAddress;
   const createLabel = createButtonLabel ?? (isEmbedded ? "Tạo đơn" : "Tạo hoá đơn");
   const draftLabel = saveDraftLabel ?? "Lưu nháp";
-  const districtOptions = province ? Object.keys(VIETNAM_ADDRESS_OPTIONS[province] ?? {}) : [];
-  const wardOptions =
-    province && district ? (VIETNAM_ADDRESS_OPTIONS[province]?.[district] ?? []) : [];
-
-  const updateAdministrativeAddress = (
-    nextProvince: string,
-    nextDistrict: string,
-    nextWard: string,
-  ) => {
-    setProvince(nextProvince);
-    setDistrict(nextDistrict);
-    setWard(nextWard);
-  };
+  const provinceOptions = vietnamAddressData?.provinces ?? [];
+  const districtOptions = useMemo(
+    () =>
+      (vietnamAddressData?.districts ?? []).filter(
+        (district) => district.provinceId === provinceId,
+      ),
+    [provinceId, vietnamAddressData?.districts],
+  );
+  const wardOptions = useMemo(
+    () => (vietnamAddressData?.wards ?? []).filter((ward) => ward.districtId === districtId),
+    [districtId, vietnamAddressData?.wards],
+  );
+  const embeddedSelectContentClass = isEmbedded ? "z-[260]" : undefined;
 
   return (
     <div
       className={cn(
         isEmbedded
-          ? "flex h-full min-h-0 flex-col bg-slate-50/70"
+          ? "flex h-full max-h-full min-h-0 flex-col overflow-hidden bg-slate-50/70"
           : "min-h-screen bg-slate-50/70 p-3 md:p-4",
       )}
     >
@@ -553,17 +697,24 @@ export function InvoiceBuilder({
 
       <div
         className={cn(
-          "grid gap-4 overflow-hidden",
+          "grid gap-4",
           isEmbedded
-            ? "min-h-0 flex-1 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,1fr)]"
+            ? "min-h-0 flex-1 items-start overflow-y-auto overscroll-contain pr-1 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,1fr)]"
             : "xl:grid-cols-[520px_minmax(0,1fr)]",
         )}
       >
-        <Card className="min-h-0 overflow-hidden rounded-2xl border-slate-200/80 shadow-sm">
+        <Card
+          className={cn(
+            "rounded-2xl border-slate-200/80 shadow-sm",
+            isEmbedded ? "overflow-visible" : "flex min-h-0 flex-col overflow-hidden",
+          )}
+        >
           <CardContent
             className={cn(
-              "space-y-4 overflow-y-auto p-4",
-              isEmbedded ? "h-full" : "max-h-[calc(100vh-156px)] pb-24",
+              "space-y-4 p-4",
+              isEmbedded
+                ? "overflow-visible"
+                : "max-h-[calc(100vh-156px)] overflow-y-auto overscroll-contain pb-24",
             )}
           >
             <SectionTitle title="Thông tin khách hàng" />
@@ -613,7 +764,7 @@ export function InvoiceBuilder({
                       <SelectTrigger aria-label="Loại chiết khấu">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className={embeddedSelectContentClass}>
                         <SelectItem value="percent">%</SelectItem>
                         <SelectItem value="amount">VNĐ</SelectItem>
                       </SelectContent>
@@ -643,16 +794,22 @@ export function InvoiceBuilder({
                 <>
                   <Field label="Tỉnh/thành phố">
                     <Select
-                      value={province}
-                      onValueChange={(value) => updateAdministrativeAddress(value, "", "")}
+                      value={provinceId}
+                      onValueChange={(value) => {
+                        setProvinceId(value);
+                        setDistrictId("");
+                        setWardId("");
+                      }}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Chọn tỉnh/thành" />
+                        <SelectValue
+                          placeholder={isLoadingAddress ? "Đang tải..." : "Chọn tỉnh/thành"}
+                        />
                       </SelectTrigger>
-                      <SelectContent>
-                        {Object.keys(VIETNAM_ADDRESS_OPTIONS).map((item) => (
-                          <SelectItem key={item} value={item}>
-                            {item}
+                      <SelectContent className={embeddedSelectContentClass}>
+                        {provinceOptions.map((province) => (
+                          <SelectItem key={province.id} value={province.id}>
+                            {province.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -660,37 +817,34 @@ export function InvoiceBuilder({
                   </Field>
                   <Field label="Quận/huyện">
                     <Select
-                      value={district}
-                      disabled={!province}
-                      onValueChange={(value) => updateAdministrativeAddress(province, value, "")}
+                      value={districtId}
+                      disabled={!provinceId}
+                      onValueChange={(value) => {
+                        setDistrictId(value);
+                        setWardId("");
+                      }}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Chọn quận/huyện" />
                       </SelectTrigger>
-                      <SelectContent>
-                        {districtOptions.map((item) => (
-                          <SelectItem key={item} value={item}>
-                            {item}
+                      <SelectContent className={embeddedSelectContentClass}>
+                        {districtOptions.map((district) => (
+                          <SelectItem key={district.id} value={district.id}>
+                            {district.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </Field>
                   <Field label="Xã/phường">
-                    <Select
-                      value={ward}
-                      disabled={!district}
-                      onValueChange={(value) =>
-                        updateAdministrativeAddress(province, district, value)
-                      }
-                    >
+                    <Select value={wardId} disabled={!districtId} onValueChange={setWardId}>
                       <SelectTrigger>
                         <SelectValue placeholder="Chọn xã/phường" />
                       </SelectTrigger>
-                      <SelectContent>
-                        {wardOptions.map((item) => (
-                          <SelectItem key={item} value={item}>
-                            {item}
+                      <SelectContent className={embeddedSelectContentClass}>
+                        {wardOptions.map((ward) => (
+                          <SelectItem key={ward.id} value={ward.id}>
+                            {ward.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -722,99 +876,94 @@ export function InvoiceBuilder({
                   className="rounded-xl"
                   onClick={() => setLines((current) => [...current, emptyLine()])}
                 >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Thêm dòng
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  Thêm
                 </Button>
               </div>
               {lines.map((line, index) =>
                 isEmbedded ? (
                   <div
                     key={line.id}
-                    className="grid items-end gap-2 rounded-2xl border border-slate-200 bg-white p-3 lg:grid-cols-[minmax(150px,1fr)_minmax(170px,1.15fr)_90px_120px_120px_40px]"
+                    className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3"
                   >
-                    <Field label="Sản phẩm chính">
-                      <Select
-                        value={
-                          line.productId &&
-                          products.find((product) => product.id === line.productId)?.parent_id ===
-                            null
-                            ? line.productId
-                            : ""
-                        }
-                        onValueChange={(value) => selectEmbeddedMainProduct(line.id, value)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder={isLoading ? "Đang tải..." : "Chọn sản phẩm"} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {parentProducts.map((product) => (
-                            <SelectItem key={product.id} value={product.id}>
-                              {product.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field label="Combo">
-                      <Select
-                        value={
-                          line.productId &&
-                          products.find((product) => product.id === line.productId)?.parent_id
-                            ? line.productId
-                            : ""
-                        }
-                        onValueChange={(value) => selectEmbeddedCombo(line.id, value)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Chọn combo" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {comboProducts.map((product) => (
-                            <SelectItem key={product.id} value={product.id}>
-                              {product.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field label="Số lượng">
-                      <Input
-                        inputMode="decimal"
-                        value={line.quantity}
-                        onChange={(event) =>
-                          updateQuantityOrPrice(line.id, { quantity: event.target.value })
-                        }
-                      />
-                    </Field>
-                    <Field label="Đơn giá">
-                      <Input
-                        inputMode="numeric"
-                        value={line.unitPrice}
-                        onChange={(event) =>
-                          updateQuantityOrPrice(line.id, {
-                            unitPrice: formatVnd(parseVndInput(event.target.value)),
-                          })
-                        }
-                      />
-                    </Field>
-                    <Field label="Thành tiền">
-                      <div className="flex h-10 items-center justify-end rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-900">
-                        {formatVnd(parseVndInput(line.totalAfterDiscount))}
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <Field label="Sản phẩm chính">
+                        <Select
+                          value={line.parentId}
+                          onValueChange={(value) => selectParent(line.id, value)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue
+                              placeholder={isLoading ? "Đang tải..." : "Chọn sản phẩm"}
+                            />
+                          </SelectTrigger>
+                          <SelectContent className={embeddedSelectContentClass}>
+                            {parentProducts.map((product) => (
+                              <SelectItem key={product.id} value={product.id}>
+                                {product.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      <Field label="Combo">
+                        <Select
+                          value={line.productId}
+                          disabled={!line.parentId}
+                          onValueChange={(value) => selectProduct(line.id, value)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Chọn combo" />
+                          </SelectTrigger>
+                          <SelectContent className={embeddedSelectContentClass}>
+                            {(childrenByParent.get(line.parentId) ?? []).map((product) => (
+                              <SelectItem key={product.id} value={product.id}>
+                                {product.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <Field label="Số lượng">
+                        <Input
+                          inputMode="decimal"
+                          value={line.quantity}
+                          onChange={(event) =>
+                            updateQuantityOrPrice(line.id, { quantity: event.target.value })
+                          }
+                        />
+                      </Field>
+                      <Field label="Đơn giá">
+                        <Input
+                          inputMode="numeric"
+                          value={line.unitPrice}
+                          onChange={(event) =>
+                            updateQuantityOrPrice(line.id, {
+                              unitPrice: formatVnd(parseVndInput(event.target.value)),
+                            })
+                          }
+                        />
+                      </Field>
+                    </div>
+                    {lines.length > 1 ? (
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 rounded-lg px-2.5 text-red-600 hover:bg-red-50 hover:text-red-700"
+                          aria-label={`Xoá dòng ${index + 1}`}
+                          onClick={() =>
+                            setLines((current) => current.filter((item) => item.id !== line.id))
+                          }
+                        >
+                          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                          Xoá
+                        </Button>
                       </div>
-                    </Field>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-10 w-10 text-red-600"
-                      disabled={lines.length === 1}
-                      aria-label={`Xoá dòng ${index + 1}`}
-                      onClick={() =>
-                        setLines((current) => current.filter((item) => item.id !== line.id))
-                      }
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    ) : null}
                   </div>
                 ) : (
                   <div key={line.id} className="rounded-2xl border border-slate-200 bg-white p-3">
@@ -843,7 +992,7 @@ export function InvoiceBuilder({
                               placeholder={isLoading ? "Đang tải..." : "Chọn sản phẩm chính"}
                             />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className={embeddedSelectContentClass}>
                             {parentProducts.map((product) => (
                               <SelectItem key={product.id} value={product.id}>
                                 {product.name}
@@ -861,7 +1010,7 @@ export function InvoiceBuilder({
                           <SelectTrigger>
                             <SelectValue placeholder="Chọn combo" />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className={embeddedSelectContentClass}>
                             {(childrenByParent.get(line.parentId) ?? []).map((product) => (
                               <SelectItem key={product.id} value={product.id}>
                                 {product.name}
@@ -938,7 +1087,7 @@ export function InvoiceBuilder({
         </Card>
 
         {isEmbedded ? (
-          <div className="min-h-0 space-y-4 overflow-y-auto pr-1">
+          <div className="space-y-4">
             <OrderSummary
               lines={selectedLines}
               subtotal={subtotal}
@@ -988,7 +1137,7 @@ export function InvoiceBuilder({
       </div>
 
       {isEmbedded ? (
-        <div className="relative z-10 mt-3 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-4px_14px_rgba(15,23,42,0.06)]">
+        <div className="relative z-10 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-3 shadow-[0_-4px_14px_rgba(15,23,42,0.06)]">
           <p className="text-lg font-bold text-slate-950">
             Tổng tiền: {new Intl.NumberFormat("vi-VN").format(total)}đ
           </p>
@@ -1013,9 +1162,13 @@ export function InvoiceBuilder({
               </Button>
             ) : null}
             {!hideCreateAction ? (
-              <Button className="rounded-xl" onClick={captureInvoice} disabled={capturing}>
+              <Button
+                className="rounded-xl"
+                onClick={submitEmbeddedOrder}
+                disabled={submittingOrder}
+              >
                 <Plus className="mr-2 h-4 w-4" />
-                {capturing ? "Đang tạo..." : createLabel}
+                {submittingOrder ? "Đang tạo..." : createLabel}
               </Button>
             ) : null}
           </div>
@@ -1079,14 +1232,14 @@ type InvoicePreviewProps = {
   customerAddress: string;
   invoiceDate: string;
   hotline: string;
-  lines: InvoiceLine[];
+  lines: InvoiceBuilderLineSnapshot[];
   productImages: string[];
   subtotal: number;
   discount: number;
   total: number;
 };
 
-const InvoicePreview = forwardRef<HTMLDivElement, InvoicePreviewProps>((props, ref) => {
+export const InvoicePreview = forwardRef<HTMLDivElement, InvoicePreviewProps>((props, ref) => {
   const displayLines = buildDisplayLines(props.lines);
   return (
     <div
@@ -1324,7 +1477,7 @@ function normalizeBenefit(value: string | null | undefined) {
   return text;
 }
 
-function buildDisplayLines(lines: InvoiceLine[]) {
+function buildDisplayLines(lines: InvoiceBuilderLineSnapshot[]) {
   return lines.flatMap((line) => {
     const rows = [];
     if (line.displayName.trim()) {

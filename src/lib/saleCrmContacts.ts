@@ -96,6 +96,7 @@ export interface SaleCrmOrder {
   status: string;
   orderDate: string;
   createdAt: string;
+  orderSnapshot: unknown;
 }
 
 export interface SaleCrmContact {
@@ -235,6 +236,7 @@ interface CustomerOrderRow {
   status: string | null;
   order_date: string | null;
   created_at: string;
+  order_snapshot: unknown;
 }
 
 export interface SaleCrmActor {
@@ -253,6 +255,7 @@ export interface CreateSaleCrmOrderInput {
   amount: number;
   status: string;
   orderDate?: string;
+  orderSnapshot?: unknown;
 }
 
 export const saleCrmStatusOptions: Array<{ key: SaleCrmStatus; label: string }> = [
@@ -378,6 +381,22 @@ export async function updateCustomerStatus(
   );
 }
 
+export async function updateSaleCrmCustomerDetails(
+  customerId: string,
+  details: { customerName: string; phone: string; address: string },
+) {
+  const { error } = await db
+    .from("customers")
+    .update({
+      customer_name: details.customerName.trim(),
+      phone: details.phone.trim(),
+      address: details.address.trim() || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", customerId);
+  if (error) throw error;
+}
+
 export async function updateCustomerFollowup(
   customerId: string,
   lastContactAt: string | null,
@@ -399,7 +418,9 @@ export async function updateCustomerFollowup(
 
 export async function createSaleCrmOrder(input: CreateSaleCrmOrderInput, actor: SaleCrmActor) {
   const orderDate = input.orderDate ?? new Date().toISOString();
+  const orderId = input.orderId ?? crypto.randomUUID();
   const values = {
+    id: orderId,
     customer_id: input.customerId,
     order_code: input.orderCode,
     product_name: input.productName || "Đơn hàng",
@@ -407,6 +428,7 @@ export async function createSaleCrmOrder(input: CreateSaleCrmOrderInput, actor: 
     amount: input.amount,
     status: input.status,
     order_date: orderDate,
+    order_snapshot: input.orderSnapshot ?? {},
   };
   const { error } = input.orderId
     ? await db.from("customer_orders").update(values).eq("id", input.orderId)
@@ -419,6 +441,7 @@ export async function createSaleCrmOrder(input: CreateSaleCrmOrderInput, actor: 
     `Tạo đơn ${input.orderCode}: ${input.productName || "Đơn hàng"} - ${formatActivityAmount(input.amount)}`,
     actor,
   );
+  return orderId;
 }
 
 export async function saveSaleCrmQuote(
@@ -434,8 +457,9 @@ export async function saveSaleCrmQuote(
     product_name: input.productName || "Báo giá",
     quantity: input.quantity ?? 1,
     amount: input.amount,
-    status: "Báo giá",
+    status: "quoted",
     order_date: orderDate,
+    order_snapshot: input.orderSnapshot ?? {},
   };
   const { error } = input.orderId
     ? await db.from("customer_orders").update(values).eq("id", input.orderId)
@@ -595,7 +619,8 @@ async function fetchOrders(customerIds: string[]) {
     .from("customer_orders")
     .select("*")
     .in("customer_id", customerIds)
-    .order("order_date", { ascending: false });
+    .order("order_date", { ascending: false })
+    .order("created_at", { ascending: false });
   if (error) throw error;
   for (const row of (data ?? []) as CustomerOrderRow[]) {
     pushMapValue(rowsByCustomerId, row.customer_id, mapOrderRow(row));
@@ -716,6 +741,7 @@ function mapOrderRow(row: CustomerOrderRow): SaleCrmOrder {
     status: row.status ?? "",
     orderDate: row.order_date ?? row.created_at,
     createdAt: row.created_at,
+    orderSnapshot: row.order_snapshot ?? null,
   };
 }
 
@@ -748,8 +774,22 @@ function normalizeSaleCrmStatus(status: string | null): SaleCrmStatus {
   if (normalized === "cancel" || normalized === "canceled" || normalized === "huỷ") {
     return "cancelled";
   }
-  if (normalized === "quote" || normalized === "báo giá" || normalized === "bao_gia") {
+  if (
+    normalized === "quote" ||
+    normalized === "draft" ||
+    normalized === "báo giá" ||
+    normalized === "báo_giá" ||
+    normalized === "bao_gia"
+  ) {
     return "quoted";
+  }
+  if (
+    normalized === "đang xử lí" ||
+    normalized === "đang xử lý" ||
+    normalized === "đang_xử_lí" ||
+    normalized === "dang_xu_ly"
+  ) {
+    return "processing";
   }
   if (
     normalized === "chờ giao hàng" ||

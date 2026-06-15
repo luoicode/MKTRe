@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronRight,
   Columns3,
+  Copy,
   DollarSign,
   Filter,
   GripVertical,
@@ -23,7 +24,15 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -41,23 +50,29 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Textarea } from "@/components/ui/textarea";
 import {
   InvoiceBuilder,
+  InvoicePreview,
   type InvoiceBuilderSnapshot,
 } from "@/components/workspace/InvoiceWorkspace";
 import { useAuth } from "@/lib/auth";
+import { captureElementAsPngBlob } from "@/lib/captureImage";
+import { parseVndInput } from "@/lib/products";
 import {
   createSaleCrmOrder,
   createCustomerNote,
   deleteCustomerNote,
   fetchSaleCrmContacts,
   saveSaleCrmQuote,
+  updateSaleCrmCustomerDetails,
   updateCustomerStatus,
   updateCustomerNote,
   updateSaleCrmOrderStatus,
   type SaleCrmContact,
   type SaleCrmNote,
+  type SaleCrmOrder,
   type SaleCrmStatus,
 } from "@/lib/saleCrmContacts";
 import { cn } from "@/lib/utils";
+import { copyReportImageToClipboard } from "@/utils/reportImageStorage";
 
 export const Route = createFileRoute("/_authenticated/sale/contacts")({
   component: SaleContactsPage,
@@ -371,7 +386,12 @@ function SaleContactsPage() {
 
   const paginatedContacts = filteredContacts.slice(0, PAGE_SIZE);
   const totalAmount = filteredContacts.reduce(
-    (sum, contact) => sum + contact.orders.reduce((orderSum, order) => orderSum + order.amount, 0),
+    (sum, contact) =>
+      sum +
+      contact.orders.reduce(
+        (orderSum, order) => orderSum + (isRevenueOrder(order.status) ? order.amount : 0),
+        0,
+      ),
     0,
   );
 
@@ -1041,7 +1061,10 @@ function SaleContactsTable({
 function ContactCell({ contact, columnId }: { contact: SaleCrmContact; columnId: ColumnId }) {
   const latestSource = contact.sources[0];
   const latestNote = contact.notes[0]?.note || "—";
-  const orderAmount = contact.orders.reduce((sum, order) => sum + order.amount, 0);
+  const orderAmount = contact.orders.reduce(
+    (sum, order) => sum + (isRevenueOrder(order.status) ? order.amount : 0),
+    0,
+  );
 
   if (columnId === "createdAt") return <span>{formatDateTime(contact.createdAt)}</span>;
   if (columnId === "name")
@@ -1063,7 +1086,7 @@ function PhoneCopyText({ phone }: { phone: string }) {
   const copyPhone = async (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     try {
-      await navigator.clipboard.writeText(phone);
+      await copyTextToClipboard(phone);
       toast.success("Đã copy số điện thoại");
       event.currentTarget.blur();
     } catch {
@@ -1081,6 +1104,29 @@ function PhoneCopyText({ phone }: { phone: string }) {
       {phone || "—"}
     </button>
   );
+}
+
+async function copyTextToClipboard(value: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch {
+      // Fall through for browsers that block Clipboard API access.
+    }
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("Clipboard copy failed");
 }
 
 function detectVietnameseCarrier(phone: string) {
@@ -1224,11 +1270,15 @@ function SaleContactsKanban({
                       <p className="mt-2 line-clamp-2 text-xs font-medium text-slate-600">
                         {contact.notes[0]?.note || "Chưa có ghi chú."}
                       </p>
-                      {contact.orders.length ? (
+                      {contact.orders.some((order) => isRevenueOrder(order.status)) ? (
                         <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700">
                           <DollarSign className="h-3.5 w-3.5" />
                           {formatCurrency(
-                            contact.orders.reduce((sum, order) => sum + order.amount, 0),
+                            contact.orders.reduce(
+                              (sum, order) =>
+                                sum + (isRevenueOrder(order.status) ? order.amount : 0),
+                              0,
+                            ),
                           )}
                         </span>
                       ) : null}
@@ -1918,9 +1968,15 @@ function SaleContactDetailDialog({
   const [editingNote, setEditingNote] = useState<SaleCrmNote | null>(null);
   const [noteFormOpen, setNoteFormOpen] = useState(false);
   const [orderPreviewOpen, setOrderPreviewOpen] = useState(false);
+  const [orderPreviewBlob, setOrderPreviewBlob] = useState<Blob | null>(null);
+  const [orderPreviewUrl, setOrderPreviewUrl] = useState("");
+  const [isCapturingOrderPreview, setIsCapturingOrderPreview] = useState(false);
   const [quoteOrderId, setQuoteOrderId] = useState<string | null>(null);
-  const [currentStatus, setCurrentStatus] = useState<SaleCrmStatus>("new");
+  const [actualStatus, setActualStatus] = useState<SaleCrmStatus>("new");
   const [viewStatus, setViewStatus] = useState<SaleCrmStatus>("new");
+  const [quoteSnapshot, setQuoteSnapshot] = useState<InvoiceBuilderSnapshot | null>(null);
+  const initializedContactIdRef = useRef<string | null>(null);
+  const orderPreviewRef = useRef<HTMLDivElement | null>(null);
   const [processingChecklist, setProcessingChecklist] = useState<
     Record<ProcessingChecklistKey, boolean>
   >({
@@ -1934,17 +1990,33 @@ function SaleContactDetailDialog({
   const latestSource = activeContact?.sources[0];
 
   useEffect(() => {
-    if (!activeContact) return;
+    if (!activeContact) {
+      initializedContactIdRef.current = null;
+      setQuoteSnapshot(null);
+      return;
+    }
+    if (initializedContactIdRef.current === activeContact.id) return;
+    initializedContactIdRef.current = activeContact.id;
     setNoteFormOpen(false);
     setEditingNote(null);
     setNoteContent("");
     setOrderPreviewOpen(false);
-    setQuoteOrderId(
-      activeContact.orders.find((order) => order.status.trim().toLowerCase() === "báo giá")?.id ??
-        null,
+    const persistedOrder = activeContact.orders.find(
+      (order) =>
+        isEditableOrderStatus(order.status) &&
+        Boolean(parseInvoiceBuilderSnapshot(order.orderSnapshot)),
     );
-    setCurrentStatus(activeContact.status);
+    const persistedSnapshot = persistedOrder
+      ? parseInvoiceBuilderSnapshot(persistedOrder.orderSnapshot)
+      : activeContact.orders
+          .map((order) => parseInvoiceBuilderSnapshot(order.orderSnapshot))
+          .find((snapshot): snapshot is InvoiceBuilderSnapshot => Boolean(snapshot));
+    setQuoteOrderId(persistedOrder?.id ?? null);
+    setActualStatus(activeContact.status);
     setViewStatus(activeContact.status);
+    setQuoteSnapshot(
+      persistedSnapshot ? hydrateQuoteDraftFromContact(persistedSnapshot, activeContact) : null,
+    );
     setProcessingChecklist({
       customer: false,
       address: true,
@@ -1953,9 +2025,38 @@ function SaleContactDetailDialog({
     });
   }, [activeContact]);
 
+  useEffect(
+    () => () => {
+      if (orderPreviewUrl) URL.revokeObjectURL(orderPreviewUrl);
+    },
+    [orderPreviewUrl],
+  );
+
   const invalidate = async () => {
     await queryClient.invalidateQueries({ queryKey });
     if (activeContact) onUpdated(activeContact.id);
+  };
+
+  const patchContactCache = (
+    status: SaleCrmStatus,
+    snapshot: InvoiceBuilderSnapshot,
+    order: SaleCrmOrder,
+  ) => {
+    queryClient.setQueryData<SaleCrmContact[]>(queryKey, (current) =>
+      current?.map((item) =>
+        item.id === activeContact?.id
+          ? {
+              ...item,
+              name: snapshot.customerName,
+              phone: snapshot.customerPhone,
+              address: snapshot.customerAddress,
+              status,
+              updatedAt: new Date().toISOString(),
+              orders: [order, ...item.orders.filter((itemOrder) => itemOrder.id !== order.id)],
+            }
+          : item,
+      ),
+    );
   };
 
   const noteMutation = useMutation({
@@ -1989,47 +2090,88 @@ function SaleContactDetailDialog({
     onError: (error) => toast.error(getErrorMessage(error)),
   });
 
-  const statusMutation = useMutation({
-    mutationFn: async (status: SaleCrmStatus) => {
-      if (!activeContact || !actor) return;
-      await updateCustomerStatus(activeContact.id, status, actor);
-    },
-    onSuccess: async (_, status) => {
-      setCurrentStatus(status);
-      setViewStatus(status);
-      await invalidate();
-    },
-    onError: (error) => toast.error(getErrorMessage(error)),
-  });
-
   const changeWorkflowView = (status: SaleEditableStatus) => {
     if (!["new", "quoted", "processing"].includes(status)) return;
+    if (status === "quoted" && activeContact) {
+      setQuoteSnapshot((current) =>
+        current
+          ? hydrateQuoteDraftFromContact(current, activeContact)
+          : createQuoteDraftFromContact(activeContact),
+      );
+    }
     setViewStatus(status);
   };
 
   const openQuoteScreen = () => {
+    if (activeContact) {
+      setQuoteSnapshot((current) =>
+        current
+          ? hydrateQuoteDraftFromContact(current, activeContact)
+          : createQuoteDraftFromContact(activeContact),
+      );
+    }
     setViewStatus("quoted");
   };
 
+  const handleQuoteSnapshotChange = useCallback(
+    (snapshot: InvoiceBuilderSnapshot) => {
+      setQuoteSnapshot(
+        activeContact ? hydrateQuoteDraftFromContact(snapshot, activeContact) : snapshot,
+      );
+    },
+    [activeContact],
+  );
+
   const handleSaveDraft = async (snapshot: InvoiceBuilderSnapshot) => {
     if (!activeContact || !actor) throw new Error("Không tìm thấy hồ sơ Sale.");
+    const persistedSnapshot = hydrateQuoteDraftFromContact(snapshot, activeContact);
+    setQuoteSnapshot(persistedSnapshot);
+    await updateSaleCrmCustomerDetails(activeContact.id, {
+      customerName: persistedSnapshot.customerName,
+      phone: persistedSnapshot.customerPhone,
+      address: persistedSnapshot.customerAddress,
+    });
     const currentQuote = activeContact.orders.find(
-      (order) => order.id === quoteOrderId || order.status.trim().toLowerCase() === "báo giá",
+      (order) => order.id === quoteOrderId || isQuoteOrderStatus(order.status),
     );
+    const orderCode = currentQuote?.orderCode || `BG${Date.now().toString().slice(-8)}`;
     const savedQuoteId = await saveSaleCrmQuote(
       {
         orderId: currentQuote?.id ?? quoteOrderId ?? undefined,
         customerId: activeContact.id,
-        orderCode: currentQuote?.orderCode || `BG${Date.now().toString().slice(-8)}`,
-        productName: snapshot.productSummary || "Báo giá",
-        amount: snapshot.total,
-        orderDate: snapshot.invoiceDate,
+        orderCode,
+        productName: persistedSnapshot.productSummary || "Báo giá",
+        quantity: persistedSnapshot.lines.reduce(
+          (sum, line) => sum + (line.productId ? Number(line.quantity || 0) : 0),
+          0,
+        ),
+        amount: persistedSnapshot.total,
+        orderDate: persistedSnapshot.invoiceDate,
+        orderSnapshot: persistedSnapshot,
       },
       actor,
     );
     setQuoteOrderId(savedQuoteId);
-    if (currentStatus !== "quoted") await statusMutation.mutateAsync("quoted");
-    else setViewStatus("quoted");
+    if (actualStatus !== "quoted") {
+      await updateCustomerStatus(activeContact.id, "quoted", actor);
+    }
+    setActualStatus("quoted");
+    setViewStatus("quoted");
+    patchContactCache("quoted", persistedSnapshot, {
+      id: savedQuoteId,
+      customerId: activeContact.id,
+      orderCode,
+      productName: persistedSnapshot.productSummary || "Báo giá",
+      quantity: persistedSnapshot.lines.reduce(
+        (sum, line) => sum + (line.productId ? Number(line.quantity || 0) : 0),
+        0,
+      ),
+      amount: persistedSnapshot.total,
+      status: "quoted",
+      orderDate: persistedSnapshot.invoiceDate,
+      createdAt: currentQuote?.createdAt ?? new Date().toISOString(),
+      orderSnapshot: persistedSnapshot,
+    });
     await invalidate();
   };
 
@@ -2038,21 +2180,49 @@ function SaleContactDetailDialog({
     invoice: { invoice_code: string; invoice_date: string },
   ) => {
     if (!activeContact || !actor) throw new Error("Không tìm thấy hồ sơ Sale.");
-    await createSaleCrmOrder(
+    const persistedSnapshot = hydrateQuoteDraftFromContact(snapshot, activeContact);
+    setQuoteSnapshot(persistedSnapshot);
+    await updateSaleCrmCustomerDetails(activeContact.id, {
+      customerName: persistedSnapshot.customerName,
+      phone: persistedSnapshot.customerPhone,
+      address: persistedSnapshot.customerAddress,
+    });
+    const orderId = await createSaleCrmOrder(
       {
         orderId: quoteOrderId ?? undefined,
         customerId: activeContact.id,
         orderCode: invoice.invoice_code,
-        productName: snapshot.productSummary || "Đơn hàng",
-        amount: snapshot.total,
-        status: "Đang xử lí",
+        productName: persistedSnapshot.productSummary || "Đơn hàng",
+        quantity: persistedSnapshot.lines.reduce(
+          (sum, line) => sum + (line.productId ? Number(line.quantity || 0) : 0),
+          0,
+        ),
+        amount: persistedSnapshot.total,
+        status: "processing",
         orderDate: invoice.invoice_date,
+        orderSnapshot: persistedSnapshot,
       },
       actor,
     );
     await updateCustomerStatus(activeContact.id, "processing", actor);
-    setCurrentStatus("processing");
+    setActualStatus("processing");
     setViewStatus("processing");
+    setQuoteOrderId(orderId);
+    patchContactCache("processing", persistedSnapshot, {
+      id: orderId,
+      customerId: activeContact.id,
+      orderCode: invoice.invoice_code,
+      productName: persistedSnapshot.productSummary || "Đơn hàng",
+      quantity: persistedSnapshot.lines.reduce(
+        (sum, line) => sum + (line.productId ? Number(line.quantity || 0) : 0),
+        0,
+      ),
+      amount: persistedSnapshot.total,
+      status: "processing",
+      orderDate: invoice.invoice_date,
+      createdAt: new Date().toISOString(),
+      orderSnapshot: persistedSnapshot,
+    });
     await invalidate();
   };
 
@@ -2066,27 +2236,9 @@ function SaleContactDetailDialog({
       await updateCustomerStatus(activeContact.id, "cancelled", actor);
     },
     onSuccess: async () => {
-      setCurrentStatus("cancelled");
+      setActualStatus("cancelled");
       setViewStatus("cancelled");
       toast.success("Đã huỷ đơn");
-      await invalidate();
-    },
-    onError: (error) => toast.error(getErrorMessage(error)),
-  });
-
-  const moveToWaitingShippingMutation = useMutation({
-    mutationFn: async () => {
-      if (!activeContact || !actor) throw new Error("Không tìm thấy hồ sơ Sale.");
-      const latestOrder = activeContact.orders[0];
-      if (latestOrder) {
-        await updateSaleCrmOrderStatus(latestOrder.id, activeContact.id, "Chờ giao hàng", actor);
-      }
-      await updateCustomerStatus(activeContact.id, "waiting_shipping", actor);
-    },
-    onSuccess: async () => {
-      setCurrentStatus("waiting_shipping");
-      setViewStatus("waiting_shipping");
-      toast.success("Đã chuyển đơn sang chờ giao hàng");
       await invalidate();
     },
     onError: (error) => toast.error(getErrorMessage(error)),
@@ -2096,7 +2248,11 @@ function SaleContactDetailDialog({
 
   const latestNote = activeContact.notes[0]?.note || "Chưa có ghi chú.";
   const latestOrder = activeContact.orders[0];
-  const totalOrderAmount = activeContact.orders.reduce((sum, order) => sum + order.amount, 0);
+  const totalOrderAmount = activeContact.orders.reduce(
+    (sum, order) => sum + (isRevenueOrder(order.status) ? order.amount : 0),
+    0,
+  );
+  const retainedOrderLines = quoteSnapshot?.lines.filter((line) => line.productId) ?? [];
   const sortedActivities = [...activeContact.activities].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
@@ -2108,25 +2264,102 @@ function SaleContactDetailDialog({
   const showDetailScreen = !showQuoteBuilder;
   const showProcessingScreen = viewStatus === "processing";
   const showDefaultDetailScreen = showDetailScreen && !showProcessingScreen;
-  const canShowOrderTotal = viewStatus !== "new" && totalOrderAmount > 0;
+  const canShowOrderTotal =
+    viewStatus !== "new" && (totalOrderAmount > 0 || (quoteSnapshot?.total ?? 0) > 0);
   const completedChecklistItems = processingChecklistItems.filter(
     (item) => processingChecklist[item.key],
   ).length;
   const checklistProgress = Math.round(
     (completedChecklistItems / processingChecklistItems.length) * 100,
   );
-  const processingOrderAmount = latestOrder?.amount ?? totalOrderAmount;
+  const processingOrderAmount = quoteSnapshot?.total ?? latestOrder?.amount ?? totalOrderAmount;
+  const processingCustomerName = quoteSnapshot?.customerName || activeContact.name;
+  const processingCustomerPhone = quoteSnapshot?.customerPhone || activeContact.phone;
+  const processingCustomerAddress = quoteSnapshot?.customerAddress || activeContact.address;
+  const processingOrderNote = quoteSnapshot?.orderNote || quoteSnapshot?.internalNote || latestNote;
+  const customerAddress = quoteSnapshot?.customerAddress?.trim() || activeContact.address || "—";
+  const invoicePrintSnapshot =
+    quoteSnapshot ??
+    (latestOrder
+      ? {
+          ...createQuoteDraftFromContact(activeContact),
+          invoiceDate: latestOrder.orderDate?.slice(0, 10) || toDateKey(new Date()),
+          lines: [
+            {
+              id: latestOrder.id,
+              parentId: "",
+              productId: latestOrder.id,
+              displayName: latestOrder.productName || "Đơn hàng",
+              quantity: String(latestOrder.quantity || 1),
+              unit: "sản phẩm",
+              unitPrice: String(
+                latestOrder.amount / Math.max(Number(latestOrder.quantity || 1), 1),
+              ),
+              total: String(latestOrder.amount),
+              discount: "0",
+              totalAfterDiscount: String(latestOrder.amount),
+              gift: "",
+              nextVoucher: "",
+              imageUrl: "",
+            },
+          ],
+          subtotal: latestOrder.amount,
+          total: latestOrder.amount,
+          productSummary: latestOrder.productName || "Đơn hàng",
+        }
+      : null);
+  const previewLines = invoicePrintSnapshot?.lines ?? [];
+  const previewProductImages = Array.from(
+    new Set(previewLines.map((line) => line.imageUrl).filter(Boolean)),
+  ).slice(0, 3);
+
+  const openCurrentOrderPreview = async () => {
+    if (!invoicePrintSnapshot || !orderPreviewRef.current) {
+      toast.error("Chưa có dữ liệu đơn hàng để in.");
+      return;
+    }
+
+    setIsCapturingOrderPreview(true);
+    try {
+      const blob = await captureElementAsPngBlob({
+        target: orderPreviewRef.current,
+        backgroundColor: "#ffffff",
+        pixelRatio: 2,
+      });
+      const nextUrl = URL.createObjectURL(blob);
+      setOrderPreviewBlob(blob);
+      setOrderPreviewUrl((currentUrl) => {
+        if (currentUrl) URL.revokeObjectURL(currentUrl);
+        return nextUrl;
+      });
+      setOrderPreviewOpen(true);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsCapturingOrderPreview(false);
+    }
+  };
+
+  const copyCurrentOrderPreview = async () => {
+    if (!orderPreviewBlob) return;
+    const copied = await copyReportImageToClipboard(orderPreviewBlob);
+    if (copied) {
+      toast.success("Đã copy ảnh hoá đơn");
+    } else {
+      toast.error("Trình duyệt không hỗ trợ copy ảnh hoá đơn.");
+    }
+  };
 
   return (
     <>
       <Dialog open={Boolean(activeContact)} onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className="flex max-h-[88vh] w-[94vw] max-w-[1320px] flex-col overflow-hidden rounded-3xl p-0">
+        <DialogContent className="flex h-[90vh] max-h-[90vh] w-[94vw] max-w-[1320px] flex-col overflow-hidden rounded-3xl p-0">
           <DialogHeader className="shrink-0 border-b border-slate-200 bg-white px-6 pb-4 pt-5">
             <div className="flex items-center justify-between gap-12 pr-8">
               <DialogTitle className="truncate text-2xl font-bold text-slate-950">
                 {activeContact.name}
               </DialogTitle>
-              <StatusBadge status={currentStatus} />
+              <StatusBadge status={actualStatus} />
             </div>
             <div className="mt-4 grid grid-cols-8 overflow-hidden rounded-full bg-slate-50 p-1">
               {saleOrderStatusSteps.map((step, index) => {
@@ -2135,7 +2368,7 @@ function SaleContactDetailDialog({
                   <button
                     type="button"
                     key={step.key}
-                    disabled={!canSelect || statusMutation.isPending}
+                    disabled={!canSelect}
                     onClick={(event) => {
                       event.currentTarget.blur();
                       changeWorkflowView(step.key);
@@ -2168,6 +2401,7 @@ function SaleContactDetailDialog({
             {showQuoteBuilder ? (
               <InvoiceBuilder
                 mode="embedded"
+                initialSnapshot={quoteSnapshot}
                 initialCustomer={{
                   name: activeContact.name,
                   phone: activeContact.phone,
@@ -2181,7 +2415,7 @@ function SaleContactDetailDialog({
                 hideResetAction
                 embeddedActivityContent={
                   <DetailCard title="LỊCH SỬ HOẠT ĐỘNG">
-                    <div className="max-h-[240px] space-y-3 overflow-y-auto pr-1">
+                    <div className="max-h-[350px] space-y-3 overflow-y-auto pr-1">
                       {sortedActivities.length ? (
                         sortedActivities.map((activity) => (
                           <div key={activity.id} className="border-l-2 border-blue-100 pl-3">
@@ -2202,6 +2436,7 @@ function SaleContactDetailDialog({
                     </div>
                   </DetailCard>
                 }
+                onSnapshotChange={handleQuoteSnapshotChange}
                 onSaveDraft={handleSaveDraft}
                 onCreateOrder={handleCreateOrder}
               />
@@ -2211,13 +2446,13 @@ function SaleContactDetailDialog({
               <div className="grid min-h-0 gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(300px,3fr)]">
                 <div className="min-h-0 space-y-5">
                   <DetailCard title="ĐƠN HÀNG ĐANG XỬ LÍ">
-                    {latestOrder ? (
+                    {latestOrder || quoteSnapshot ? (
                       <div className="space-y-4">
                         <div className="flex flex-wrap gap-x-7 gap-y-2 text-sm text-slate-600">
                           <span>
                             Mã đơn:{" "}
                             <strong className="text-slate-900">
-                              {latestOrder.orderCode || "—"}
+                              {latestOrder?.orderCode || "—"}
                             </strong>
                           </span>
                           <span>
@@ -2226,19 +2461,23 @@ function SaleContactDetailDialog({
                           <span>
                             Ngày tạo:{" "}
                             <strong className="text-slate-900">
-                              {formatDateTime(latestOrder.createdAt)}
+                              {latestOrder?.createdAt
+                                ? formatDateTime(latestOrder.createdAt)
+                                : quoteSnapshot?.invoiceDate
+                                  ? formatDateTime(quoteSnapshot.invoiceDate)
+                                  : "—"}
                             </strong>
                           </span>
                           <span>
                             Tổng tiền:{" "}
                             <strong className="text-slate-900">
-                              {formatCurrency(latestOrder.amount)}
+                              {formatCurrency(processingOrderAmount)}
                             </strong>
                           </span>
                           <span>
                             COD:{" "}
                             <strong className="text-slate-900">
-                              {formatCurrency(latestOrder.amount)}
+                              {formatCurrency(processingOrderAmount)}
                             </strong>
                           </span>
                           <span>
@@ -2259,20 +2498,40 @@ function SaleContactDetailDialog({
                               </tr>
                             </thead>
                             <tbody>
-                              <tr className="border-t border-slate-100">
-                                <td className="px-3 py-3 font-medium text-slate-900">
-                                  {latestOrder.productName || "—"}
-                                </td>
-                                <td className="px-3 py-3">{latestOrder.quantity || 1}</td>
-                                <td className="px-3 py-3">
-                                  {formatCurrency(
-                                    latestOrder.amount / Math.max(latestOrder.quantity || 1, 1),
-                                  )}
-                                </td>
-                                <td className="px-3 py-3 font-semibold text-slate-900">
-                                  {formatCurrency(latestOrder.amount)}
-                                </td>
-                              </tr>
+                              {retainedOrderLines.length ? (
+                                retainedOrderLines.map((line) => (
+                                  <tr key={line.id} className="border-t border-slate-100">
+                                    <td className="px-3 py-3 font-medium text-slate-900">
+                                      {line.displayName || "—"}
+                                    </td>
+                                    <td className="px-3 py-3">{Number(line.quantity || 0)}</td>
+                                    <td className="px-3 py-3">
+                                      {formatCurrency(parseVndInput(line.unitPrice))}
+                                    </td>
+                                    <td className="px-3 py-3 font-semibold text-slate-900">
+                                      {formatCurrency(parseVndInput(line.totalAfterDiscount))}
+                                    </td>
+                                  </tr>
+                                ))
+                              ) : (
+                                <tr className="border-t border-slate-100">
+                                  <td className="px-3 py-3 font-medium text-slate-900">
+                                    {latestOrder?.productName ||
+                                      quoteSnapshot?.productSummary ||
+                                      "—"}
+                                  </td>
+                                  <td className="px-3 py-3">{latestOrder?.quantity || 1}</td>
+                                  <td className="px-3 py-3">
+                                    {formatCurrency(
+                                      processingOrderAmount /
+                                        Math.max(latestOrder?.quantity || 1, 1),
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-3 font-semibold text-slate-900">
+                                    {formatCurrency(processingOrderAmount)}
+                                  </td>
+                                </tr>
+                              )}
                             </tbody>
                           </table>
                         </div>
@@ -2286,18 +2545,18 @@ function SaleContactDetailDialog({
 
                   <DetailCard title="THÔNG TIN NHẬN HÀNG">
                     <div className="grid gap-x-5 gap-y-3 sm:grid-cols-2">
-                      <DetailRow label="Họ tên" value={activeContact.name} />
+                      <DetailRow label="Họ tên" value={processingCustomerName} />
                       <DetailRow
                         label="Số điện thoại"
-                        value={<DetailPhoneValue phone={activeContact.phone} />}
+                        value={<DetailPhoneValue phone={processingCustomerPhone} />}
                       />
-                      <DetailRow label="Địa chỉ" value={activeContact.address || "—"} />
-                      <DetailRow label="Xã/phường" value="—" />
-                      <DetailRow label="Quận/huyện" value="—" />
-                      <DetailRow label="Tỉnh/thành" value="—" />
+                      <DetailRow label="Địa chỉ" value={processingCustomerAddress || "—"} />
+                      <DetailRow label="Xã/phường" value={quoteSnapshot?.wardName || "—"} />
+                      <DetailRow label="Quận/huyện" value={quoteSnapshot?.districtName || "—"} />
+                      <DetailRow label="Tỉnh/thành" value={quoteSnapshot?.provinceName || "—"} />
                       <DetailRow label="Quốc gia" value="Việt Nam" />
                       <div className="sm:col-span-2">
-                        <DetailRow label="Ghi chú đơn hàng" value={latestNote} />
+                        <DetailRow label="Ghi chú đơn hàng" value={processingOrderNote} />
                       </div>
                     </div>
                   </DetailCard>
@@ -2511,7 +2770,8 @@ function SaleContactDetailDialog({
                         label="SĐT phụ"
                         value={<DetailPhoneValue phone={activeContact.secondaryPhone} />}
                       />
-                      <DetailRow label="Ghi chú KH" value={latestNote} />
+                      <DetailRow label="Địa chỉ" value={customerAddress} />
+                      <DetailRow label="Ghi chú gần đây" value={latestNote} />
                     </DetailCard>
                   </div>
 
@@ -2646,7 +2906,7 @@ function SaleContactDetailDialog({
                                 <td className="px-3 py-2">{formatDateTime(order.orderDate)}</td>
                                 <td className="px-3 py-2">{order.productName || "—"}</td>
                                 <td className="px-3 py-2">{formatCurrency(order.amount)}</td>
-                                <td className="px-3 py-2">{order.status || "—"}</td>
+                                <td className="px-3 py-2">{getOrderStatusLabel(order.status)}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -2703,35 +2963,30 @@ function SaleContactDetailDialog({
                       <Button
                         variant="outline"
                         className="rounded-xl"
-                        onClick={() => setOrderPreviewOpen(true)}
+                        onClick={openCurrentOrderPreview}
+                        disabled={isCapturingOrderPreview || !invoicePrintSnapshot}
                       >
-                        <ImageIcon className="mr-2 h-4 w-4" />
+                        {isCapturingOrderPreview ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <ImageIcon className="mr-2 h-4 w-4" />
+                        )}
                         In hoá đơn
                       </Button>
                       <Button
                         variant="outline"
                         className="rounded-xl border-red-200 text-red-600 hover:bg-red-50"
                         onClick={() => cancelOrderMutation.mutate()}
-                        disabled={cancelOrderMutation.isPending || currentStatus !== "processing"}
+                        disabled={cancelOrderMutation.isPending || actualStatus !== "processing"}
                       >
                         Huỷ đơn
-                      </Button>
-                      <Button
-                        className="rounded-xl"
-                        onClick={() => moveToWaitingShippingMutation.mutate()}
-                        disabled={
-                          moveToWaitingShippingMutation.isPending || currentStatus !== "processing"
-                        }
-                      >
-                        <ChevronRight className="mr-2 h-4 w-4" />
-                        Chuyển chờ giao hàng
                       </Button>
                     </>
                   ) : null}
                   {viewStatus === "new" ? (
                     <Button className="rounded-xl" onClick={openQuoteScreen}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Tạo đơn
+                      Tiếp tục
+                      <ChevronRight className="ml-2 h-4 w-4" />
                     </Button>
                   ) : null}
                 </div>
@@ -2742,27 +2997,46 @@ function SaleContactDetailDialog({
       </Dialog>
 
       <Dialog open={orderPreviewOpen} onOpenChange={setOrderPreviewOpen}>
-        <DialogContent className="flex max-h-[92vh] w-[96vw] max-w-[1500px] flex-col overflow-hidden rounded-3xl p-0">
-          <DialogHeader className="shrink-0 border-b border-slate-200 px-5 py-4">
+        <DialogContent className="max-w-[min(92vw,980px)] rounded-3xl">
+          <DialogHeader>
             <DialogTitle>In hoá đơn của {activeContact.name}</DialogTitle>
           </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-hidden p-4">
-            <InvoiceBuilder
-              mode="embedded"
-              initialCustomer={{
-                name: activeContact.name,
-                phone: activeContact.phone,
-                address: activeContact.address,
-                note: latestNote === "Chưa có ghi chú." ? "" : latestNote,
-                productName:
-                  latestSource?.productName?.trim() || inferProductName(latestSource?.sourceName),
-              }}
-              hideResetAction
-              hideCreateAction
-            />
-          </div>
+          {orderPreviewUrl ? (
+            <div className="flex max-h-[72vh] items-center justify-center rounded-2xl border bg-slate-50 p-3">
+              <img
+                src={orderPreviewUrl}
+                alt="Preview hoá đơn"
+                className="max-h-[68vh] max-w-full rounded-xl bg-white object-contain"
+              />
+            </div>
+          ) : null}
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button variant="outline" onClick={copyCurrentOrderPreview}>
+              <Copy className="mr-2 h-4 w-4" />
+              Copy ảnh
+            </Button>
+            <Button onClick={() => setOrderPreviewOpen(false)}>Đóng</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {invoicePrintSnapshot ? (
+        <div className="pointer-events-none fixed -left-[10000px] top-0" aria-hidden="true">
+          <InvoicePreview
+            ref={orderPreviewRef}
+            customerName={invoicePrintSnapshot.customerName || activeContact.name}
+            customerPhone={invoicePrintSnapshot.customerPhone || activeContact.phone}
+            customerAddress={invoicePrintSnapshot.customerAddress || activeContact.address}
+            invoiceDate={invoicePrintSnapshot.invoiceDate}
+            hotline=""
+            lines={previewLines}
+            productImages={previewProductImages}
+            subtotal={invoicePrintSnapshot.subtotal}
+            discount={invoicePrintSnapshot.discount}
+            total={invoicePrintSnapshot.total}
+          />
+        </div>
+      ) : null}
     </>
   );
 }
@@ -2954,6 +3228,111 @@ function formatDateTime(value?: string | null) {
 
 function formatCurrency(value: number) {
   return `${new Intl.NumberFormat("vi-VN").format(Math.round(value))}đ`;
+}
+
+function createQuoteDraftFromContact(contact: SaleCrmContact): InvoiceBuilderSnapshot {
+  const latestNote = contact.notes[0]?.note ?? "";
+  const invoiceDate = toDateKey(new Date());
+
+  return {
+    customerName: contact.name,
+    customerPhone: contact.phone,
+    customerAddress: contact.address,
+    streetAddress: contact.address,
+    provinceId: "",
+    provinceName: "",
+    districtId: "",
+    districtName: "",
+    wardId: "",
+    wardName: "",
+    invoiceDate,
+    internalNote: latestNote,
+    orderNote: "",
+    discountType: "percent",
+    discountValue: "",
+    shippingFeeValue: "",
+    lines: [],
+    subtotal: 0,
+    discount: 0,
+    shippingFee: 0,
+    total: 0,
+    productSummary: "",
+  };
+}
+
+function hydrateQuoteDraftFromContact(
+  snapshot: InvoiceBuilderSnapshot,
+  contact: SaleCrmContact,
+): InvoiceBuilderSnapshot {
+  const latestNote = contact.notes[0]?.note ?? "";
+  const streetAddress =
+    snapshot.streetAddress.trim() || snapshot.customerAddress.trim() || contact.address || "";
+
+  return {
+    ...snapshot,
+    customerName: snapshot.customerName.trim() || contact.name,
+    customerPhone: snapshot.customerPhone.trim() || contact.phone,
+    customerAddress: snapshot.customerAddress.trim() || contact.address || streetAddress,
+    streetAddress,
+    internalNote: snapshot.internalNote.trim() || latestNote,
+  };
+}
+
+function parseInvoiceBuilderSnapshot(value: unknown): InvoiceBuilderSnapshot | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const snapshot = value as Partial<InvoiceBuilderSnapshot>;
+  if (
+    typeof snapshot.customerName !== "string" ||
+    typeof snapshot.customerPhone !== "string" ||
+    !Array.isArray(snapshot.lines)
+  ) {
+    return null;
+  }
+  return snapshot as InvoiceBuilderSnapshot;
+}
+
+function normalizeOrderStatus(status: string) {
+  return status.trim().toLowerCase().replaceAll("-", "_");
+}
+
+function isQuoteOrderStatus(status: string) {
+  return ["quoted", "quote", "draft", "báo giá", "báo_giá", "bao_gia"].includes(
+    normalizeOrderStatus(status),
+  );
+}
+
+function isEditableOrderStatus(status: string) {
+  const normalized = normalizeOrderStatus(status);
+  return (
+    isQuoteOrderStatus(status) ||
+    ["processing", "đang xử lí", "đang xử lý", "đang_xử_lí", "dang_xu_ly"].includes(normalized)
+  );
+}
+
+function getOrderStatusLabel(status: string) {
+  const normalized = normalizeOrderStatus(status);
+  if (isQuoteOrderStatus(status)) return "Báo giá";
+  if (["processing", "đang xử lí", "đang xử lý", "đang_xử_lí", "dang_xu_ly"].includes(normalized)) {
+    return "Đang xử lí";
+  }
+  return status || "—";
+}
+
+function isRevenueOrder(status: string) {
+  const normalized = status.trim().toLowerCase();
+  return [
+    "processing",
+    "đang xử lí",
+    "đang xử lý",
+    "waiting_shipping",
+    "chờ giao hàng",
+    "shipping",
+    "đang giao",
+    "success",
+    "hoàn thành",
+    "returned",
+    "hoàn",
+  ].includes(normalized);
 }
 
 function getErrorMessage(error: unknown) {
