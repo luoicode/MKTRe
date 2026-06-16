@@ -915,6 +915,13 @@ function canViewAssetForRole(
   visibleTeamIds: Set<string>,
   profileTeamMap: Map<string, Set<string>>,
 ) {
+  if (asset.asset_group === "personal") {
+    if (role === "admin") return true;
+    return asset.owner_profile_id
+      ? asset.owner_profile_id === profileId
+      : asset.created_by === profileId;
+  }
+
   if (role === "admin" || role === "manager") return true;
   if (asset.asset_group === "common") return true;
 
