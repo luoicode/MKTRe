@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarDays,
@@ -75,8 +75,18 @@ import { cn } from "@/lib/utils";
 import { copyReportImageToClipboard } from "@/utils/reportImageStorage";
 
 export const Route = createFileRoute("/_authenticated/sale/contacts")({
-  component: SaleContactsPage,
+  component: SaleContactsRedirect,
 });
+
+function SaleContactsRedirect() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    navigate({ to: "/sale/dashboard", replace: true });
+  }, [navigate]);
+
+  return null;
+}
 
 const ALL_STATUS = "all";
 const PAGE_SIZE = 50;
@@ -225,6 +235,7 @@ function getSaleSavedFiltersStorageKey(profileId?: string | null) {
 
 function SaleContactsPage() {
   const { profile, role } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(ALL_STATUS);
@@ -265,6 +276,12 @@ function SaleContactsPage() {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+
+  useEffect(() => {
+    if (role && role !== "sale") {
+      navigate({ to: "/sale/dashboard", replace: true });
+    }
+  }, [navigate, role]);
 
   useEffect(() => {
     if (!selectedContact) return;
@@ -475,11 +492,7 @@ function SaleContactsPage() {
   };
 
   if (role !== "sale") {
-    return (
-      <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center text-slate-600">
-        Trang Liên hệ khách hàng hiện chỉ áp dụng cho nhân viên Sale.
-      </div>
-    );
+    return null;
   }
 
   return (

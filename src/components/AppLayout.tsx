@@ -239,12 +239,6 @@ const NAV: NavItem[] = [
     roles: [...SALE_ROLES],
   },
   { to: "/sale/kpi", label: "KPI sale", icon: Target, roles: [...SALE_ROLES] },
-  {
-    to: "/sale/contacts",
-    label: "Liên hệ khách hàng",
-    icon: UsersRound,
-    roles: ["sale"],
-  },
   { to: "/sale/attendance", label: "Điểm danh", icon: CalendarCheck, roles: [...SALE_ROLES] },
   {
     to: "/sale/floating-pool",
