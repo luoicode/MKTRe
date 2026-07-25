@@ -401,22 +401,22 @@ export function InvoiceBuilder({
       current.map((line, index) =>
         index === 0
           ? {
-              ...line,
-              productId: matchingProduct.id,
-              parentId: matchingProduct.parent_id ?? matchingProduct.id,
-              displayName: matchingProduct.name,
-              quantity: String(quantity),
-              unit: matchingProduct.unit || parent?.unit || "hũ",
-              unitPrice: formatVnd(
-                quantity > 0 ? Math.round(lineSubtotal / quantity) : lineSubtotal,
-              ),
-              total: formatVnd(lineSubtotal),
-              discount: formatVnd(Math.max(lineSubtotal - lineTotalAfterDiscount, 0)),
-              totalAfterDiscount: formatVnd(lineTotalAfterDiscount),
-              gift: normalizeBenefit(matchingProduct.gift),
-              nextVoucher: normalizeBenefit(matchingProduct.next_voucher),
-              imageUrl: matchingProduct.image_url || parent?.image_url || "",
-            }
+            ...line,
+            productId: matchingProduct.id,
+            parentId: matchingProduct.parent_id ?? matchingProduct.id,
+            displayName: matchingProduct.name,
+            quantity: String(quantity),
+            unit: matchingProduct.unit || parent?.unit || "hũ",
+            unitPrice: formatVnd(
+              quantity > 0 ? Math.round(lineSubtotal / quantity) : lineSubtotal,
+            ),
+            total: formatVnd(lineSubtotal),
+            discount: formatVnd(Math.max(lineSubtotal - lineTotalAfterDiscount, 0)),
+            totalAfterDiscount: formatVnd(lineTotalAfterDiscount),
+            gift: normalizeBenefit(matchingProduct.gift),
+            nextVoucher: normalizeBenefit(matchingProduct.next_voucher),
+            imageUrl: matchingProduct.image_url || parent?.image_url || "",
+          }
           : line,
       ),
     );
@@ -489,9 +489,9 @@ export function InvoiceBuilder({
     setCustomerPhone(initialSnapshot.customerPhone.trim() || initialCustomer?.phone || "");
     setCustomerAddress(
       initialSnapshot.streetAddress.trim() ||
-        initialSnapshot.customerAddress.trim() ||
-        initialCustomer?.address ||
-        "",
+      initialSnapshot.customerAddress.trim() ||
+      initialCustomer?.address ||
+      "",
     );
     setProvinceId(initialSnapshot.provinceId);
     setDistrictId(initialSnapshot.districtId);
@@ -1249,12 +1249,12 @@ export const InvoicePreview = forwardRef<HTMLDivElement, InvoicePreviewProps>((p
     >
       <div className="border-2 border-black px-8 py-5">
         <div className="text-center">
-          <h2 className="text-xl font-bold uppercase">CÔNG TY CỔ PHẦN TẬP ĐOÀN DASNOTRI</h2>
+          <h2 className="text-xl font-bold uppercase">CÔNG TY CỔ PHẦN TẬP ĐOÀN </h2>
           <p className="text-lg italic">
-            Địa chỉ: B29 Khu đấu giá Ngô Thì Nhậm, P.Hà Đông, TP.Hà Nội
+            Địa chỉ:
           </p>
           <p className="mt-2 text-lg">Hotline: {props.hotline || "Chưa cập nhật"}</p>
-          <div className="mt-2 text-lg font-bold tracking-wide text-blue-700">DASNOTRI</div>
+          <div className="mt-2 text-lg font-bold tracking-wide text-blue-700"></div>
           <h1 className="mt-4 text-3xl font-bold uppercase text-blue-700">HOÁ ĐƠN BÁN HÀNG</h1>
           <p className="mt-1 text-lg">{formatInvoiceDate(props.invoiceDate)}</p>
         </div>

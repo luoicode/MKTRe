@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { SaleFloatingPoolWorkspace } from "@/components/workspace/sale/SaleWorkspace";
+import { SaleFloatingLeadsCrmWorkspace } from "@/components/workspace/SaleFloatingLeadsCrmWorkspace";
 
 export const Route = createFileRoute("/_authenticated/sale/floating-pool")({
-  component: SaleFloatingPoolWorkspace,
+  component: SaleFloatingLeadsCrmWorkspace,
 });

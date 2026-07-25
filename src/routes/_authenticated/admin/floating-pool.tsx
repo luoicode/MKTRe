@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { AdminFloatingLeadsWorkspace } from "@/components/workspace/AdminSaleWorkspace";
+import { AdminFloatingLeadsCrmWorkspace } from "@/components/workspace/AdminFloatingLeadsCrmWorkspace";
 
 export const Route = createFileRoute("/_authenticated/admin/floating-pool")({
-  component: AdminFloatingLeadsWorkspace,
+  component: AdminFloatingLeadsCrmWorkspace,
 });

@@ -137,6 +137,7 @@ export async function fetchSaleFloatingLeads(from?: string, to?: string) {
   let query = supabase
     .from("floating_leads")
     .select("*")
+    .is("deleted_at" as never, null)
     .order("lead_date", { ascending: false })
     .order("created_at", { ascending: false });
 
@@ -153,6 +154,7 @@ export async function fetchMarketingFloatingLeads(from: string, to: string) {
   const { data, error } = await supabase
     .from("floating_leads")
     .select("*")
+    .is("deleted_at" as never, null)
     .gte("lead_date", from)
     .lte("lead_date", to)
     .order("lead_date", { ascending: false })
@@ -324,8 +326,8 @@ export function validateLeadPhones(input: string) {
     return { phones: [] as string[], error: "Nhập ít nhất 1 số điện thoại." };
   }
 
-  if (rawLines.length > 5) {
-    return { phones: [] as string[], error: "Chỉ được nhập tối đa 5 số/lần." };
+  if (rawLines.length > 100) {
+    return { phones: [] as string[], error: "Chỉ được nhập tối đa 100 số/lần." };
   }
 
   const seen = new Set<string>();
