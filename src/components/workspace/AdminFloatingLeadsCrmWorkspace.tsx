@@ -86,7 +86,6 @@ export function AdminFloatingLeadsCrmWorkspace() {
   const [status, setStatus] = useState("all");
   const [marketingId, setMarketingId] = useState("all");
   const [saleId, setSaleId] = useState("all");
-  const [crop, setCrop] = useState("all");
   const [sourceType, setSourceType] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [detailLead, setDetailLead] = useState<FloatingLeadCrmRow | null>(null);
@@ -118,7 +117,6 @@ export function AdminFloatingLeadsCrmWorkspace() {
       saleId,
       normalizedRange.from,
       normalizedRange.to,
-      crop,
       sourceType,
     ],
     queryFn: () =>
@@ -131,7 +129,6 @@ export function AdminFloatingLeadsCrmWorkspace() {
         saleId,
         from: normalizedRange.from,
         to: normalizedRange.to,
-        crop,
         sourceType,
       }),
     placeholderData: (previous) => previous,
@@ -139,7 +136,6 @@ export function AdminFloatingLeadsCrmWorkspace() {
   const rows = useMemo(() => leadsQuery.data?.rows ?? [], [leadsQuery.data?.rows]);
   const total = leadsQuery.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const crops = useMemo(() => uniqueValues(rows.map((row) => row.loai_cay_trong)), [rows]);
   const sources = useMemo(() => uniqueValues(rows.map((row) => row.source_type)), [rows]);
   const allPageSelected = rows.length > 0 && rows.every((row) => selectedIds.has(row.id));
 
@@ -336,15 +332,6 @@ export function AdminFloatingLeadsCrmWorkspace() {
                 value: item.id,
                 label: item.name,
               }))}
-            />
-            <FilterSelect
-              value={crop}
-              onChange={(value) => {
-                setCrop(value);
-                setPage(1);
-              }}
-              placeholder="Cây trồng"
-              options={crops}
             />
             <FilterSelect
               value={sourceType}

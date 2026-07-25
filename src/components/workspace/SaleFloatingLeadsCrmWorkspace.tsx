@@ -36,7 +36,6 @@ export function SaleFloatingLeadsCrmWorkspace() {
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
   const [status, setStatus] = useState("all");
-  const [crop, setCrop] = useState("all");
   const [sourceType, setSourceType] = useState("all");
   const [detailLead, setDetailLead] = useState<FloatingLeadCrmRow | null>(null);
   const normalizedRange = normalizeDateRange(range);
@@ -50,7 +49,6 @@ export function SaleFloatingLeadsCrmWorkspace() {
       status,
       normalizedRange.from,
       normalizedRange.to,
-      crop,
       sourceType,
     ],
     queryFn: () =>
@@ -61,7 +59,6 @@ export function SaleFloatingLeadsCrmWorkspace() {
         status,
         from: normalizedRange.from,
         to: normalizedRange.to,
-        crop,
         sourceType,
       }),
     placeholderData: (previous) => previous,
@@ -70,7 +67,6 @@ export function SaleFloatingLeadsCrmWorkspace() {
   const rows = useMemo(() => leadsQuery.data?.rows ?? [], [leadsQuery.data?.rows]);
   const total = leadsQuery.data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const crops = useMemo(() => uniqueValues(rows.map((row) => row.loai_cay_trong)), [rows]);
   const sources = useMemo(() => uniqueValues(rows.map((row) => row.source_type)), [rows]);
   const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey: ["sale-floating-leads-crm"] });
@@ -119,15 +115,6 @@ export function SaleFloatingLeadsCrmWorkspace() {
               }}
               placeholder="Trạng thái"
               options={statusOptions}
-            />
-            <FilterSelect
-              value={crop}
-              onChange={(value) => {
-                setCrop(value);
-                setPage(1);
-              }}
-              placeholder="Cây trồng"
-              options={crops}
             />
             <FilterSelect
               value={sourceType}
